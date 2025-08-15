@@ -203,12 +203,42 @@ func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) *OutboundConfig {
 	}
 	outbound.ServerPort = port
 
+	// 统一处理 UDP 相关的 packet_encoding（对 vmess 和 vless 都生效）
+	if proxy.UDP {
+		if proxy.Type == "vmess" || proxy.Type == "vless" {
+			outbound.PacketEncoding = "xudp"
+		}
+	}
+
+	// 统一处理 WebSocket 传输配置
+	if proxy.Network == "ws" {
+		outbound.Transport = &TransportConfig{
+			Type: "ws",
+			Path: proxy.WSPath,
+		}
+		if len(proxy.WSHeaders) > 0 {
+			headers := make(map[string]interface{})
+			for k, v := range proxy.WSHeaders {
+				headers[k] = v
+			}
+			outbound.Transport.Headers = headers
+		}
+	}
+
+	// 统一处理 TLS 配置
+	if proxy.TLS {
+		outbound.TLS = &TLSConfig{
+			Enabled:    true,
+			ServerName: proxy.ServerName,
+			Insecure:   proxy.SkipCertVerify,
+		}
+	}
+
 	switch strings.ToLower(proxy.Type) {
 	case "ss":
 		outbound.Type = "shadowsocks"
 		outbound.Method = proxy.Cipher
 		outbound.Password = proxy.Password
-		// Shadowsocks 不需要 alterId 和 packet_encoding
 
 	case "vmess":
 		outbound.Type = "vmess"
@@ -221,43 +251,15 @@ func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) *OutboundConfig {
 		}
 		outbound.AlterId = alterId
 		outbound.Security = proxy.Cipher // 映射 cipher 到 security
-		// 如果启用了 UDP，设置 packet_encoding 为 xudp
-		if proxy.UDP {
-			outbound.PacketEncoding = "xudp"
-		}
 
-		if proxy.Network == "ws" {
-			outbound.Transport = &TransportConfig{
-				Type: "ws",
-				Path: proxy.WSPath,
-			}
-			if len(proxy.WSHeaders) > 0 {
-				headers := make(map[string]interface{})
-				for k, v := range proxy.WSHeaders {
-					headers[k] = v
-				}
-				outbound.Transport.Headers = headers
-			}
-		}
-
-		if proxy.TLS {
-			outbound.TLS = &TLSConfig{
-				Enabled:    true,
-				ServerName: proxy.ServerName,
-				Insecure:   proxy.SkipCertVerify,
-			}
-		}
+	case "vless":
+		outbound.Type = "vless"
+		outbound.UUID = proxy.UUID
+		outbound.Security = proxy.Cipher // 映射 cipher 到 security
 
 	case "trojan":
 		outbound.Type = "trojan"
 		outbound.Password = proxy.Password
-		if proxy.TLS {
-			outbound.TLS = &TLSConfig{
-				Enabled:    true,
-				ServerName: proxy.ServerName,
-				Insecure:   proxy.SkipCertVerify,
-			}
-		}
 
 	default:
 		log.Printf("不支持的代理类型: %s", proxy.Type)
