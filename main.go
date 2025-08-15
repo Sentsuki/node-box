@@ -530,7 +530,7 @@ func (nm *NodeManager) startScheduler() {
 }
 
 // 生成示例配置文件
-func generateExampleConfig() {
+func generateExampleConfig(configPath string) {
 	config := Config{
 		Subscriptions: []Subscription{
 			{
@@ -553,13 +553,17 @@ func generateExampleConfig() {
 	}
 
 	data, _ := json.MarshalIndent(config, "", "  ")
-	os.WriteFile("config.json", data, 0644)
-	fmt.Println("已生成示例配置文件: config.json")
+	os.WriteFile(configPath, data, 0644)
+	fmt.Printf("已生成示例配置文件: %s\n", configPath)
 }
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "init" {
-		generateExampleConfig()
+		configPath := "config.json" // 默认路径
+		if len(os.Args) > 2 {
+			configPath = os.Args[2] // 使用用户指定的路径
+		}
+		generateExampleConfig(configPath)
 		return
 	}
 
