@@ -558,8 +558,9 @@ func generateExampleConfig(configPath string) {
 }
 
 func main() {
+	configPath := "config.json" // 默认配置文件路径
+
 	if len(os.Args) > 1 && os.Args[1] == "init" {
-		configPath := "config.json" // 默认路径
 		if len(os.Args) > 2 {
 			configPath = os.Args[2] // 使用用户指定的路径
 		}
@@ -567,8 +568,13 @@ func main() {
 		return
 	}
 
+	// 检查是否有自定义配置文件路径参数
+	if len(os.Args) > 1 {
+		configPath = os.Args[1]
+	}
+
 	// 初始化节点管理器
-	manager, err := NewNodeManager("config.json")
+	manager, err := NewNodeManager(configPath)
 	if err != nil {
 		log.Fatalf("初始化失败: %v", err)
 	}
