@@ -32,7 +32,6 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist
           cd dist/${{ matrix.goos }}-${{ matrix.goarch }}
           zip -r ../../node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip node-box
           cd ../../
@@ -51,6 +50,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./dist
+          pattern: node-box-*
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: ls -R ./dist
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
