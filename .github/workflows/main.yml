@@ -36,17 +36,13 @@ jobs:
       
       - name: Create archive
         run: |
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip -r node-box-${{ matrix.platform }}.zip node-box.exe
-          else
-            tar -czf node-box-${{ matrix.platform }}.tar.gz node-box
-          fi
+          tar -czf node-box-${{ matrix.platform }}.tar.gz node-box
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: node-box-${{ matrix.platform }}
-          path: node-box-${{ matrix.platform }}.*
+          path: node-box-${{ matrix.platform }}.tar.gz
 
   release:
     needs: build
@@ -62,6 +58,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          files: ./dist/*/*.{tar.gz,zip}
+          files: ./dist/*/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
