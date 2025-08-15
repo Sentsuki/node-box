@@ -32,6 +32,7 @@ jobs:
 
       - name: Package
         run: |
+          mkdir -p dist
           cd dist/${{ matrix.goos }}-${{ matrix.goarch }}
           zip -r ../../node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip node-box
           cd ../../
@@ -40,7 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: node-box-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          path: dist/node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
 
   release:
     needs: build
