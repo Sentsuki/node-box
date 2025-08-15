@@ -26,13 +26,13 @@ jobs:
 
       - name: Build
         run: |
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o updater-${{ matrix.goos }}-${{ matrix.goarch }} main.go
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o node-box-${{ matrix.goos }}-${{ matrix.goarch }} main.go
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: updater-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: updater-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: node-box-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: node-box-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     needs: build
