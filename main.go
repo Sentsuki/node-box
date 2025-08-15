@@ -103,10 +103,11 @@ type ClashConfig struct {
 
 // 配置文件
 type Config struct {
-	Subscriptions  []Subscription `json:"subscriptions"`
-	ConfigDir      string         `json:"config_dir"`
-	InsertMarker   string         `json:"insert_marker"`
-	UpdateInterval int            `json:"update_interval_hours"`
+	Subscriptions   []Subscription `json:"subscriptions"`
+	ConfigDir       string         `json:"config_dir"`
+	InsertMarker    string         `json:"insert_marker"`
+	UpdateInterval  int            `json:"update_interval_hours"`
+	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"` // 新增：排除包含指定关键词的节点
 }
 
 type Subscription struct {
@@ -303,8 +304,24 @@ func (nm *NodeManager) fetchAllNodes() ([]OutboundConfig, error) {
 			nodes[i].Tag = fmt.Sprintf("[%s] %s", sub.Name, nodes[i].Tag)
 		}
 
-		allNodes = append(allNodes, nodes...)
-		log.Printf("从订阅 %s 获取到 %d 个节点", sub.Name, len(nodes))
+		// 过滤排除包含指定关键词的节点
+		var filteredNodes []OutboundConfig
+		for _, node := range nodes {
+			shouldExclude := false
+			for _, keyword := range nm.config.ExcludeKeywords {
+				if strings.Contains(strings.ToLower(node.Tag), strings.ToLower(keyword)) {
+					log.Printf("排除节点: %s (包含关键词: %s)", node.Tag, keyword)
+					shouldExclude = true
+					break
+				}
+			}
+			if !shouldExclude {
+				filteredNodes = append(filteredNodes, node)
+			}
+		}
+
+		allNodes = append(allNodes, filteredNodes...)
+		log.Printf("从订阅 %s 获取到 %d 个节点，过滤后剩余 %d 个节点", sub.Name, len(nodes), len(filteredNodes))
 	}
 
 	return allNodes, nil
@@ -527,9 +544,10 @@ func generateExampleConfig() {
 				Enable: true,
 			},
 		},
-		ConfigDir:      "./configs",
-		InsertMarker:   "🚀 节点选择",
-		UpdateInterval: 6,
+		ConfigDir:       "./configs",
+		InsertMarker:    "🚀 节点选择",
+		UpdateInterval:  6,
+		ExcludeKeywords: []string{"故障转移", "流量", "专线"}, // 新增：排除包含这些关键词的节点
 	}
 
 	data, _ := json.MarshalIndent(config, "", "  ")
