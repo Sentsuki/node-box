@@ -13,34 +13,40 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        goos: [linux]
-        goarch: [amd64, arm64]
-
+        include:
+          - goos: linux
+            goarch: amd64
+            platform: linux-amd64
+          - goos: linux
+            goarch: arm64
+            platform: linux-arm64
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+      
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
+      
       - name: Build
         run: |
-          mkdir -p dist/${{ matrix.goos }}-${{ matrix.goarch }}
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/${{ matrix.goos }}-${{ matrix.goarch }}/node-box main.go
-
-      - name: Package
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o node-box main.go
+      
+      - name: Create archive
         run: |
-          cd dist/${{ matrix.goos }}-${{ matrix.goarch }}
-          zip -r ../../node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip node-box
-          cd ../../
-
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip -r node-box-${{ matrix.platform }}.zip node-box.exe
+          else
+            tar -czf node-box-${{ matrix.platform }}.tar.gz node-box
+          fi
+      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: node-box-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          name: node-box-${{ matrix.platform }}
+          path: node-box-${{ matrix.platform }}.*
 
   release:
     needs: build
@@ -50,17 +56,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./dist
-          pattern: node-box-*
-          merge-multiple: true
-
-      - name: List downloaded files
-        run: ls -R ./dist
-
+      
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          files: ./dist/*.zip
+          files: ./dist/*/*.{tar.gz,zip}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
