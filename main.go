@@ -42,23 +42,24 @@ type InboundConfig struct {
 }
 
 type OutboundConfig struct {
-	Type           string           `json:"type"`
-	Tag            string           `json:"tag"`
-	Server         string           `json:"server,omitempty"`
-	ServerPort     int              `json:"server_port,omitempty"`
-	Method         string           `json:"method,omitempty"`
-	Password       string           `json:"password,omitempty"`
-	UUID           string           `json:"uuid,omitempty"`
-	Security       string           `json:"security,omitempty"`
-	AlterId        int              `json:"alter_id,omitempty"`
-	Network        string           `json:"network,omitempty"`
-	Path           string           `json:"path,omitempty"`
-	Host           string           `json:"host,omitempty"`
-	ServiceName    string           `json:"service_name,omitempty"`
-	TLS            *TLSConfig       `json:"tls,omitempty"`
-	Transport      *TransportConfig `json:"transport,omitempty"`
-	PacketEncoding string           `json:"packet_encoding,omitempty"`
-	Outbounds      interface{}      `json:"outbounds,omitempty"` // 新增字段，用于存储selector类型的outbounds
+	Type           string                 `json:"type"`
+	Tag            string                 `json:"tag"`
+	Server         string                 `json:"server,omitempty"`
+	ServerPort     int                    `json:"server_port,omitempty"`
+	Method         string                 `json:"method,omitempty"`
+	Password       string                 `json:"password,omitempty"`
+	UUID           string                 `json:"uuid,omitempty"`
+	Security       string                 `json:"security,omitempty"`
+	AlterId        int                    `json:"alter_id,omitempty"`
+	Network        string                 `json:"network,omitempty"`
+	Path           string                 `json:"path,omitempty"`
+	Host           string                 `json:"host,omitempty"`
+	ServiceName    string                 `json:"service_name,omitempty"`
+	TLS            *TLSConfig             `json:"tls,omitempty"`
+	Transport      *TransportConfig       `json:"transport,omitempty"`
+	PacketEncoding string                 `json:"packet_encoding,omitempty"`
+	Outbounds      interface{}            `json:"outbounds,omitempty"` // 新增字段，用于存储selector类型的outbounds
+	ExtraFields    map[string]interface{} `json:"-"`                   // 存储所有未定义的字段
 }
 
 type TLSConfig struct {
@@ -172,16 +173,58 @@ func (nm *NodeManager) parseClashSubscription(data []byte) ([]OutboundConfig, er
 
 // 解析SingBox订阅
 func (nm *NodeManager) parseSingBoxSubscription(data []byte) ([]OutboundConfig, error) {
-	var config SingBoxConfig
-	if err := json.Unmarshal(data, &config); err != nil {
+	// 使用 map[string]interface{} 来保留所有字段，包括未定义的
+	var rawConfig map[string]interface{}
+	if err := json.Unmarshal(data, &rawConfig); err != nil {
 		return nil, fmt.Errorf("解析SingBox配置失败: %v", err)
 	}
 
+	// 提取 outbounds 字段
+	outboundsRaw, ok := rawConfig["outbounds"]
+	if !ok {
+		return nil, fmt.Errorf("配置中缺少 outbounds 字段")
+	}
+
+	outboundsArray, ok := outboundsRaw.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("outbounds 字段格式错误")
+	}
+
 	var outbounds []OutboundConfig
-	for _, outbound := range config.Outbounds {
-		if outbound.Type != "direct" && outbound.Type != "block" && outbound.Type != "selector" {
-			outbounds = append(outbounds, outbound)
+	for _, outboundRaw := range outboundsArray {
+		outboundMap, ok := outboundRaw.(map[string]interface{})
+		if !ok {
+			continue
 		}
+
+		// 检查类型，排除 direct、block、selector
+		outboundType, ok := outboundMap["type"].(string)
+		if !ok || outboundType == "direct" || outboundType == "block" || outboundType == "selector" {
+			continue
+		}
+
+		// 先解析为 OutboundConfig 结构体以获取已定义的字段
+		outboundJSON, err := json.Marshal(outboundMap)
+		if err != nil {
+			log.Printf("序列化 outbound 失败: %v", err)
+			continue
+		}
+
+		var outbound OutboundConfig
+		if err := json.Unmarshal(outboundJSON, &outbound); err != nil {
+			log.Printf("解析 outbound 失败: %v", err)
+			continue
+		}
+
+		// 将原始数据中的所有字段都保留到 ExtraFields 中
+		// 这样可以在后续处理中访问所有原始字段
+		// 注意：这里需要深拷贝，避免引用问题
+		outbound.ExtraFields = make(map[string]interface{})
+		for key, value := range outboundMap {
+			outbound.ExtraFields[key] = value
+		}
+
+		outbounds = append(outbounds, outbound)
 	}
 
 	return outbounds, nil
@@ -394,8 +437,42 @@ func (nm *NodeManager) updateConfigFile(configPath string, nodes []OutboundConfi
 		}
 	}
 
-	// 将新节点添加到outbounds数组
-	newOutbounds = append(newOutbounds, nodes...)
+	// 将新节点添加到outbounds数组，确保保留所有原始字段
+	for _, node := range nodes {
+		// 如果节点来自 singbox 订阅且有原始数据，则使用原始数据
+		if node.ExtraFields != nil {
+			// 更新 tag 字段以包含订阅前缀
+			node.ExtraFields["tag"] = node.Tag
+
+			// 直接使用原始数据，确保所有字段都被保留
+			// 创建一个新的 OutboundConfig 结构体，但主要使用 ExtraFields
+			var restoredNode OutboundConfig
+			restoredNode.Tag = node.Tag
+			restoredNode.Type = node.Type
+			restoredNode.Server = node.Server
+			restoredNode.ServerPort = node.ServerPort
+			restoredNode.Method = node.Method
+			restoredNode.Password = node.Password
+			restoredNode.UUID = node.UUID
+			restoredNode.Security = node.Security
+			restoredNode.AlterId = node.AlterId
+			restoredNode.Network = node.Network
+			restoredNode.Path = node.Path
+			restoredNode.Host = node.Host
+			restoredNode.ServiceName = node.ServiceName
+			restoredNode.TLS = node.TLS
+			restoredNode.Transport = node.Transport
+			restoredNode.PacketEncoding = node.PacketEncoding
+			restoredNode.Outbounds = node.Outbounds
+
+			// 将原始数据存储到 ExtraFields 中，确保所有字段都被保留
+			restoredNode.ExtraFields = node.ExtraFields
+
+			newOutbounds = append(newOutbounds, restoredNode)
+		} else {
+			newOutbounds = append(newOutbounds, node)
+		}
+	}
 
 	// 更新插入标记的outbounds数组
 	var nodeTags []string
@@ -467,8 +544,39 @@ func (nm *NodeManager) updateConfigFile(configPath string, nodes []OutboundConfi
 
 	config.Outbounds = newOutbounds
 
-	// 写回文件
-	updatedData, err := json.MarshalIndent(config, "", "  ")
+	// 写回文件，确保包含所有字段
+	// 由于 ExtraFields 使用了 json:"-" 标签，我们需要手动处理序列化
+	var finalOutbounds []interface{}
+	for _, outbound := range newOutbounds {
+		if outbound.ExtraFields != nil {
+			// 如果有 ExtraFields，使用原始数据
+			finalOutbounds = append(finalOutbounds, outbound.ExtraFields)
+		} else {
+			// 否则使用结构体数据
+			finalOutbounds = append(finalOutbounds, outbound)
+		}
+	}
+
+	// 创建最终的配置结构
+	finalConfig := map[string]interface{}{
+		"outbounds": finalOutbounds,
+	}
+
+	// 添加其他配置字段
+	if config.Log != nil {
+		finalConfig["log"] = config.Log
+	}
+	if config.DNS != nil {
+		finalConfig["dns"] = config.DNS
+	}
+	if config.Inbounds != nil {
+		finalConfig["inbounds"] = config.Inbounds
+	}
+	if config.Route != nil {
+		finalConfig["route"] = config.Route
+	}
+
+	updatedData, err := json.MarshalIndent(finalConfig, "", "  ")
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %v", err)
 	}
