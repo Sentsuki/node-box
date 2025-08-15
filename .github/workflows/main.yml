@@ -2,6 +2,7 @@ name: Build and Release
 
 permissions:
   contents: write
+
 on:
   push:
     tags:
@@ -26,13 +27,20 @@ jobs:
 
       - name: Build
         run: |
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o node-box-${{ matrix.goos }}-${{ matrix.goarch }} main.go
+          mkdir -p dist/${{ matrix.goos }}-${{ matrix.goarch }}
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/${{ matrix.goos }}-${{ matrix.goarch }}/node-box main.go
+
+      - name: Package
+        run: |
+          cd dist/${{ matrix.goos }}-${{ matrix.goarch }}
+          zip -r ../../node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip node-box
+          cd ../../
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: node-box-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: node-box-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: node-box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
 
   release:
     needs: build
@@ -48,6 +56,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          files: ./dist/**/*
+          files: ./dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
