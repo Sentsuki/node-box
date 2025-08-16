@@ -15,100 +15,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SingBox配置结构
-type SingBoxConfig struct {
-	Log       *LogConfig       `json:"log,omitempty"`
-	DNS       *DNSConfig       `json:"dns,omitempty"`
-	Inbounds  []InboundConfig  `json:"inbounds,omitempty"`
-	Outbounds []OutboundConfig `json:"outbounds"`
-	Route     *RouteConfig     `json:"route,omitempty"`
-}
-
-type LogConfig struct {
-	Level string `json:"level,omitempty"`
-}
-
-type DNSConfig struct {
-	Servers []interface{} `json:"servers,omitempty"`
-	Rules   []interface{} `json:"rules,omitempty"`
-}
-
-type InboundConfig struct {
-	Type   string      `json:"type"`
-	Tag    string      `json:"tag,omitempty"`
-	Listen string      `json:"listen,omitempty"`
-	Port   int         `json:"listen_port,omitempty"`
-	Users  interface{} `json:"users,omitempty"`
-}
-
-type OutboundConfig struct {
-	Type           string                 `json:"type"`
-	Tag            string                 `json:"tag"`
-	Server         string                 `json:"server,omitempty"`
-	ServerPort     int                    `json:"server_port,omitempty"`
-	Method         string                 `json:"method,omitempty"`
-	Password       string                 `json:"password,omitempty"`
-	UUID           string                 `json:"uuid,omitempty"`
-	Security       string                 `json:"security,omitempty"`
-	AlterId        int                    `json:"alter_id,omitempty"`
-	Network        string                 `json:"network,omitempty"`
-	Path           string                 `json:"path,omitempty"`
-	Host           string                 `json:"host,omitempty"`
-	ServiceName    string                 `json:"service_name,omitempty"`
-	TLS            *TLSConfig             `json:"tls,omitempty"`
-	Transport      *TransportConfig       `json:"transport,omitempty"`
-	PacketEncoding string                 `json:"packet_encoding,omitempty"`
-	Outbounds      interface{}            `json:"outbounds,omitempty"` // 新增字段，用于存储selector类型的outbounds
-	ExtraFields    map[string]interface{} `json:"-"`                   // 存储所有未定义的字段
-}
-
-type TLSConfig struct {
-	Enabled    bool   `json:"enabled,omitempty"`
-	ServerName string `json:"server_name,omitempty"`
-	Insecure   bool   `json:"insecure,omitempty"`
-}
-
-type TransportConfig struct {
-	Type    string                 `json:"type,omitempty"`
-	Path    string                 `json:"path,omitempty"`
-	Headers map[string]interface{} `json:"headers,omitempty"`
-}
-
-type RouteConfig struct {
-	Rules []interface{} `json:"rules,omitempty"`
-}
-
-// Clash配置结构
-type ClashProxy struct {
-	Name           string            `yaml:"name"`
-	Type           string            `yaml:"type"`
-	Server         string            `yaml:"server"`
-	Port           string            `yaml:"port"` // 修改为 string
-	Cipher         string            `yaml:"cipher,omitempty"`
-	Password       string            `yaml:"password,omitempty"`
-	UUID           string            `yaml:"uuid,omitempty"`
-	AlterId        string            `yaml:"alterId,omitempty"` // 修改为 string
-	Security       string            `yaml:"security,omitempty"`
-	Network        string            `yaml:"network,omitempty"`
-	WSPath         string            `yaml:"ws-path,omitempty"`
-	WSHeaders      map[string]string `yaml:"ws-headers,omitempty"`
-	TLS            bool              `yaml:"tls,omitempty"`
-	SkipCertVerify bool              `yaml:"skip-cert-verify,omitempty"`
-	ServerName     string            `yaml:"servername,omitempty"`
-	UDP            bool              `yaml:"udp,omitempty"` // 新增支持 udp 字段
-}
-
-type ClashConfig struct {
-	Proxies []ClashProxy `yaml:"proxies"`
-}
-
 // 配置文件
 type Config struct {
 	Subscriptions   []Subscription `json:"subscriptions"`
 	ConfigDir       string         `json:"config_dir"`
 	InsertMarker    string         `json:"insert_marker"`
 	UpdateInterval  int            `json:"update_interval_hours"`
-	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"` // 新增：排除包含指定关键词的节点
+	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
 }
 
 type Subscription struct {
@@ -116,6 +29,30 @@ type Subscription struct {
 	URL    string `json:"url"`
 	Type   string `json:"type"` // "clash" or "singbox"
 	Enable bool   `json:"enable"`
+}
+
+// Clash代理结构
+type ClashProxy struct {
+	Name           string            `yaml:"name"`
+	Type           string            `yaml:"type"`
+	Server         string            `yaml:"server"`
+	Port           string            `yaml:"port"`
+	Cipher         string            `yaml:"cipher,omitempty"`
+	Password       string            `yaml:"password,omitempty"`
+	UUID           string            `yaml:"uuid,omitempty"`
+	AlterId        string            `yaml:"alterId,omitempty"`
+	Security       string            `yaml:"security,omitempty"`
+	Network        string            `yaml:"network,omitempty"`
+	WSPath         string            `yaml:"ws-path,omitempty"`
+	WSHeaders      map[string]string `yaml:"ws-headers,omitempty"`
+	TLS            bool              `yaml:"tls,omitempty"`
+	SkipCertVerify bool              `yaml:"skip-cert-verify,omitempty"`
+	ServerName     string            `yaml:"servername,omitempty"`
+	UDP            bool              `yaml:"udp,omitempty"`
+}
+
+type ClashConfig struct {
+	Proxies []ClashProxy `yaml:"proxies"`
 }
 
 // NodeManager 节点管理器
@@ -153,34 +90,26 @@ func (nm *NodeManager) fetchSubscription(url string) ([]byte, error) {
 	return data, nil
 }
 
-// 解析Clash订阅
-func (nm *NodeManager) parseClashSubscription(data []byte) ([]OutboundConfig, error) {
-	var clashConfig ClashConfig
-	if err := yaml.Unmarshal(data, &clashConfig); err != nil {
-		return nil, fmt.Errorf("解析Clash配置失败: %v", err)
+// 处理订阅数据，根据类型选择不同的处理方式
+func (nm *NodeManager) processSubscription(subType string, data []byte) ([]map[string]interface{}, error) {
+	switch strings.ToLower(subType) {
+	case "singbox":
+		return nm.processSingBoxSubscription(data)
+	case "clash":
+		return nm.processClashSubscription(data)
+	default:
+		return nil, fmt.Errorf("不支持的订阅类型: %s", subType)
 	}
-
-	var outbounds []OutboundConfig
-	for _, proxy := range clashConfig.Proxies {
-		outbound := nm.convertClashToSingBox(proxy)
-		if outbound != nil {
-			outbounds = append(outbounds, *outbound)
-		}
-	}
-
-	return outbounds, nil
 }
 
-// 解析SingBox订阅
-func (nm *NodeManager) parseSingBoxSubscription(data []byte) ([]OutboundConfig, error) {
-	// 使用 map[string]interface{} 来保留所有字段，包括未定义的
-	var rawConfig map[string]interface{}
-	if err := json.Unmarshal(data, &rawConfig); err != nil {
+// 处理SingBox订阅 - 保留所有原始字段
+func (nm *NodeManager) processSingBoxSubscription(data []byte) ([]map[string]interface{}, error) {
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("解析SingBox配置失败: %v", err)
 	}
 
-	// 提取 outbounds 字段
-	outboundsRaw, ok := rawConfig["outbounds"]
+	outboundsRaw, ok := config["outbounds"]
 	if !ok {
 		return nil, fmt.Errorf("配置中缺少 outbounds 字段")
 	}
@@ -190,7 +119,7 @@ func (nm *NodeManager) parseSingBoxSubscription(data []byte) ([]OutboundConfig, 
 		return nil, fmt.Errorf("outbounds 字段格式错误")
 	}
 
-	var outbounds []OutboundConfig
+	var nodes []map[string]interface{}
 	for _, outboundRaw := range outboundsArray {
 		outboundMap, ok := outboundRaw.(map[string]interface{})
 		if !ok {
@@ -203,118 +132,148 @@ func (nm *NodeManager) parseSingBoxSubscription(data []byte) ([]OutboundConfig, 
 			continue
 		}
 
-		// 先解析为 OutboundConfig 结构体以获取已定义的字段
-		outboundJSON, err := json.Marshal(outboundMap)
-		if err != nil {
-			log.Printf("序列化 outbound 失败: %v", err)
-			continue
-		}
-
-		var outbound OutboundConfig
-		if err := json.Unmarshal(outboundJSON, &outbound); err != nil {
-			log.Printf("解析 outbound 失败: %v", err)
-			continue
-		}
-
-		// 将原始数据中的所有字段都保留到 ExtraFields 中
-		// 这样可以在后续处理中访问所有原始字段
-		// 注意：这里需要深拷贝，避免引用问题
-		outbound.ExtraFields = make(map[string]interface{})
-		for key, value := range outboundMap {
-			outbound.ExtraFields[key] = value
-		}
-
-		outbounds = append(outbounds, outbound)
+		// 直接保留原始节点数据，不做任何修改
+		nodes = append(nodes, outboundMap)
 	}
 
-	return outbounds, nil
+	return nodes, nil
+}
+
+// 处理Clash订阅 - 转换为SingBox格式
+func (nm *NodeManager) processClashSubscription(data []byte) ([]map[string]interface{}, error) {
+	var clashConfig ClashConfig
+	if err := yaml.Unmarshal(data, &clashConfig); err != nil {
+		return nil, fmt.Errorf("解析Clash配置失败: %v", err)
+	}
+
+	var nodes []map[string]interface{}
+	for _, proxy := range clashConfig.Proxies {
+		node := nm.convertClashToSingBox(proxy)
+		if node != nil {
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes, nil
 }
 
 // 转换Clash代理到SingBox格式
-func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) *OutboundConfig {
-	outbound := &OutboundConfig{
-		Tag:    proxy.Name,
-		Type:   strings.ToLower(proxy.Type),
-		Server: proxy.Server,
+func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) map[string]interface{} {
+	node := map[string]interface{}{
+		"type":   strings.ToLower(proxy.Type),
+		"server": proxy.Server,
 	}
 
-	// 转换 port
+	// 转换端口
 	port, err := strconv.Atoi(proxy.Port)
 	if err != nil {
-		log.Printf("转换 port 失败: %v", err)
+		log.Printf("转换端口失败: %v", err)
 		return nil
 	}
-	outbound.ServerPort = port
+	node["server_port"] = port
 
-	// 统一处理 UDP 相关的 packet_encoding（对 vmess 和 vless 都生效）
+	// 处理UDP相关的packet_encoding
 	if proxy.UDP {
 		if proxy.Type == "vmess" || proxy.Type == "vless" {
-			outbound.PacketEncoding = "xudp"
+			node["packet_encoding"] = "xudp"
 		}
 	}
 
-	// 统一处理 WebSocket 传输配置
+	// 处理WebSocket传输配置
 	if proxy.Network == "ws" {
-		outbound.Transport = &TransportConfig{
-			Type: "ws",
-			Path: proxy.WSPath,
+		transport := map[string]interface{}{
+			"type": "ws",
+			"path": proxy.WSPath,
 		}
 		if len(proxy.WSHeaders) > 0 {
 			headers := make(map[string]interface{})
 			for k, v := range proxy.WSHeaders {
 				headers[k] = v
 			}
-			outbound.Transport.Headers = headers
+			transport["headers"] = headers
 		}
+		node["transport"] = transport
 	}
 
-	// 统一处理 TLS 配置
+	// 处理TLS配置
 	if proxy.TLS {
-		outbound.TLS = &TLSConfig{
-			Enabled:    true,
-			ServerName: proxy.ServerName,
-			Insecure:   proxy.SkipCertVerify,
+		tls := map[string]interface{}{
+			"enabled":     true,
+			"server_name": proxy.ServerName,
+			"insecure":    proxy.SkipCertVerify,
 		}
+		node["tls"] = tls
 	}
 
+	// 根据不同类型设置特定字段
 	switch strings.ToLower(proxy.Type) {
 	case "ss":
-		outbound.Type = "shadowsocks"
-		outbound.Method = proxy.Cipher
-		outbound.Password = proxy.Password
+		node["type"] = "shadowsocks"
+		node["method"] = proxy.Cipher
+		node["password"] = proxy.Password
 
 	case "vmess":
-		outbound.Type = "vmess"
-		outbound.UUID = proxy.UUID
-		// 转换 alterId
-		alterId, err := strconv.Atoi(proxy.AlterId)
-		if err != nil {
-			log.Printf("转换 alterId 失败: %v", err)
-			return nil
+		node["type"] = "vmess"
+		node["uuid"] = proxy.UUID
+		if alterId, err := strconv.Atoi(proxy.AlterId); err == nil {
+			node["alter_id"] = alterId
 		}
-		outbound.AlterId = alterId
-		outbound.Security = proxy.Cipher // 映射 cipher 到 security
+		node["security"] = proxy.Cipher
 
 	case "vless":
-		outbound.Type = "vless"
-		outbound.UUID = proxy.UUID
-		outbound.Security = proxy.Cipher // 映射 cipher 到 security
+		node["type"] = "vless"
+		node["uuid"] = proxy.UUID
+		node["security"] = proxy.Cipher
 
 	case "trojan":
-		outbound.Type = "trojan"
-		outbound.Password = proxy.Password
+		node["type"] = "trojan"
+		node["password"] = proxy.Password
 
 	default:
 		log.Printf("不支持的代理类型: %s", proxy.Type)
 		return nil
 	}
 
-	return outbound
+	return node
+}
+
+// 统一处理tag转换逻辑
+func (nm *NodeManager) addSubscriptionPrefix(nodes []map[string]interface{}, subName string) []map[string]interface{} {
+	for _, node := range nodes {
+		if tag, ok := node["tag"].(string); ok {
+			node["tag"] = fmt.Sprintf("[%s] %s", subName, tag)
+		}
+	}
+	return nodes
+}
+
+// 过滤排除关键词的节点
+func (nm *NodeManager) filterNodes(nodes []map[string]interface{}) []map[string]interface{} {
+	var filteredNodes []map[string]interface{}
+	for _, node := range nodes {
+		tag, ok := node["tag"].(string)
+		if !ok {
+			continue
+		}
+
+		shouldExclude := false
+		for _, keyword := range nm.config.ExcludeKeywords {
+			if strings.Contains(strings.ToLower(tag), strings.ToLower(keyword)) {
+				log.Printf("排除节点: %s (包含关键词: %s)", tag, keyword)
+				shouldExclude = true
+				break
+			}
+		}
+		if !shouldExclude {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+	return filteredNodes
 }
 
 // 获取所有节点
-func (nm *NodeManager) fetchAllNodes() ([]OutboundConfig, error) {
-	var allNodes []OutboundConfig
+func (nm *NodeManager) fetchAllNodes() ([]map[string]interface{}, error) {
+	var allNodes []map[string]interface{}
 
 	for _, sub := range nm.config.Subscriptions {
 		if !sub.Enable {
@@ -328,45 +287,22 @@ func (nm *NodeManager) fetchAllNodes() ([]OutboundConfig, error) {
 			continue
 		}
 
-		var nodes []OutboundConfig
-		switch strings.ToLower(sub.Type) {
-		case "clash":
-			nodes, err = nm.parseClashSubscription(data)
-		case "singbox":
-			nodes, err = nm.parseSingBoxSubscription(data)
-		default:
-			log.Printf("不支持的订阅类型: %s", sub.Type)
-			continue
-		}
-
+		nodes, err := nm.processSubscription(sub.Type, data)
 		if err != nil {
-			log.Printf("解析订阅 %s 失败: %v", sub.Name, err)
+			log.Printf("处理订阅 %s 失败: %v", sub.Name, err)
 			continue
 		}
 
-		// 为节点添加订阅前缀
-		for i := range nodes {
-			nodes[i].Tag = fmt.Sprintf("[%s] %s", sub.Name, nodes[i].Tag)
-		}
+		// 统一执行tag转换逻辑
+		nodes = nm.addSubscriptionPrefix(nodes, sub.Name)
 
-		// 过滤排除包含指定关键词的节点
-		var filteredNodes []OutboundConfig
-		for _, node := range nodes {
-			shouldExclude := false
-			for _, keyword := range nm.config.ExcludeKeywords {
-				if strings.Contains(strings.ToLower(node.Tag), strings.ToLower(keyword)) {
-					log.Printf("排除节点: %s (包含关键词: %s)", node.Tag, keyword)
-					shouldExclude = true
-					break
-				}
-			}
-			if !shouldExclude {
-				filteredNodes = append(filteredNodes, node)
-			}
-		}
+		// 过滤排除关键词的节点
+		originalCount := len(nodes)
+		nodes = nm.filterNodes(nodes)
+		filteredCount := len(nodes)
 
-		allNodes = append(allNodes, filteredNodes...)
-		log.Printf("从订阅 %s 获取到 %d 个节点，过滤后剩余 %d 个节点", sub.Name, len(nodes), len(filteredNodes))
+		allNodes = append(allNodes, nodes...)
+		log.Printf("从订阅 %s 获取到 %d 个节点，过滤后剩余 %d 个节点", sub.Name, originalCount, filteredCount)
 	}
 
 	return allNodes, nil
@@ -391,192 +327,134 @@ func (nm *NodeManager) scanConfigFiles() ([]string, error) {
 	return configFiles, err
 }
 
-// 更新配置文件
-func (nm *NodeManager) updateConfigFile(configPath string, nodes []OutboundConfig) error {
+// 直接修改配置文件，不重组
+func (nm *NodeManager) updateConfigFile(configPath string, nodes []map[string]interface{}) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("读取配置文件失败: %v", err)
 	}
 
-	var config SingBoxConfig
+	var config map[string]interface{}
 	if err := json.Unmarshal(data, &config); err != nil {
 		return fmt.Errorf("解析配置文件失败: %v", err)
 	}
 
-	// 查找插入标记（selector类型的outbound）
-	var markerOutbound *OutboundConfig
-	for i, outbound := range config.Outbounds {
-		if outbound.Tag == nm.config.InsertMarker {
-			markerOutbound = &config.Outbounds[i]
-			break
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		return fmt.Errorf("配置文件中缺少 outbounds 字段")
+	}
+
+	outboundsArray, ok := outboundsRaw.([]interface{})
+	if !ok {
+		return fmt.Errorf("outbounds 字段格式错误")
+	}
+
+	// 找到插入标记的位置
+	var markerIndex = -1
+	var markerOutbound map[string]interface{}
+	for i, outboundRaw := range outboundsArray {
+		if outboundMap, ok := outboundRaw.(map[string]interface{}); ok {
+			if tag, ok := outboundMap["tag"].(string); ok && tag == nm.config.InsertMarker {
+				markerIndex = i
+				markerOutbound = outboundMap
+				break
+			}
 		}
 	}
 
-	if markerOutbound == nil {
+	if markerIndex == -1 {
 		return fmt.Errorf("未找到插入标记: %s", nm.config.InsertMarker)
 	}
 
 	// 检查插入标记是否为selector类型
-	if markerOutbound.Type != "selector" {
+	if markerType, ok := markerOutbound["type"].(string); !ok || markerType != "selector" {
 		return fmt.Errorf("插入标记 %s 不是selector类型", nm.config.InsertMarker)
 	}
 
-	// 移除旧的订阅节点（通过标签识别）
-	var newOutbounds []OutboundConfig
-	for _, outbound := range config.Outbounds {
-		// 保留非订阅节点
-		isSubscriptionNode := false
-		for _, sub := range nm.config.Subscriptions {
-			if strings.Contains(outbound.Tag, fmt.Sprintf("[%s]", sub.Name)) {
-				isSubscriptionNode = true
-				break
-			}
-		}
-		if !isSubscriptionNode {
-			newOutbounds = append(newOutbounds, outbound)
-		}
-	}
-
-	// 将新节点添加到outbounds数组，确保保留所有原始字段
-	for _, node := range nodes {
-		// 如果节点来自 singbox 订阅且有原始数据，则使用原始数据
-		if node.ExtraFields != nil {
-			// 更新 tag 字段以包含订阅前缀
-			node.ExtraFields["tag"] = node.Tag
-
-			// 直接使用原始数据，确保所有字段都被保留
-			// 创建一个新的 OutboundConfig 结构体，但主要使用 ExtraFields
-			var restoredNode OutboundConfig
-			restoredNode.Tag = node.Tag
-			restoredNode.Type = node.Type
-			restoredNode.Server = node.Server
-			restoredNode.ServerPort = node.ServerPort
-			restoredNode.Method = node.Method
-			restoredNode.Password = node.Password
-			restoredNode.UUID = node.UUID
-			restoredNode.Security = node.Security
-			restoredNode.AlterId = node.AlterId
-			restoredNode.Network = node.Network
-			restoredNode.Path = node.Path
-			restoredNode.Host = node.Host
-			restoredNode.ServiceName = node.ServiceName
-			restoredNode.TLS = node.TLS
-			restoredNode.Transport = node.Transport
-			restoredNode.PacketEncoding = node.PacketEncoding
-			restoredNode.Outbounds = node.Outbounds
-
-			// 将原始数据存储到 ExtraFields 中，确保所有字段都被保留
-			restoredNode.ExtraFields = node.ExtraFields
-
-			newOutbounds = append(newOutbounds, restoredNode)
-		} else {
-			newOutbounds = append(newOutbounds, node)
-		}
-	}
-
-	// 更新插入标记的outbounds数组
-	var nodeTags []string
-	for _, node := range nodes {
-		nodeTags = append(nodeTags, node.Tag)
-	}
-
-	// 查找更新后的插入标记位置
-	var updatedMarkerOutbound *OutboundConfig
-	for i := range newOutbounds {
-		if newOutbounds[i].Tag == nm.config.InsertMarker {
-			updatedMarkerOutbound = &newOutbounds[i]
-			break
-		}
-	}
-
-	if updatedMarkerOutbound == nil {
-		return fmt.Errorf("更新后未找到插入标记: %s", nm.config.InsertMarker)
-	}
-
-	// 将节点标签添加到selector的outbounds数组中
-	// 注意：这里需要处理interface{}类型，因为outbounds字段可能是[]string或[]interface{}
-	if outboundList, ok := updatedMarkerOutbound.Outbounds.([]string); ok {
-		// 移除旧的订阅节点标签
-		var newOutboundList []string
-		for _, tag := range outboundList {
-			isSubscriptionTag := false
-			for _, sub := range nm.config.Subscriptions {
-				if strings.Contains(tag, fmt.Sprintf("[%s]", sub.Name)) {
-					isSubscriptionTag = true
-					break
-				}
-			}
-			if !isSubscriptionTag {
-				newOutboundList = append(newOutboundList, tag)
-			}
-		}
-		// 添加新的节点标签
-		newOutboundList = append(newOutboundList, nodeTags...)
-		updatedMarkerOutbound.Outbounds = newOutboundList
-	} else if outboundList, ok := updatedMarkerOutbound.Outbounds.([]interface{}); ok {
-		// 移除旧的订阅节点标签
-		var newOutboundList []interface{}
-		for _, tag := range outboundList {
-			if tagStr, ok := tag.(string); ok {
-				isSubscriptionTag := false
+	// 移除旧的订阅节点
+	var newOutbounds []interface{}
+	for _, outboundRaw := range outboundsArray {
+		if outboundMap, ok := outboundRaw.(map[string]interface{}); ok {
+			if tag, ok := outboundMap["tag"].(string); ok {
+				isSubscriptionNode := false
 				for _, sub := range nm.config.Subscriptions {
-					if strings.Contains(tagStr, fmt.Sprintf("[%s]", sub.Name)) {
-						isSubscriptionTag = true
+					if strings.Contains(tag, fmt.Sprintf("[%s]", sub.Name)) {
+						isSubscriptionNode = true
 						break
 					}
 				}
-				if !isSubscriptionTag {
-					newOutboundList = append(newOutboundList, tag)
+				if !isSubscriptionNode {
+					newOutbounds = append(newOutbounds, outboundRaw)
 				}
 			} else {
-				newOutboundList = append(newOutboundList, tag)
+				newOutbounds = append(newOutbounds, outboundRaw)
+			}
+		} else {
+			newOutbounds = append(newOutbounds, outboundRaw)
+		}
+	}
+
+	// 添加新节点
+	for _, node := range nodes {
+		newOutbounds = append(newOutbounds, node)
+	}
+
+	// 更新selector的outbounds列表
+	var nodeTags []string
+	for _, node := range nodes {
+		if tag, ok := node["tag"].(string); ok {
+			nodeTags = append(nodeTags, tag)
+		}
+	}
+
+	// 找到更新后的插入标记位置
+	for i, outboundRaw := range newOutbounds {
+		if outboundMap, ok := outboundRaw.(map[string]interface{}); ok {
+			if tag, ok := outboundMap["tag"].(string); ok && tag == nm.config.InsertMarker {
+				// 更新selector的outbounds列表
+				if outboundList, ok := outboundMap["outbounds"].([]interface{}); ok {
+					// 移除旧的订阅节点标签
+					var newOutboundList []interface{}
+					for _, tag := range outboundList {
+						if tagStr, ok := tag.(string); ok {
+							isSubscriptionTag := false
+							for _, sub := range nm.config.Subscriptions {
+								if strings.Contains(tagStr, fmt.Sprintf("[%s]", sub.Name)) {
+									isSubscriptionTag = true
+									break
+								}
+							}
+							if !isSubscriptionTag {
+								newOutboundList = append(newOutboundList, tag)
+							}
+						} else {
+							newOutboundList = append(newOutboundList, tag)
+						}
+					}
+					// 添加新的节点标签
+					for _, tag := range nodeTags {
+						newOutboundList = append(newOutboundList, tag)
+					}
+					outboundMap["outbounds"] = newOutboundList
+				} else {
+					// 如果outbounds字段不存在，直接设置为节点标签数组
+					var newOutboundList []interface{}
+					for _, tag := range nodeTags {
+						newOutboundList = append(newOutboundList, tag)
+					}
+					outboundMap["outbounds"] = newOutboundList
+				}
+				newOutbounds[i] = outboundMap
+				break
 			}
 		}
-		// 添加新的节点标签
-		for _, tag := range nodeTags {
-			newOutboundList = append(newOutboundList, tag)
-		}
-		updatedMarkerOutbound.Outbounds = newOutboundList
-	} else {
-		// 如果outbounds字段不存在或类型不匹配，直接设置为节点标签数组
-		updatedMarkerOutbound.Outbounds = nodeTags
 	}
 
-	config.Outbounds = newOutbounds
+	// 更新配置
+	config["outbounds"] = newOutbounds
 
-	// 写回文件，确保包含所有字段
-	// 由于 ExtraFields 使用了 json:"-" 标签，我们需要手动处理序列化
-	var finalOutbounds []interface{}
-	for _, outbound := range newOutbounds {
-		if outbound.ExtraFields != nil {
-			// 如果有 ExtraFields，使用原始数据
-			finalOutbounds = append(finalOutbounds, outbound.ExtraFields)
-		} else {
-			// 否则使用结构体数据
-			finalOutbounds = append(finalOutbounds, outbound)
-		}
-	}
-
-	// 创建最终的配置结构
-	finalConfig := map[string]interface{}{
-		"outbounds": finalOutbounds,
-	}
-
-	// 添加其他配置字段
-	if config.Log != nil {
-		finalConfig["log"] = config.Log
-	}
-	if config.DNS != nil {
-		finalConfig["dns"] = config.DNS
-	}
-	if config.Inbounds != nil {
-		finalConfig["inbounds"] = config.Inbounds
-	}
-	if config.Route != nil {
-		finalConfig["route"] = config.Route
-	}
-
-	updatedData, err := json.MarshalIndent(finalConfig, "", "  ")
+	// 写回文件
+	updatedData, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %v", err)
 	}
@@ -657,7 +535,7 @@ func generateExampleConfig(configPath string) {
 		ConfigDir:       "./configs",
 		InsertMarker:    "🚀 节点选择",
 		UpdateInterval:  6,
-		ExcludeKeywords: []string{"故障转移", "流量", "专线"}, // 新增：排除包含这些关键词的节点
+		ExcludeKeywords: []string{"故障转移", "流量", "专线"},
 	}
 
 	data, _ := json.MarshalIndent(config, "", "  ")
