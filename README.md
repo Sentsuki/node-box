@@ -117,4 +117,4 @@ go build -o node-box main.go
 
 ## 许可证
 
-MIT License
+GPL-3.0 license
