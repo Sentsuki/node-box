@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,6 +23,16 @@ type Config struct {
 	InsertMarker    string         `json:"insert_marker"`
 	UpdateInterval  int            `json:"update_interval_hours"`
 	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
+	Proxy           *ProxyConfig   `json:"proxy,omitempty"` // 新增代理配置
+}
+
+// 代理配置
+type ProxyConfig struct {
+	Type     string `json:"type"`     // "http", "https", "socks5"
+	Host     string `json:"host"`     // 代理服务器地址
+	Port     int    `json:"port"`     // 代理服务器端口
+	Username string `json:"username"` // 用户名（可选）
+	Password string `json:"password"` // 密码（可选）
 }
 
 type Subscription struct {
@@ -71,12 +82,27 @@ func NewNodeManager(configPath string) (*NodeManager, error) {
 		return nil, fmt.Errorf("解析配置文件失败: %v", err)
 	}
 
+	// 记录代理配置信息
+	if config.Proxy != nil {
+		log.Printf("代理配置: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
+		if config.Proxy.Username != "" {
+			log.Printf("代理认证: %s", config.Proxy.Username)
+		}
+	} else {
+		log.Println("未配置代理，将使用直连")
+	}
+
 	return &NodeManager{config: &config}, nil
 }
 
 // 获取订阅内容
 func (nm *NodeManager) fetchSubscription(url string) ([]byte, error) {
-	resp, err := http.Get(url)
+	client, err := nm.createHTTPClient()
+	if err != nil {
+		return nil, fmt.Errorf("创建HTTP客户端失败: %v", err)
+	}
+
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("获取订阅失败: %v", err)
 	}
@@ -88,6 +114,68 @@ func (nm *NodeManager) fetchSubscription(url string) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// 创建支持代理的HTTP客户端
+func (nm *NodeManager) createHTTPClient() (*http.Client, error) {
+	if nm.config.Proxy == nil {
+		// 没有代理配置，使用默认客户端
+		return &http.Client{
+			Timeout: 30 * time.Second,
+		}, nil
+	}
+
+	// 构建代理URL
+	var proxyURL string
+	switch strings.ToLower(nm.config.Proxy.Type) {
+	case "http", "https":
+		if nm.config.Proxy.Username != "" && nm.config.Proxy.Password != "" {
+			proxyURL = fmt.Sprintf("%s://%s:%s@%s:%d",
+				nm.config.Proxy.Type,
+				nm.config.Proxy.Username,
+				nm.config.Proxy.Password,
+				nm.config.Proxy.Host,
+				nm.config.Proxy.Port)
+		} else {
+			proxyURL = fmt.Sprintf("%s://%s:%d",
+				nm.config.Proxy.Type,
+				nm.config.Proxy.Host,
+				nm.config.Proxy.Port)
+		}
+	case "socks5":
+		if nm.config.Proxy.Username != "" && nm.config.Proxy.Password != "" {
+			proxyURL = fmt.Sprintf("socks5://%s:%s@%s:%d",
+				nm.config.Proxy.Username,
+				nm.config.Proxy.Password,
+				nm.config.Proxy.Host,
+				nm.config.Proxy.Port)
+		} else {
+			proxyURL = fmt.Sprintf("socks5://%s:%d",
+				nm.config.Proxy.Host,
+				nm.config.Proxy.Port)
+		}
+	default:
+		return nil, fmt.Errorf("不支持的代理类型: %s", nm.config.Proxy.Type)
+	}
+
+	// 解析代理URL
+	proxyURLParsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("解析代理URL失败: %v", err)
+	}
+
+	// 创建支持代理的传输层
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURLParsed),
+	}
+
+	// 创建HTTP客户端
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+
+	return client, nil
 }
 
 // 处理订阅数据，根据类型选择不同的处理方式
@@ -536,7 +624,14 @@ func generateExampleConfig(configPath string) {
 		ConfigDir:       "./configs",
 		InsertMarker:    "🚀 节点选择",
 		UpdateInterval:  6,
-		ExcludeKeywords: []string{"故障转移", "流量", "专线"},
+		ExcludeKeywords: []string{"故障转移", "流量"},
+		Proxy: &ProxyConfig{
+			Type:     "http",
+			Host:     "127.0.0.1",
+			Port:     7890,
+			Username: "username", // 可选
+			Password: "password", // 可选
+		},
 	}
 
 	data, _ := json.MarshalIndent(config, "", "  ")
