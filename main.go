@@ -161,6 +161,7 @@ func (nm *NodeManager) processClashSubscription(data []byte) ([]map[string]inter
 func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) map[string]interface{} {
 	node := map[string]interface{}{
 		"type":   strings.ToLower(proxy.Type),
+		"tag":    proxy.Name,
 		"server": proxy.Server,
 	}
 
