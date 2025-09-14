@@ -52,8 +52,16 @@ type ConfigPath struct {
 // ModulesConfig represents the modules configuration section.
 // It contains different types of modules that can be fetched from remote sources.
 type ModulesConfig struct {
-	Log []Module `json:"log,omitempty"`
-	DNS []Module `json:"dns,omitempty"`
+	Log          []Module `json:"log,omitempty"`
+	DNS          []Module `json:"dns,omitempty"`
+	NTP          []Module `json:"ntp,omitempty"`
+	Certificate  []Module `json:"certificate,omitempty"`
+	Endpoints    []Module `json:"endpoints,omitempty"`
+	Inbounds     []Module `json:"inbounds,omitempty"`
+	Outbounds    []Module `json:"outbounds,omitempty"`
+	Route        []Module `json:"route,omitempty"`
+	Services     []Module `json:"services,omitempty"`
+	Experimental []Module `json:"experimental,omitempty"`
 }
 
 // Module represents a single module configuration.
@@ -224,6 +232,62 @@ func (c *Config) validateModulesConfig(modules *ModulesConfig) error {
 		}
 	}
 
+	// Validate NTP modules
+	for i, module := range modules.NTP {
+		if err := c.validateModule(module, "ntp", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Certificate modules
+	for i, module := range modules.Certificate {
+		if err := c.validateModule(module, "certificate", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Endpoints modules
+	for i, module := range modules.Endpoints {
+		if err := c.validateModule(module, "endpoints", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Inbounds modules
+	for i, module := range modules.Inbounds {
+		if err := c.validateModule(module, "inbounds", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Outbounds modules
+	for i, module := range modules.Outbounds {
+		if err := c.validateModule(module, "outbounds", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Route modules
+	for i, module := range modules.Route {
+		if err := c.validateModule(module, "route", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Services modules
+	for i, module := range modules.Services {
+		if err := c.validateModule(module, "services", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Experimental modules
+	for i, module := range modules.Experimental {
+		if err := c.validateModule(module, "experimental", i); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -271,11 +335,35 @@ func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
 	if c.Modules != nil {
 		allModules := make(map[string]bool)
 
-		// Collect all module names
+		// Collect all module names from all module types
 		for _, module := range c.Modules.Log {
 			allModules[module.Name] = true
 		}
 		for _, module := range c.Modules.DNS {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.NTP {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Certificate {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Endpoints {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Inbounds {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Outbounds {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Route {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Services {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Experimental {
 			allModules[module.Name] = true
 		}
 

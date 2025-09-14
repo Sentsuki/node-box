@@ -69,6 +69,70 @@ func (mm *ModuleManager) FetchAllModules() error {
 		}
 	}
 
+	// Fetch NTP modules
+	for _, module := range mm.config.Modules.NTP {
+		if err := mm.fetchModule(module, "ntp"); err != nil {
+			log.Printf("获取NTP模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
+	// Fetch Certificate modules
+	for _, module := range mm.config.Modules.Certificate {
+		if err := mm.fetchModule(module, "certificate"); err != nil {
+			log.Printf("获取Certificate模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
+	// Fetch Endpoints modules
+	for _, module := range mm.config.Modules.Endpoints {
+		if err := mm.fetchModule(module, "endpoints"); err != nil {
+			log.Printf("获取Endpoints模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
+	// Fetch Inbounds modules
+	for _, module := range mm.config.Modules.Inbounds {
+		if err := mm.fetchModule(module, "inbounds"); err != nil {
+			log.Printf("获取Inbounds模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
+	// Fetch Outbounds modules
+	for _, module := range mm.config.Modules.Outbounds {
+		if err := mm.fetchModule(module, "outbounds"); err != nil {
+			log.Printf("获取Outbounds模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
+	// Fetch Route modules
+	for _, module := range mm.config.Modules.Route {
+		if err := mm.fetchModule(module, "route"); err != nil {
+			log.Printf("获取Route模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
+	// Fetch Services modules
+	for _, module := range mm.config.Modules.Services {
+		if err := mm.fetchModule(module, "services"); err != nil {
+			log.Printf("获取Services模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
+	// Fetch Experimental modules
+	for _, module := range mm.config.Modules.Experimental {
+		if err := mm.fetchModule(module, "experimental"); err != nil {
+			log.Printf("获取Experimental模块失败 %s: %v", module.Name, err)
+			continue
+		}
+	}
+
 	log.Printf("模块获取完成，共获取 %d 个模块", len(mm.modules))
 	return nil
 }
@@ -150,6 +214,22 @@ func (mm *ModuleManager) GetModulesByType(moduleType string) map[string]map[stri
 		modules = mm.config.Modules.Log
 	case "dns":
 		modules = mm.config.Modules.DNS
+	case "ntp":
+		modules = mm.config.Modules.NTP
+	case "certificate":
+		modules = mm.config.Modules.Certificate
+	case "endpoints":
+		modules = mm.config.Modules.Endpoints
+	case "inbounds":
+		modules = mm.config.Modules.Inbounds
+	case "outbounds":
+		modules = mm.config.Modules.Outbounds
+	case "route":
+		modules = mm.config.Modules.Route
+	case "services":
+		modules = mm.config.Modules.Services
+	case "experimental":
+		modules = mm.config.Modules.Experimental
 	default:
 		log.Printf("未知的模块类型: %s", moduleType)
 		return result

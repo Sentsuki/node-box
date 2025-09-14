@@ -60,17 +60,65 @@ func GenerateExample(configPath string) error {
 					FromURL: "https://example.com/dns.json",
 				},
 			},
+			NTP: []Module{
+				{
+					Name:     "ntp1",
+					FromPath: "./configs/ntp.json",
+				},
+			},
+			Certificate: []Module{
+				{
+					Name:    "cert1",
+					FromURL: "https://example.com/certificate.json",
+				},
+			},
+			Endpoints: []Module{
+				{
+					Name:     "endpoints1",
+					FromPath: "./configs/endpoints.json",
+				},
+			},
+			Inbounds: []Module{
+				{
+					Name:    "inbounds1",
+					FromURL: "https://example.com/inbounds.json",
+				},
+			},
+			Outbounds: []Module{
+				{
+					Name:     "outbounds1",
+					FromPath: "./configs/outbounds.json",
+				},
+			},
+			Route: []Module{
+				{
+					Name:    "route1",
+					FromURL: "https://example.com/route.json",
+				},
+			},
+			Services: []Module{
+				{
+					Name:     "services1",
+					FromPath: "./configs/services.json",
+				},
+			},
+			Experimental: []Module{
+				{
+					Name:    "experimental1",
+					FromURL: "https://example.com/experimental.json",
+				},
+			},
 		},
 		Configs: []ConfigFile{
 			{
 				Name:    "config1",
 				File:    "./singbox/my_config.json",
-				Modules: []string{"log1", "dns1"},
+				Modules: []string{"log1", "dns1", "ntp1", "cert1"},
 			},
 			{
 				Name:    "config2",
 				File:    "./singbox/test_config.json",
-				Modules: []string{"log2", "dns2"},
+				Modules: []string{"log2", "dns2", "endpoints1", "inbounds1", "outbounds1", "route1", "services1", "experimental1"},
 			},
 		},
 		UpdateInterval: 6,
