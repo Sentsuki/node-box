@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"node-box/internal/config"
 )
@@ -22,12 +20,11 @@ var (
 	ErrConfigFileWrite     = errors.New("failed to write config file")
 	ErrModuleNotFound      = errors.New("module not found")
 	ErrInvalidConfigFormat = errors.New("invalid config format")
-	ErrUnsupportedFileType = errors.New("unsupported file type")
 )
 
 // ConfigUpdater handles updating configuration files with module data.
 // It can merge module configurations into target configuration files
-// and supports both JSON and YAML formats.
+// and supports JSON format.
 type ConfigUpdater struct {
 	moduleManager *ModuleManager
 }
@@ -61,24 +58,10 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, filePath, err)
 	}
 
-	// Parse the configuration file
+	// Parse the configuration file as JSON
 	var targetConfig map[string]any
-	fileExt := strings.ToLower(filepath.Ext(filePath))
-
-	switch fileExt {
-	case ".json":
-		if err := json.Unmarshal(data, &targetConfig); err != nil {
-			return fmt.Errorf("%w %s: %v", ErrConfigFileParse, filePath, err)
-		}
-	case ".yaml", ".yml":
-		// For YAML files, we'll need to implement YAML parsing
-		// For now, we'll treat them as JSON and let the user know
-		log.Printf("警告: YAML文件 %s 暂时按JSON格式处理", filePath)
-		if err := json.Unmarshal(data, &targetConfig); err != nil {
-			return fmt.Errorf("%w %s: %v", ErrConfigFileParse, filePath, err)
-		}
-	default:
-		return fmt.Errorf("%w: %s (supported: .json, .yaml, .yml)", ErrUnsupportedFileType, fileExt)
+	if err := json.Unmarshal(data, &targetConfig); err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, filePath, err)
 	}
 
 	// Apply modules to the configuration
@@ -88,7 +71,7 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 	}
 
 	// Write the updated configuration back to file
-	if err := cu.writeConfigFile(filePath, updatedConfig, fileExt); err != nil {
+	if err := cu.writeConfigFile(filePath, updatedConfig); err != nil {
 		return fmt.Errorf("写入配置文件失败 %s: %v", filePath, err)
 	}
 
@@ -138,28 +121,11 @@ func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleDa
 	return nil
 }
 
-// writeConfigFile writes the updated configuration to a file.
-// It supports both JSON and YAML formats.
-func (cu *ConfigUpdater) writeConfigFile(filePath string, config map[string]any, fileExt string) error {
-	var data []byte
-	var err error
-
-	switch fileExt {
-	case ".json":
-		data, err = json.MarshalIndent(config, "", "  ")
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrConfigFileWrite, err)
-		}
-	case ".yaml", ".yml":
-		// For YAML files, we'll need to implement YAML marshaling
-		// For now, we'll write as JSON with .yaml extension
-		log.Printf("警告: YAML文件 %s 将以JSON格式写入", filePath)
-		data, err = json.MarshalIndent(config, "", "  ")
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrConfigFileWrite, err)
-		}
-	default:
-		return fmt.Errorf("%w: unsupported file extension %s", ErrConfigFileWrite, fileExt)
+// writeConfigFile writes the updated configuration to a file as JSON.
+func (cu *ConfigUpdater) writeConfigFile(filePath string, config map[string]any) error {
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrConfigFileWrite, err)
 	}
 
 	if err := os.WriteFile(filePath, data, 0644); err != nil {

@@ -69,7 +69,7 @@ func GenerateExample(configPath string) error {
 			},
 			{
 				Name:    "config2",
-				File:    "./singbox/test_config.yaml",
+				File:    "./singbox/test_config.json",
 				Modules: []string{"log2", "dns2"},
 			},
 		},
