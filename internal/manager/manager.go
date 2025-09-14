@@ -16,12 +16,12 @@ import (
 
 // Manager package errors
 var (
-	ErrHTTPClientCreation    = errors.New("failed to create HTTP client")
-	ErrNoConfigFiles         = errors.New("no configuration files found")
-	ErrNoNodes               = errors.New("no nodes retrieved from subscriptions")
-	ErrUnsupportedSubType    = errors.New("unsupported subscription type")
-	ErrPartialUpdateFailure  = errors.New("partial configuration update failure")
-	ErrAllUpdatesFailure     = errors.New("all configuration updates failed")
+	ErrHTTPClientCreation   = errors.New("failed to create HTTP client")
+	ErrNoConfigFiles        = errors.New("no configuration files found")
+	ErrNoNodes              = errors.New("no nodes retrieved from subscriptions")
+	ErrUnsupportedSubType   = errors.New("unsupported subscription type")
+	ErrPartialUpdateFailure = errors.New("partial configuration update failure")
+	ErrAllUpdatesFailure    = errors.New("all configuration updates failed")
 )
 
 // NodeManager coordinates all components to implement core business logic.
@@ -39,7 +39,6 @@ type NodeManager struct {
 // NewNodeManager creates a new NodeManager instance with all necessary components.
 // It initializes HTTP client, subscription processors, file operations, and node filtering
 // based on the provided configuration.
-func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	// 创建HTTP客户端
 	httpClient, err := client.NewHTTPClient(cfg.Proxy)
@@ -179,7 +178,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		err := nm.updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames)
 		if err != nil {
 			errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
-			log.Printf(errorMsg)
+			log.Printf("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}

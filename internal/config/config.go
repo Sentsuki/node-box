@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -129,14 +130,7 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 
 	validTypes := []string{"clash", "singbox"}
 	subType := strings.ToLower(sub.Type)
-	isValidType := false
-	for _, validType := range validTypes {
-		if subType == validType {
-			isValidType = true
-			break
-		}
-	}
-	if !isValidType {
+	if !slices.Contains(validTypes, subType) {
 		return fmt.Errorf("subscription %d (%s): invalid type '%s', must be one of: %v",
 			index, sub.Name, sub.Type, validTypes)
 	}
@@ -156,14 +150,7 @@ func (c *Config) validateProxyConfig(proxy *ProxyConfig) error {
 
 	validTypes := []string{"http", "https", "socks5"}
 	proxyType := strings.ToLower(proxy.Type)
-	isValidType := false
-	for _, validType := range validTypes {
-		if proxyType == validType {
-			isValidType = true
-			break
-		}
-	}
-	if !isValidType {
+	if !slices.Contains(validTypes, proxyType) {
 		return fmt.Errorf("%w: invalid type '%s', must be one of: %v",
 			ErrProxyConfigInvalid, proxy.Type, validTypes)
 	}
