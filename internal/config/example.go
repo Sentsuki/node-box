@@ -12,32 +12,34 @@ import (
 // proxy configuration, and other common settings.
 func GenerateExample(configPath string) error {
 	config := Config{
-		Subscriptions: []Subscription{
-			{
-				Name:   "示例订阅1",
-				URL:    "https://example.com/clash-subscription",
-				Type:   "clash",
-				Enable: true,
+		Nodes: &NodesConfig{
+			Subscriptions: []Subscription{
+				{
+					Name:   "示例订阅1",
+					URL:    "https://example.com/clash-subscription",
+					Type:   "clash",
+					Enable: true,
+				},
+				{
+					Name:   "示例订阅2",
+					URL:    "https://example.com/singbox-subscription",
+					Type:   "singbox",
+					Enable: true,
+				},
 			},
-			{
-				Name:   "示例订阅2",
-				URL:    "https://example.com/singbox-subscription",
-				Type:   "singbox",
-				Enable: true,
+			Targets: []ConfigPath{
+				{
+					InsertPath:   "./configs",
+					InsertMarker: "🚀 节点选择",
+				},
+				{
+					InsertPath:   "./test",
+					InsertMarker: "Proxy",
+				},
 			},
+			ExcludeKeywords: []string{"故障转移", "流量"},
 		},
-		ConfigPaths: []ConfigPath{
-			{
-				Path:         "./configs",
-				InsertMarker: "🚀 节点选择",
-			},
-			{
-				Path:         "./test",
-				InsertMarker: "Proxy",
-			},
-		},
-		UpdateInterval:  6,
-		ExcludeKeywords: []string{"故障转移", "流量"},
+		UpdateInterval: 6,
 		Proxy: &ProxyConfig{
 			Type:     "http",
 			Host:     "127.0.0.1",

@@ -58,13 +58,13 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	scanners := make(map[string]*fileops.Scanner)
 	updaters := make(map[string]*fileops.Updater)
 
-	for _, configPath := range cfg.ConfigPaths {
-		scanners[configPath.Path] = fileops.NewScanner(configPath.Path)
-		updaters[configPath.Path] = fileops.NewUpdater(configPath.InsertMarker)
+	for _, target := range cfg.Nodes.Targets {
+		scanners[target.InsertPath] = fileops.NewScanner(target.InsertPath)
+		updaters[target.InsertPath] = fileops.NewUpdater(target.InsertMarker)
 	}
 
 	// 创建节点过滤器
-	filter := subscription.NewFilter(cfg.ExcludeKeywords)
+	filter := subscription.NewFilter(cfg.Nodes.ExcludeKeywords)
 
 	return &NodeManager{
 		config:     cfg,
@@ -85,7 +85,7 @@ func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
 
 	log.Println("开始获取所有订阅节点...")
 
-	for _, sub := range nm.config.Subscriptions {
+	for _, sub := range nm.config.Nodes.Subscriptions {
 		if !sub.Enable {
 			log.Printf("跳过已禁用的订阅: %s", sub.Name)
 			continue
@@ -148,7 +148,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 
 	// 2. 准备订阅名称列表（用于清理旧节点）
 	var subscriptionNames []string
-	for _, sub := range nm.config.Subscriptions {
+	for _, sub := range nm.config.Nodes.Subscriptions {
 		if sub.Enable {
 			subscriptionNames = append(subscriptionNames, sub.Name)
 		}
@@ -165,29 +165,29 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	totalSuccessCount := 0
 	totalFileCount := 0
 
-	for _, configPath := range nm.config.ConfigPaths {
-		log.Printf("处理配置路径: %s (marker: %s)", configPath.Path, configPath.InsertMarker)
+	for _, target := range nm.config.Nodes.Targets {
+		log.Printf("处理配置路径: %s (marker: %s)", target.InsertPath, target.InsertMarker)
 
 		// 扫描当前路径下的配置文件
-		scanner := nm.scanners[configPath.Path]
+		scanner := nm.scanners[target.InsertPath]
 		configFiles, err := scanner.ScanConfigFiles()
 		if err != nil {
-			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", configPath.Path, err)
+			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.InsertPath, err)
 			log.Printf("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}
 
 		if len(configFiles) == 0 {
-			log.Printf("路径 %s 下未找到配置文件", configPath.Path)
+			log.Printf("路径 %s 下未找到配置文件", target.InsertPath)
 			continue
 		}
 
-		log.Printf("在路径 %s 下找到 %d 个配置文件", configPath.Path, len(configFiles))
+		log.Printf("在路径 %s 下找到 %d 个配置文件", target.InsertPath, len(configFiles))
 		totalFileCount += len(configFiles)
 
 		// 获取对应的更新器
-		updater := nm.updaters[configPath.Path]
+		updater := nm.updaters[target.InsertPath]
 
 		// 更新当前路径下的每个配置文件
 		pathSuccessCount := 0
@@ -208,7 +208,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 
 		totalSuccessCount += pathSuccessCount
 		log.Printf("路径 %s 处理完成: 成功 %d 个，失败 %d 个",
-			configPath.Path, pathSuccessCount, len(configFiles)-pathSuccessCount)
+			target.InsertPath, pathSuccessCount, len(configFiles)-pathSuccessCount)
 	}
 
 	// 5. 汇总结果

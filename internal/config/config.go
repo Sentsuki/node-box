@@ -17,15 +17,17 @@ import (
 // It contains all settings needed for the node-box application to operate,
 // including subscription sources, directory paths, and update intervals.
 type Config struct {
-	Subscriptions   []Subscription `json:"subscriptions"`
-	ConfigPaths     []ConfigPath   `json:"config_paths"`
-	UpdateInterval  int            `json:"update_interval_hours"`
-	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
-	Proxy           *ProxyConfig   `json:"proxy,omitempty"`
+	Nodes          *NodesConfig `json:"nodes"`
+	UpdateInterval int          `json:"update_interval_hours"`
+	Proxy          *ProxyConfig `json:"proxy,omitempty"`
+}
 
-	// 向后兼容的字段，如果存在则会被转换为ConfigPaths
-	ConfigDir    string `json:"config_dir,omitempty"`
-	InsertMarker string `json:"insert_marker,omitempty"`
+// NodesConfig represents the nodes configuration section.
+// It contains subscriptions, targets, and exclude keywords.
+type NodesConfig struct {
+	Subscriptions   []Subscription `json:"subscriptions"`
+	Targets         []ConfigPath   `json:"targets"`
+	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
 }
 
 // Subscription represents a single subscription source configuration.
@@ -41,7 +43,7 @@ type Subscription struct {
 // ConfigPath represents a configuration path with its associated insert marker.
 // It defines where configuration files are located and which marker to use for updates.
 type ConfigPath struct {
-	Path         string `json:"path"`
+	InsertPath   string `json:"insert_path"`
 	InsertMarker string `json:"insert_marker"`
 }
 
@@ -60,8 +62,6 @@ var (
 	ErrConfigNotFound        = errors.New("config file not found")
 	ErrInvalidConfigFormat   = errors.New("invalid config format")
 	ErrProxyConfigInvalid    = errors.New("invalid proxy configuration")
-	ErrEmptyConfigDir        = errors.New("config directory cannot be empty")
-	ErrEmptyInsertMarker     = errors.New("insert marker cannot be empty")
 	ErrInvalidUpdateInterval = errors.New("update interval must be greater than 0")
 )
 
@@ -98,24 +98,18 @@ func Load(path string) (*Config, error) {
 // Validate checks if the configuration is valid and returns an error if not.
 // It validates all required fields and ensures the configuration is consistent.
 func (c *Config) Validate() error {
-	// 处理向后兼容性：如果使用旧格式，转换为新格式
-	if c.ConfigDir != "" && c.InsertMarker != "" && len(c.ConfigPaths) == 0 {
-		c.ConfigPaths = []ConfigPath{
-			{
-				Path:         c.ConfigDir,
-				InsertMarker: c.InsertMarker,
-			},
-		}
-		log.Println("检测到旧配置格式，已自动转换为新格式")
+	// 验证 nodes 配置
+	if c.Nodes == nil {
+		return fmt.Errorf("nodes configuration is required")
 	}
 
-	// 验证配置路径
-	if len(c.ConfigPaths) == 0 {
-		return fmt.Errorf("config_paths cannot be empty")
+	// 验证 targets (配置路径)
+	if len(c.Nodes.Targets) == 0 {
+		return fmt.Errorf("nodes.targets cannot be empty")
 	}
 
-	for i, configPath := range c.ConfigPaths {
-		if err := c.validateConfigPath(configPath, i); err != nil {
+	for i, target := range c.Nodes.Targets {
+		if err := c.validateConfigPath(target, i); err != nil {
 			return err
 		}
 	}
@@ -125,7 +119,7 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate subscriptions
-	for i, sub := range c.Subscriptions {
+	for i, sub := range c.Nodes.Subscriptions {
 		if err := c.validateSubscription(sub, i); err != nil {
 			return err
 		}
@@ -143,12 +137,12 @@ func (c *Config) Validate() error {
 
 // validateConfigPath validates a single config path configuration
 func (c *Config) validateConfigPath(configPath ConfigPath, index int) error {
-	if configPath.Path == "" {
-		return fmt.Errorf("config_paths[%d]: path cannot be empty", index)
+	if configPath.InsertPath == "" {
+		return fmt.Errorf("targets[%d]: insert_path cannot be empty", index)
 	}
 
 	if configPath.InsertMarker == "" {
-		return fmt.Errorf("config_paths[%d]: insert_marker cannot be empty", index)
+		return fmt.Errorf("targets[%d]: insert_marker cannot be empty", index)
 	}
 
 	return nil
