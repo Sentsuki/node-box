@@ -57,14 +57,28 @@
   - 添加函数文档注释
   - _需求: 2.3, 8.3_
 
-- [ ] 3. 实现client包
-- [ ] 3.1 创建HTTP客户端接口和实现
+- [x] 3. 实现client包
+
+
+
+
+
+- [x] 3.1 创建HTTP客户端接口和实现
+
+
   - 定义HTTPClient接口
   - 实现支持代理的HTTP客户端
   - 将createHTTPClient逻辑移到client包
   - _需求: 3.1, 3.3_
 
-- [ ] 3.2 实现订阅获取器
+
+
+- [x] 3.2 实现订阅获取器
+
+
+
+
+
   - 创建Fetcher结构体
   - 实现FetchSubscription方法
   - 将fetchSubscription逻辑移到client包
