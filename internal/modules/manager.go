@@ -75,6 +75,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 
 // fetchModule fetches a single module from its configured source.
 // It handles both local file paths and remote URLs.
+// Remote modules are expected to be standard JSON format.
 func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) error {
 	var data []byte
 	var err error
@@ -86,7 +87,7 @@ func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) er
 			return fmt.Errorf("%w %s: %v", ErrModuleFetchFailed, module.Name, err)
 		}
 	} else if module.FromURL != "" {
-		// Fetch from remote URL
+		// Fetch from remote URL (expected to be standard JSON)
 		data, err = mm.fetcher.FetchSubscription(module.FromURL)
 		if err != nil {
 			return fmt.Errorf("%w %s: %v", ErrModuleFetchFailed, module.Name, err)
@@ -95,7 +96,7 @@ func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) er
 		return fmt.Errorf("%w %s: no source specified", ErrModuleFetchFailed, module.Name)
 	}
 
-	// Parse module data
+	// Parse module data as standard JSON
 	var moduleData map[string]any
 	if err := json.Unmarshal(data, &moduleData); err != nil {
 		return fmt.Errorf("%w %s: %v", ErrModuleParseFailed, module.Name, err)

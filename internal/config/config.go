@@ -69,6 +69,7 @@ type Module struct {
 type ConfigFile struct {
 	Name    string   `json:"name"`    // configuration name
 	Path    string   `json:"path"`    // target configuration file path
+	File    string   `json:"file"`    // target configuration file path (alternative field name)
 	Modules []string `json:"modules"` // list of module names to apply
 }
 
@@ -253,8 +254,13 @@ func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
 		return fmt.Errorf("configs[%d]: name cannot be empty", index)
 	}
 
-	if configFile.Path == "" {
-		return fmt.Errorf("configs[%d] (%s): path cannot be empty", index, configFile.Name)
+	// Support both 'path' and 'file' field names
+	filePath := configFile.Path
+	if filePath == "" {
+		filePath = configFile.File
+	}
+	if filePath == "" {
+		return fmt.Errorf("configs[%d] (%s): path or file cannot be empty", index, configFile.Name)
 	}
 
 	if len(configFile.Modules) == 0 {

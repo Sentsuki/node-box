@@ -42,34 +42,40 @@ func NewConfigUpdater(moduleManager *ModuleManager) *ConfigUpdater {
 // UpdateConfigFile updates a configuration file with the specified modules.
 // It merges the module configurations into the target file based on the module types.
 func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
-	log.Printf("开始更新配置文件: %s (%s)", configFile.Name, configFile.Path)
+	// Support both 'path' and 'file' field names
+	filePath := configFile.Path
+	if filePath == "" {
+		filePath = configFile.File
+	}
+
+	log.Printf("开始更新配置文件: %s (%s)", configFile.Name, filePath)
 
 	// Check if config file exists
-	if _, err := os.Stat(configFile.Path); os.IsNotExist(err) {
-		return fmt.Errorf("%w: %s", ErrConfigFileNotFound, configFile.Path)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("%w: %s", ErrConfigFileNotFound, filePath)
 	}
 
 	// Read the target configuration file
-	data, err := os.ReadFile(configFile.Path)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configFile.Path, err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, filePath, err)
 	}
 
 	// Parse the configuration file
 	var targetConfig map[string]any
-	fileExt := strings.ToLower(filepath.Ext(configFile.Path))
+	fileExt := strings.ToLower(filepath.Ext(filePath))
 
 	switch fileExt {
 	case ".json":
 		if err := json.Unmarshal(data, &targetConfig); err != nil {
-			return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configFile.Path, err)
+			return fmt.Errorf("%w %s: %v", ErrConfigFileParse, filePath, err)
 		}
 	case ".yaml", ".yml":
 		// For YAML files, we'll need to implement YAML parsing
 		// For now, we'll treat them as JSON and let the user know
-		log.Printf("警告: YAML文件 %s 暂时按JSON格式处理", configFile.Path)
+		log.Printf("警告: YAML文件 %s 暂时按JSON格式处理", filePath)
 		if err := json.Unmarshal(data, &targetConfig); err != nil {
-			return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configFile.Path, err)
+			return fmt.Errorf("%w %s: %v", ErrConfigFileParse, filePath, err)
 		}
 	default:
 		return fmt.Errorf("%w: %s (supported: .json, .yaml, .yml)", ErrUnsupportedFileType, fileExt)
@@ -82,11 +88,11 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 	}
 
 	// Write the updated configuration back to file
-	if err := cu.writeConfigFile(configFile.Path, updatedConfig, fileExt); err != nil {
-		return fmt.Errorf("写入配置文件失败 %s: %v", configFile.Path, err)
+	if err := cu.writeConfigFile(filePath, updatedConfig, fileExt); err != nil {
+		return fmt.Errorf("写入配置文件失败 %s: %v", filePath, err)
 	}
 
-	log.Printf("成功更新配置文件: %s", configFile.Path)
+	log.Printf("成功更新配置文件: %s", filePath)
 	return nil
 }
 
@@ -116,89 +122,19 @@ func (cu *ConfigUpdater) applyModules(targetConfig map[string]any, moduleNames [
 	return updatedConfig, nil
 }
 
-// applyModuleByType applies a module based on its type (log, dns, etc.).
-// It merges the module data into the appropriate section of the configuration.
+// applyModuleByType applies a module by directly replacing/inserting the module data.
+// Since remote modules are standard JSON, we directly replace/insert without type detection.
+// This avoids element loss that could occur during complex parsing and mapping.
 func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleData map[string]any, moduleName string) error {
-	// Determine module type based on the module name or content
-	moduleType := cu.detectModuleType(moduleData, moduleName)
+	log.Printf("应用模块 %s", moduleName)
 
-	log.Printf("应用模块 %s (类型: %s)", moduleName, moduleType)
-
-	switch moduleType {
-	case "log":
-		return cu.applyLogModule(targetConfig, moduleData)
-	case "dns":
-		return cu.applyDNSModule(targetConfig, moduleData)
-	default:
-		// For unknown types, try to merge the entire module data
-		return cu.applyGenericModule(targetConfig, moduleData, moduleName)
-	}
-}
-
-// detectModuleType detects the type of a module based on its content or name.
-func (cu *ConfigUpdater) detectModuleType(moduleData map[string]any, moduleName string) string {
-	// Check if the module has specific fields that indicate its type
-	if _, hasLog := moduleData["log"]; hasLog {
-		return "log"
-	}
-	if _, hasDNS := moduleData["dns"]; hasDNS {
-		return "dns"
-	}
-	if _, hasOutbounds := moduleData["outbounds"]; hasOutbounds {
-		return "outbounds"
-	}
-
-	// Check module name for type hints
-	nameLower := strings.ToLower(moduleName)
-	if strings.Contains(nameLower, "log") {
-		return "log"
-	}
-	if strings.Contains(nameLower, "dns") {
-		return "dns"
-	}
-
-	// Default to generic
-	return "generic"
-}
-
-// applyLogModule applies a log module to the target configuration.
-func (cu *ConfigUpdater) applyLogModule(targetConfig map[string]any, moduleData map[string]any) error {
-	if logConfig, exists := moduleData["log"]; exists {
-		targetConfig["log"] = logConfig
-		log.Printf("已应用日志配置")
-	} else {
-		// If the module data itself is the log configuration
-		targetConfig["log"] = moduleData
-		log.Printf("已应用日志配置 (直接模式)")
-	}
-	return nil
-}
-
-// applyDNSModule applies a DNS module to the target configuration.
-func (cu *ConfigUpdater) applyDNSModule(targetConfig map[string]any, moduleData map[string]any) error {
-	if dnsConfig, exists := moduleData["dns"]; exists {
-		targetConfig["dns"] = dnsConfig
-		log.Printf("已应用DNS配置")
-	} else {
-		// If the module data itself is the DNS configuration
-		targetConfig["dns"] = moduleData
-		log.Printf("已应用DNS配置 (直接模式)")
-	}
-	return nil
-}
-
-// applyGenericModule applies a generic module to the target configuration.
-func (cu *ConfigUpdater) applyGenericModule(targetConfig map[string]any, moduleData map[string]any, moduleName string) error {
-	// For generic modules, merge the data at the top level
+	// 直接替换整个模块数据到目标配置中
+	// 远程模块都是标准JSON，无需复杂解析，直接替换避免元素丢失
 	for key, value := range moduleData {
-		// Avoid overwriting critical configuration sections
-		if key == "outbounds" || key == "routing" {
-			log.Printf("跳过关键配置段: %s", key)
-			continue
-		}
 		targetConfig[key] = value
+		log.Printf("已应用配置段: %s", key)
 	}
-	log.Printf("已应用通用模块配置: %s", moduleName)
+
 	return nil
 }
 

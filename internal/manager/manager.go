@@ -309,12 +309,14 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 
 // UpdateAllConfigurations updates both node configurations and module configurations.
 // It coordinates the complete workflow of updating all types of configurations.
+// Execution order: 1. 节点配置 2. 模块配置 3. 更新配置
 func (nm *NodeManager) UpdateAllConfigurations() error {
 	log.Println("开始更新所有配置...")
 
 	var errors []string
 
 	// 1. 更新节点配置
+	log.Println("步骤 1/2: 更新节点配置...")
 	if err := nm.UpdateAllConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("节点配置更新失败: %v", err)
 		log.Printf("%s", errorMsg)
@@ -324,6 +326,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 	}
 
 	// 2. 更新模块配置
+	log.Println("步骤 2/2: 更新模块配置...")
 	if err := nm.UpdateModuleConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("模块配置更新失败: %v", err)
 		log.Printf("%s", errorMsg)

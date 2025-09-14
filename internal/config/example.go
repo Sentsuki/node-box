@@ -64,12 +64,12 @@ func GenerateExample(configPath string) error {
 		Configs: []ConfigFile{
 			{
 				Name:    "config1",
-				Path:    "./singbox/my_config.json",
+				File:    "./singbox/my_config.json",
 				Modules: []string{"log1", "dns1"},
 			},
 			{
 				Name:    "config2",
-				Path:    "./singbox/test_config.yaml",
+				File:    "./singbox/test_config.yaml",
 				Modules: []string{"log2", "dns2"},
 			},
 		},
