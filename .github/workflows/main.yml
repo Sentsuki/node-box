@@ -32,7 +32,7 @@ jobs:
       
       - name: Build
         run: |
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o node-box main.go
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o node-box ./cmd/node-box
       
       - name: Create archive
         run: |
