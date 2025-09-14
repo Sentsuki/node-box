@@ -5,6 +5,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -90,20 +91,11 @@ func (c *Client) Get(targetURL string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %d %s", ErrInvalidStatusCode, resp.StatusCode, resp.Status)
 	}
 
-	// Read response body
-	body := make([]byte, 0, resp.ContentLength)
-	buffer := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buffer)
-		if n > 0 {
-			body = append(body, buffer[:n]...)
-		}
-		if err != nil {
-			if err.Error() == "EOF" {
-				break
-			}
-			return nil, fmt.Errorf("%w: %v", ErrReadResponseBody, err)
-		}
+	// Read response body using io.ReadAll for safer handling
+	// This avoids the makeslice error when ContentLength is invalid
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrReadResponseBody, err)
 	}
 
 	return body, nil
