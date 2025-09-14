@@ -39,7 +39,7 @@ func (s *Scheduler) Start() error {
 
 	// 立即执行一次更新
 	log.Println("执行初始配置更新...")
-	if err := s.manager.UpdateAllConfigs(); err != nil {
+	if err := s.manager.UpdateAllConfigurations(); err != nil {
 		log.Printf("初始配置更新失败: %v", err)
 		// 不因为初始更新失败而停止调度器
 	}
@@ -59,7 +59,7 @@ func (s *Scheduler) Start() error {
 		case <-ticker.C:
 			log.Println("开始定时配置更新...")
 
-			if err := s.manager.UpdateAllConfigs(); err != nil {
+			if err := s.manager.UpdateAllConfigurations(); err != nil {
 				log.Printf("定时配置更新失败: %v", err)
 				// 继续运行，不因为单次更新失败而停止调度器
 			} else {

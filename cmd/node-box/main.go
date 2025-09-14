@@ -23,6 +23,8 @@ func printUsage() {
 用法:
   %s [配置文件路径]           使用指定配置文件运行程序
   %s init [配置文件路径]      生成示例配置文件
+  %s nodes [配置文件路径]     仅更新节点配置
+  %s modules [配置文件路径]   仅更新模块配置
   %s -h, --help             显示此帮助信息
   %s -v, --version          显示版本信息
 
@@ -30,12 +32,14 @@ func printUsage() {
   配置文件路径                配置文件的路径，默认为 %s
 
 示例:
-  %s                        使用默认配置文件运行
+  %s                        使用默认配置文件运行（更新所有配置）
   %s config.json            使用指定配置文件运行
+  %s nodes                  仅更新节点配置
+  %s modules                仅更新模块配置
   %s init                   生成默认配置文件
   %s init my-config.json    生成指定路径的配置文件
 
-`, appName, version, appName, appName, appName, appName, defaultConfigPath, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, defaultConfigPath, appName, appName, appName, appName, appName, appName)
 }
 
 // printVersion 显示版本信息
@@ -71,6 +75,22 @@ func parseArgs() (command string, configPath string) {
 		return "init", configPath
 	}
 
+	// 处理nodes命令
+	if firstArg == "nodes" {
+		if len(os.Args) > 2 {
+			configPath = os.Args[2]
+		}
+		return "nodes", configPath
+	}
+
+	// 处理modules命令
+	if firstArg == "modules" {
+		if len(os.Args) > 2 {
+			configPath = os.Args[2]
+		}
+		return "modules", configPath
+	}
+
 	// 其他情况视为配置文件路径
 	return "run", firstArg
 }
@@ -100,6 +120,14 @@ func main() {
 		// 继续执行主程序逻辑
 		log.Printf("使用配置文件: %s", configPath)
 
+	case "nodes":
+		// 仅更新节点配置
+		log.Printf("仅更新节点配置，使用配置文件: %s", configPath)
+
+	case "modules":
+		// 仅更新模块配置
+		log.Printf("仅更新模块配置，使用配置文件: %s", configPath)
+
 	default:
 		log.Fatalf("未知命令: %s", command)
 	}
@@ -121,15 +149,35 @@ func main() {
 		log.Fatalf("初始化节点管理器失败: %v", err)
 	}
 
-	// 创建并启动调度器
-	updateInterval := time.Duration(cfg.UpdateInterval) * time.Hour
-	scheduler := manager.NewScheduler(nodeManager, updateInterval)
+	// 根据命令类型执行不同的操作
+	switch command {
+	case "nodes":
+		// 仅更新节点配置
+		log.Println("开始更新节点配置...")
+		if err := nodeManager.UpdateAllConfigs(); err != nil {
+			log.Fatalf("节点配置更新失败: %v", err)
+		}
+		log.Println("节点配置更新完成")
 
-	log.Printf("程序启动成功，更新间隔: %v", updateInterval)
-	log.Println("按 Ctrl+C 停止程序")
+	case "modules":
+		// 仅更新模块配置
+		log.Println("开始更新模块配置...")
+		if err := nodeManager.UpdateModuleConfigs(); err != nil {
+			log.Fatalf("模块配置更新失败: %v", err)
+		}
+		log.Println("模块配置更新完成")
 
-	// 启动调度器（这会阻塞直到程序结束）
-	if err := scheduler.Start(); err != nil {
-		log.Fatalf("调度器运行失败: %v", err)
+	case "run":
+		// 创建并启动调度器
+		updateInterval := time.Duration(cfg.UpdateInterval) * time.Hour
+		scheduler := manager.NewScheduler(nodeManager, updateInterval)
+
+		log.Printf("程序启动成功，更新间隔: %v", updateInterval)
+		log.Println("按 Ctrl+C 停止程序")
+
+		// 启动调度器（这会阻塞直到程序结束）
+		if err := scheduler.Start(); err != nil {
+			log.Fatalf("调度器运行失败: %v", err)
+		}
 	}
 }

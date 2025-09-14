@@ -17,9 +17,11 @@ import (
 // It contains all settings needed for the node-box application to operate,
 // including subscription sources, directory paths, and update intervals.
 type Config struct {
-	Nodes          *NodesConfig `json:"nodes"`
-	UpdateInterval int          `json:"update_interval_hours"`
-	Proxy          *ProxyConfig `json:"proxy,omitempty"`
+	Nodes          *NodesConfig   `json:"nodes"`
+	Modules        *ModulesConfig `json:"modules,omitempty"`
+	Configs        []ConfigFile   `json:"configs,omitempty"`
+	UpdateInterval int            `json:"update_interval_hours"`
+	Proxy          *ProxyConfig   `json:"proxy,omitempty"`
 }
 
 // NodesConfig represents the nodes configuration section.
@@ -45,6 +47,37 @@ type Subscription struct {
 type ConfigPath struct {
 	InsertPath   string `json:"insert_path"`
 	InsertMarker string `json:"insert_marker"`
+}
+
+// ModulesConfig represents the modules configuration section.
+// It contains different types of modules that can be fetched from remote sources.
+type ModulesConfig struct {
+	Log          []Module `json:"log,omitempty"`
+	DNS          []Module `json:"dns,omitempty"`
+	NTP          []Module `json:"ntp,omitempty"`
+	Certificate  []Module `json:"certificate,omitempty"`
+	Endpoints    []Module `json:"endpoints,omitempty"`
+	Inbounds     []Module `json:"inbounds,omitempty"`
+	Outbounds    []Module `json:"outbounds,omitempty"`
+	Route        []Module `json:"route,omitempty"`
+	Services     []Module `json:"services,omitempty"`
+	Experimental []Module `json:"experimental,omitempty"`
+}
+
+// Module represents a single module configuration.
+// It defines how to fetch a module from a local path or remote URL.
+type Module struct {
+	Name     string `json:"name"`                // module name
+	FromPath string `json:"from_path,omitempty"` // local file path
+	FromURL  string `json:"from_url,omitempty"`  // remote URL
+}
+
+// ConfigFile represents a configuration file that uses modules.
+// It defines which modules should be applied to which configuration file.
+type ConfigFile struct {
+	Name    string   `json:"name"`    // configuration name
+	File    string   `json:"file"`    // target configuration file path
+	Modules []string `json:"modules"` // list of module names to apply
 }
 
 // ProxyConfig represents proxy server configuration.
@@ -125,6 +158,20 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate modules configuration if present
+	if c.Modules != nil {
+		if err := c.validateModulesConfig(c.Modules); err != nil {
+			return err
+		}
+	}
+
+	// Validate configs if present
+	for i, configFile := range c.Configs {
+		if err := c.validateConfigFile(configFile, i); err != nil {
+			return err
+		}
+	}
+
 	// Validate proxy configuration if present
 	if c.Proxy != nil {
 		if err := c.validateProxyConfig(c.Proxy); err != nil {
@@ -163,6 +210,163 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 	if !slices.Contains(validTypes, subType) {
 		return fmt.Errorf("subscription %d (%s): invalid type '%s', must be one of: %v",
 			index, sub.Name, sub.Type, validTypes)
+	}
+
+	return nil
+}
+
+// validateModulesConfig validates modules configuration
+func (c *Config) validateModulesConfig(modules *ModulesConfig) error {
+	// Validate log modules
+	for i, module := range modules.Log {
+		if err := c.validateModule(module, "log", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate DNS modules
+	for i, module := range modules.DNS {
+		if err := c.validateModule(module, "dns", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate NTP modules
+	for i, module := range modules.NTP {
+		if err := c.validateModule(module, "ntp", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Certificate modules
+	for i, module := range modules.Certificate {
+		if err := c.validateModule(module, "certificate", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Endpoints modules
+	for i, module := range modules.Endpoints {
+		if err := c.validateModule(module, "endpoints", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Inbounds modules
+	for i, module := range modules.Inbounds {
+		if err := c.validateModule(module, "inbounds", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Outbounds modules
+	for i, module := range modules.Outbounds {
+		if err := c.validateModule(module, "outbounds", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Route modules
+	for i, module := range modules.Route {
+		if err := c.validateModule(module, "route", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Services modules
+	for i, module := range modules.Services {
+		if err := c.validateModule(module, "services", i); err != nil {
+			return err
+		}
+	}
+
+	// Validate Experimental modules
+	for i, module := range modules.Experimental {
+		if err := c.validateModule(module, "experimental", i); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateModule validates a single module configuration
+func (c *Config) validateModule(module Module, moduleType string, index int) error {
+	if module.Name == "" {
+		return fmt.Errorf("modules.%s[%d]: name cannot be empty", moduleType, index)
+	}
+
+	// Either from_path or from_url must be provided, but not both
+	hasPath := module.FromPath != ""
+	hasURL := module.FromURL != ""
+
+	if !hasPath && !hasURL {
+		return fmt.Errorf("modules.%s[%d] (%s): either from_path or from_url must be provided", moduleType, index, module.Name)
+	}
+
+	if hasPath && hasURL {
+		return fmt.Errorf("modules.%s[%d] (%s): cannot specify both from_path and from_url", moduleType, index, module.Name)
+	}
+
+	return nil
+}
+
+// validateConfigFile validates a single config file configuration
+func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
+	if configFile.Name == "" {
+		return fmt.Errorf("configs[%d]: name cannot be empty", index)
+	}
+
+	if configFile.File == "" {
+		return fmt.Errorf("configs[%d] (%s): file cannot be empty", index, configFile.Name)
+	}
+
+	if len(configFile.Modules) == 0 {
+		return fmt.Errorf("configs[%d] (%s): modules cannot be empty", index, configFile.Name)
+	}
+
+	// Validate that all referenced modules exist
+	if c.Modules != nil {
+		allModules := make(map[string]bool)
+
+		// Collect all module names from all module types
+		for _, module := range c.Modules.Log {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.DNS {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.NTP {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Certificate {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Endpoints {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Inbounds {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Outbounds {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Route {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Services {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.Experimental {
+			allModules[module.Name] = true
+		}
+
+		// Check if all referenced modules exist
+		for _, moduleName := range configFile.Modules {
+			if !allModules[moduleName] {
+				return fmt.Errorf("configs[%d] (%s): module '%s' not found", index, configFile.Name, moduleName)
+			}
+		}
 	}
 
 	return nil
