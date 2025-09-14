@@ -84,26 +84,39 @@
   - 将fetchSubscription逻辑移到client包
   - _需求: 3.2, 8.3_
 
-- [ ] 4. 实现subscription包
-- [ ] 4.1 创建订阅类型定义和接口
+- [x] 4. 实现subscription包
+
+
+
+
+
+- [x] 4.1 创建订阅类型定义和接口
+
+
   - 定义Node类型（使用any替代interface{}）
   - 定义Processor接口
   - 创建ClashProxy等结构体定义
   - _需求: 4.1, 4.2, 8.1_
 
-- [ ] 4.2 实现Clash订阅处理器
+- [x] 4.2 实现Clash订阅处理器
+
+
   - 创建ClashProcessor结构体
   - 实现Process方法处理Clash订阅
   - 将convertClashToSingBox逻辑移到此处
   - _需求: 4.2, 8.3_
 
-- [ ] 4.3 实现SingBox订阅处理器
+- [x] 4.3 实现SingBox订阅处理器
+
+
   - 创建SingBoxProcessor结构体
   - 实现Process方法处理SingBox订阅
   - 将processSingBoxSubscription逻辑移到此处
   - _需求: 4.3, 8.3_
 
-- [ ] 4.4 实现节点过滤和前缀添加功能
+
+- [x] 4.4 实现节点过滤和前缀添加功能
+
   - 创建Filter结构体
   - 实现FilterNodes方法
   - 实现AddSubscriptionPrefix函数
