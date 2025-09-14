@@ -1,3 +1,5 @@
 test/
 config.json
 *.exe
+test1/
+.kiro/
