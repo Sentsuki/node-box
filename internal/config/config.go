@@ -18,11 +18,14 @@ import (
 // including subscription sources, directory paths, and update intervals.
 type Config struct {
 	Subscriptions   []Subscription `json:"subscriptions"`
-	ConfigDir       string         `json:"config_dir"`
-	InsertMarker    string         `json:"insert_marker"`
+	ConfigPaths     []ConfigPath   `json:"config_paths"`
 	UpdateInterval  int            `json:"update_interval_hours"`
 	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
 	Proxy           *ProxyConfig   `json:"proxy,omitempty"`
+
+	// 向后兼容的字段，如果存在则会被转换为ConfigPaths
+	ConfigDir    string `json:"config_dir,omitempty"`
+	InsertMarker string `json:"insert_marker,omitempty"`
 }
 
 // Subscription represents a single subscription source configuration.
@@ -33,6 +36,13 @@ type Subscription struct {
 	URL    string `json:"url"`
 	Type   string `json:"type"` // "clash" or "singbox"
 	Enable bool   `json:"enable"`
+}
+
+// ConfigPath represents a configuration path with its associated insert marker.
+// It defines where configuration files are located and which marker to use for updates.
+type ConfigPath struct {
+	Path         string `json:"path"`
+	InsertMarker string `json:"insert_marker"`
 }
 
 // ProxyConfig represents proxy server configuration.
@@ -88,13 +98,26 @@ func Load(path string) (*Config, error) {
 // Validate checks if the configuration is valid and returns an error if not.
 // It validates all required fields and ensures the configuration is consistent.
 func (c *Config) Validate() error {
-	// Validate required fields
-	if c.ConfigDir == "" {
-		return ErrEmptyConfigDir
+	// 处理向后兼容性：如果使用旧格式，转换为新格式
+	if c.ConfigDir != "" && c.InsertMarker != "" && len(c.ConfigPaths) == 0 {
+		c.ConfigPaths = []ConfigPath{
+			{
+				Path:         c.ConfigDir,
+				InsertMarker: c.InsertMarker,
+			},
+		}
+		log.Println("检测到旧配置格式，已自动转换为新格式")
 	}
 
-	if c.InsertMarker == "" {
-		return ErrEmptyInsertMarker
+	// 验证配置路径
+	if len(c.ConfigPaths) == 0 {
+		return fmt.Errorf("config_paths cannot be empty")
+	}
+
+	for i, configPath := range c.ConfigPaths {
+		if err := c.validateConfigPath(configPath, i); err != nil {
+			return err
+		}
 	}
 
 	if c.UpdateInterval <= 0 {
@@ -113,6 +136,19 @@ func (c *Config) Validate() error {
 		if err := c.validateProxyConfig(c.Proxy); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// validateConfigPath validates a single config path configuration
+func (c *Config) validateConfigPath(configPath ConfigPath, index int) error {
+	if configPath.Path == "" {
+		return fmt.Errorf("config_paths[%d]: path cannot be empty", index)
+	}
+
+	if configPath.InsertMarker == "" {
+		return fmt.Errorf("config_paths[%d]: insert_marker cannot be empty", index)
 	}
 
 	return nil

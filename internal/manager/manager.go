@@ -31,8 +31,8 @@ type NodeManager struct {
 	config     *config.Config
 	fetcher    *client.Fetcher
 	processors map[string]subscription.Processor
-	scanner    *fileops.Scanner
-	updater    *fileops.Updater
+	scanners   map[string]*fileops.Scanner
+	updaters   map[string]*fileops.Updater
 	filter     *subscription.Filter
 }
 
@@ -54,9 +54,14 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	processors["clash"] = subscription.NewClashProcessor()
 	processors["singbox"] = subscription.NewSingBoxProcessor()
 
-	// 创建文件操作组件
-	scanner := fileops.NewScanner(cfg.ConfigDir)
-	updater := fileops.NewUpdater(cfg.InsertMarker)
+	// 为每个配置路径创建扫描器和更新器
+	scanners := make(map[string]*fileops.Scanner)
+	updaters := make(map[string]*fileops.Updater)
+
+	for _, configPath := range cfg.ConfigPaths {
+		scanners[configPath.Path] = fileops.NewScanner(configPath.Path)
+		updaters[configPath.Path] = fileops.NewUpdater(configPath.InsertMarker)
+	}
 
 	// 创建节点过滤器
 	filter := subscription.NewFilter(cfg.ExcludeKeywords)
@@ -65,8 +70,8 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 		config:     cfg,
 		fetcher:    fetcher,
 		processors: processors,
-		scanner:    scanner,
-		updater:    updater,
+		scanners:   scanners,
+		updaters:   updaters,
 		filter:     filter,
 	}, nil
 }
@@ -130,20 +135,7 @@ func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
 func (nm *NodeManager) UpdateAllConfigs() error {
 	log.Println("开始更新所有配置文件...")
 
-	// 1. 扫描配置文件
-	configFiles, err := nm.scanner.ScanConfigFiles()
-	if err != nil {
-		return fmt.Errorf("扫描配置文件失败: %v", err)
-	}
-
-	if len(configFiles) == 0 {
-		log.Printf("%v in directory: %s", ErrNoConfigFiles, nm.config.ConfigDir)
-		return fmt.Errorf("%w in directory: %s", ErrNoConfigFiles, nm.config.ConfigDir)
-	}
-
-	log.Printf("找到 %d 个配置文件", len(configFiles))
-
-	// 2. 获取所有节点
+	// 1. 获取所有节点
 	allNodes, err := nm.FetchAllNodes()
 	if err != nil {
 		return fmt.Errorf("获取节点失败: %v", err)
@@ -154,7 +146,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		return fmt.Errorf("%w", ErrNoNodes)
 	}
 
-	// 3. 准备订阅名称列表（用于清理旧节点）
+	// 2. 准备订阅名称列表（用于清理旧节点）
 	var subscriptionNames []string
 	for _, sub := range nm.config.Subscriptions {
 		if sub.Enable {
@@ -162,33 +154,66 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		}
 	}
 
-	// 4. 更新每个配置文件
+	// 3. 转换节点格式为updater期望的格式
+	nodesMaps := make([]map[string]any, len(allNodes))
+	for i, node := range allNodes {
+		nodesMaps[i] = map[string]any(node)
+	}
+
+	// 4. 处理每个配置路径
 	var updateErrors []string
-	successCount := 0
+	totalSuccessCount := 0
+	totalFileCount := 0
 
-	for _, configFile := range configFiles {
-		log.Printf("更新配置文件: %s", configFile)
+	for _, configPath := range nm.config.ConfigPaths {
+		log.Printf("处理配置路径: %s (marker: %s)", configPath.Path, configPath.InsertMarker)
 
-		// 转换节点格式为updater期望的格式
-		nodesMaps := make([]map[string]any, len(allNodes))
-		for i, node := range allNodes {
-			nodesMaps[i] = map[string]any(node)
-		}
-
-		err := nm.updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames)
+		// 扫描当前路径下的配置文件
+		scanner := nm.scanners[configPath.Path]
+		configFiles, err := scanner.ScanConfigFiles()
 		if err != nil {
-			errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
+			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", configPath.Path, err)
 			log.Printf("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}
 
-		successCount++
-		log.Printf("成功更新配置文件: %s", configFile)
+		if len(configFiles) == 0 {
+			log.Printf("路径 %s 下未找到配置文件", configPath.Path)
+			continue
+		}
+
+		log.Printf("在路径 %s 下找到 %d 个配置文件", configPath.Path, len(configFiles))
+		totalFileCount += len(configFiles)
+
+		// 获取对应的更新器
+		updater := nm.updaters[configPath.Path]
+
+		// 更新当前路径下的每个配置文件
+		pathSuccessCount := 0
+		for _, configFile := range configFiles {
+			log.Printf("更新配置文件: %s", configFile)
+
+			err := updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames)
+			if err != nil {
+				errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
+				log.Printf("%s", errorMsg)
+				updateErrors = append(updateErrors, errorMsg)
+				continue
+			}
+
+			pathSuccessCount++
+			log.Printf("成功更新配置文件: %s", configFile)
+		}
+
+		totalSuccessCount += pathSuccessCount
+		log.Printf("路径 %s 处理完成: 成功 %d 个，失败 %d 个",
+			configPath.Path, pathSuccessCount, len(configFiles)-pathSuccessCount)
 	}
 
 	// 5. 汇总结果
-	log.Printf("配置更新完成: 成功 %d 个，失败 %d 个", successCount, len(updateErrors))
+	log.Printf("所有配置更新完成: 总文件 %d 个，成功 %d 个，失败 %d 个",
+		totalFileCount, totalSuccessCount, len(updateErrors))
 
 	if len(updateErrors) > 0 {
 		log.Println("更新失败的文件:")
@@ -197,12 +222,17 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		}
 
 		// 如果有部分成功，返回包含错误信息的错误，但不完全失败
-		if successCount > 0 {
-			return fmt.Errorf("%w: %d successful, %d failed", ErrPartialUpdateFailure, successCount, len(updateErrors))
+		if totalSuccessCount > 0 {
+			return fmt.Errorf("%w: %d successful, %d failed", ErrPartialUpdateFailure, totalSuccessCount, len(updateErrors))
 		}
 
 		// 如果全部失败，返回更严重的错误
 		return fmt.Errorf("%w: %v", ErrAllUpdatesFailure, updateErrors)
+	}
+
+	if totalFileCount == 0 {
+		log.Printf("%v in all configured paths", ErrNoConfigFiles)
+		return fmt.Errorf("%w in all configured paths", ErrNoConfigFiles)
 	}
 
 	log.Println("所有配置文件更新成功")

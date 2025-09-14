@@ -26,8 +26,16 @@ func GenerateExample(configPath string) error {
 				Enable: true,
 			},
 		},
-		ConfigDir:       "./configs",
-		InsertMarker:    "🚀 节点选择",
+		ConfigPaths: []ConfigPath{
+			{
+				Path:         "./configs",
+				InsertMarker: "🚀 节点选择",
+			},
+			{
+				Path:         "./test",
+				InsertMarker: "Proxy",
+			},
+		},
 		UpdateInterval:  6,
 		ExcludeKeywords: []string{"故障转移", "流量"},
 		Proxy: &ProxyConfig{
