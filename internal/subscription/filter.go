@@ -6,19 +6,22 @@ import (
 	"strings"
 )
 
-// Filter 节点过滤器
+// Filter provides node filtering functionality based on exclude keywords.
+// It can filter out nodes whose tags contain specified keywords.
 type Filter struct {
 	excludeKeywords []string
 }
 
-// NewFilter 创建新的节点过滤器
+// NewFilter creates a new node filter with the specified exclude keywords.
+// The filter will remove nodes whose tags contain any of the provided keywords.
 func NewFilter(excludeKeywords []string) *Filter {
 	return &Filter{
 		excludeKeywords: excludeKeywords,
 	}
 }
 
-// FilterNodes 过滤排除关键词的节点
+// FilterNodes filters out nodes that contain exclude keywords in their tags.
+// It performs case-insensitive matching and logs excluded nodes for debugging.
 func (f *Filter) FilterNodes(nodes []Node) []Node {
 	var filteredNodes []Node
 	for _, node := range nodes {
@@ -42,7 +45,9 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 	return filteredNodes
 }
 
-// AddSubscriptionPrefix 为节点添加订阅前缀
+// AddSubscriptionPrefix adds subscription name prefix to node tags.
+// It modifies the tag field of each node to include the subscription name
+// in the format "[subscription_name] original_tag".
 func AddSubscriptionPrefix(nodes []Node, subName string) []Node {
 	for _, node := range nodes {
 		if tag, ok := node["tag"].(string); ok {

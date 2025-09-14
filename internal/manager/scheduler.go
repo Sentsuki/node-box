@@ -6,7 +6,9 @@ import (
 	"time"
 )
 
-// Scheduler 定时调度器，负责定期执行配置更新任务
+// Scheduler provides periodic task scheduling for configuration updates.
+// It manages the timing and execution of regular configuration update operations
+// with proper context handling for graceful shutdown.
 type Scheduler struct {
 	manager  *NodeManager
 	interval time.Duration
@@ -14,9 +16,10 @@ type Scheduler struct {
 	cancel   context.CancelFunc
 }
 
-// NewScheduler 创建新的调度器实例
-// manager: 节点管理器实例
-// interval: 更新间隔时间
+// NewScheduler creates a new scheduler instance with the specified manager and interval.
+// Parameters:
+//   - manager: NodeManager instance to execute update operations
+//   - interval: time duration between update operations
 func NewScheduler(manager *NodeManager, interval time.Duration) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -28,8 +31,9 @@ func NewScheduler(manager *NodeManager, interval time.Duration) *Scheduler {
 	}
 }
 
-// Start 启动定时调度器
-// 开始定期执行配置更新任务，直到调用Stop或上下文被取消
+// Start begins the periodic scheduling of configuration update tasks.
+// It performs an initial update immediately, then continues with regular
+// updates at the specified interval until Stop is called or context is cancelled.
 func (s *Scheduler) Start() error {
 	log.Printf("启动定时调度器，更新间隔: %v", s.interval)
 
@@ -65,14 +69,15 @@ func (s *Scheduler) Start() error {
 	}
 }
 
-// Stop 停止定时调度器
-// 取消上下文，使Start方法退出
+// Stop gracefully stops the scheduler by cancelling its context.
+// This causes the Start method to exit and stops all scheduled operations.
 func (s *Scheduler) Stop() {
 	log.Println("正在停止定时调度器...")
 	s.cancel()
 }
 
-// IsRunning 检查调度器是否正在运行
+// IsRunning checks whether the scheduler is currently running.
+// It returns true if the scheduler is active, false if it has been stopped.
 func (s *Scheduler) IsRunning() bool {
 	select {
 	case <-s.ctx.Done():

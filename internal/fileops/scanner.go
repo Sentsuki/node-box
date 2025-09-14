@@ -1,4 +1,6 @@
-// Package fileops 提供文件操作相关功能
+// Package fileops provides file operation functionality for configuration management.
+// It handles scanning configuration directories and updating configuration files
+// with new proxy node data.
 package fileops
 
 import (
@@ -7,20 +9,22 @@ import (
 	"strings"
 )
 
-// Scanner 配置文件扫描器
+// Scanner provides configuration file scanning functionality.
+// It can recursively scan directories to find JSON configuration files.
 type Scanner struct {
 	configDir string
 }
 
-// NewScanner 创建新的配置文件扫描器
+// NewScanner creates a new configuration file scanner for the specified directory.
+// The scanner will search for JSON files in the given directory and its subdirectories.
 func NewScanner(configDir string) *Scanner {
 	return &Scanner{
 		configDir: configDir,
 	}
 }
 
-// ScanConfigFiles 扫描配置目录中的所有JSON配置文件
-// 返回找到的配置文件路径列表
+// ScanConfigFiles scans the configuration directory for all JSON configuration files.
+// It returns a list of file paths for all JSON files found in the directory tree.
 func (s *Scanner) ScanConfigFiles() ([]string, error) {
 	var configFiles []string
 

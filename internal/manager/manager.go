@@ -3,6 +3,7 @@
 package manager
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -13,7 +14,19 @@ import (
 	"node-box/internal/subscription"
 )
 
-// NodeManager 节点管理器，协调各个组件实现核心业务逻辑
+// Manager package errors
+var (
+	ErrHTTPClientCreation    = errors.New("failed to create HTTP client")
+	ErrNoConfigFiles         = errors.New("no configuration files found")
+	ErrNoNodes               = errors.New("no nodes retrieved from subscriptions")
+	ErrUnsupportedSubType    = errors.New("unsupported subscription type")
+	ErrPartialUpdateFailure  = errors.New("partial configuration update failure")
+	ErrAllUpdatesFailure     = errors.New("all configuration updates failed")
+)
+
+// NodeManager coordinates all components to implement core business logic.
+// It manages the complete workflow of fetching subscriptions, processing nodes,
+// and updating configuration files.
 type NodeManager struct {
 	config     *config.Config
 	fetcher    *client.Fetcher
@@ -23,13 +36,15 @@ type NodeManager struct {
 	filter     *subscription.Filter
 }
 
-// NewNodeManager 创建新的NodeManager实例
-// 初始化所有必要的组件并建立依赖关系
+// NewNodeManager creates a new NodeManager instance with all necessary components.
+// It initializes HTTP client, subscription processors, file operations, and node filtering
+// based on the provided configuration.
+func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	// 创建HTTP客户端
 	httpClient, err := client.NewHTTPClient(cfg.Proxy)
 	if err != nil {
-		return nil, fmt.Errorf("创建HTTP客户端失败: %v", err)
+		return nil, fmt.Errorf("%w: %v", ErrHTTPClientCreation, err)
 	}
 
 	// 创建订阅获取器
@@ -57,8 +72,9 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	}, nil
 }
 
-// FetchAllNodes 获取所有启用订阅的节点
-// 协调订阅获取和处理过程，返回处理后的节点列表
+// FetchAllNodes retrieves nodes from all enabled subscriptions.
+// It coordinates the subscription fetching and processing workflow,
+// returning a list of processed and filtered proxy nodes.
 func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
 	var allNodes []subscription.Node
 	var enabledSubscriptions []string
@@ -83,7 +99,7 @@ func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
 		// 获取对应的处理器
 		processor, ok := nm.processors[strings.ToLower(sub.Type)]
 		if !ok {
-			log.Printf("不支持的订阅类型: %s (订阅: %s)", sub.Type, sub.Name)
+			log.Printf("%v: %s (subscription: %s)", ErrUnsupportedSubType, sub.Type, sub.Name)
 			continue
 		}
 
@@ -109,8 +125,9 @@ func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
 	return allNodes, nil
 }
 
-// UpdateAllConfigs 更新所有配置文件
-// 协调文件扫描、节点获取和配置更新的完整流程
+// UpdateAllConfigs updates all configuration files with new proxy nodes.
+// It coordinates the complete workflow of file scanning, node fetching,
+// and configuration updating with comprehensive error handling.
 func (nm *NodeManager) UpdateAllConfigs() error {
 	log.Println("开始更新所有配置文件...")
 
@@ -121,8 +138,8 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	}
 
 	if len(configFiles) == 0 {
-		log.Printf("在目录 %s 中未找到配置文件", nm.config.ConfigDir)
-		return nil
+		log.Printf("%v in directory: %s", ErrNoConfigFiles, nm.config.ConfigDir)
+		return fmt.Errorf("%w in directory: %s", ErrNoConfigFiles, nm.config.ConfigDir)
 	}
 
 	log.Printf("找到 %d 个配置文件", len(configFiles))
@@ -134,8 +151,8 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	}
 
 	if len(allNodes) == 0 {
-		log.Println("未获取到任何节点，跳过配置更新")
-		return nil
+		log.Printf("%v, skipping configuration update", ErrNoNodes)
+		return fmt.Errorf("%w", ErrNoNodes)
 	}
 
 	// 3. 准备订阅名称列表（用于清理旧节点）
@@ -182,11 +199,11 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 
 		// 如果有部分成功，返回包含错误信息的错误，但不完全失败
 		if successCount > 0 {
-			return fmt.Errorf("部分配置文件更新失败: %d 个成功，%d 个失败", successCount, len(updateErrors))
+			return fmt.Errorf("%w: %d successful, %d failed", ErrPartialUpdateFailure, successCount, len(updateErrors))
 		}
 
 		// 如果全部失败，返回更严重的错误
-		return fmt.Errorf("所有配置文件更新失败: %v", updateErrors)
+		return fmt.Errorf("%w: %v", ErrAllUpdatesFailure, updateErrors)
 	}
 
 	log.Println("所有配置文件更新成功")

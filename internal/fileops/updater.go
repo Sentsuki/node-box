@@ -2,58 +2,75 @@ package fileops
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 )
 
-// Updater 配置文件更新器
+// FileOps package errors
+var (
+	ErrConfigFileRead         = errors.New("failed to read config file")
+	ErrConfigFileParse        = errors.New("failed to parse config file")
+	ErrMissingOutbounds       = errors.New("missing outbounds field in config")
+	ErrInvalidOutboundsFormat = errors.New("invalid outbounds field format")
+	ErrInsertMarkerNotFound   = errors.New("insert marker not found")
+	ErrInvalidMarkerType      = errors.New("insert marker is not selector type")
+	ErrConfigFileWrite        = errors.New("failed to write config file")
+	ErrConfigSerialization    = errors.New("failed to serialize config")
+)
+
+// Updater provides configuration file updating functionality.
+// It can update SingBox configuration files by inserting new proxy nodes
+// at specified marker positions and managing selector outbound lists.
 type Updater struct {
 	insertMarker string
 }
 
-// NewUpdater 创建新的配置文件更新器
+// NewUpdater creates a new configuration file updater with the specified insert marker.
+// The insert marker is used to identify where new proxy nodes should be inserted.
 func NewUpdater(insertMarker string) *Updater {
 	return &Updater{
 		insertMarker: insertMarker,
 	}
 }
 
-// UpdateConfigFile 更新指定的配置文件，将节点插入到标记位置
-// configPath: 配置文件路径
-// nodes: 要插入的节点列表
-// subscriptionNames: 订阅名称列表，用于识别和清理旧的订阅节点
+// UpdateConfigFile updates the specified configuration file by inserting nodes at the marker position.
+// Parameters:
+//   - configPath: path to the configuration file to update
+//   - nodes: list of proxy nodes to insert
+//   - subscriptionNames: list of subscription names used to identify and clean old subscription nodes
 func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, subscriptionNames []string) error {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Printf("读取配置文件失败 %s: %v", configPath, err)
-		return fmt.Errorf("读取配置文件失败: %v", err)
+		log.Printf("%v %s: %v", ErrConfigFileRead, configPath, err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
 	}
 
 	// 解析JSON配置
 	var config map[string]any
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Printf("解析配置文件失败 %s: %v", configPath, err)
-		return fmt.Errorf("解析配置文件失败: %v", err)
+		log.Printf("%v %s: %v", ErrConfigFileParse, configPath, err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
 	}
 
 	// 检查outbounds字段
 	outboundsRaw, ok := config["outbounds"]
 	if !ok {
-		log.Printf("配置文件中缺少outbounds字段: %s", configPath)
-		return fmt.Errorf("配置文件中缺少 outbounds 字段")
+		log.Printf("%v: %s", ErrMissingOutbounds, configPath)
+		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
 	}
 
 	outboundsArray, ok := outboundsRaw.([]any)
 	if !ok {
-		log.Printf("outbounds字段格式错误: %s", configPath)
-		return fmt.Errorf("outbounds 字段格式错误")
+		log.Printf("%v: %s", ErrInvalidOutboundsFormat, configPath)
+		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
 	}
 
 	// 查找插入标记
-	markerIndex, markerOutbound, err := u.findInsertMarker(outboundsArray)
+	_, markerOutbound, err := u.findInsertMarker(outboundsArray)
 	if err != nil {
 		log.Printf("查找插入标记失败 %s: %v", configPath, err)
 		return err
@@ -92,7 +109,8 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 	return nil
 }
 
-// findInsertMarker 查找插入标记的位置
+// findInsertMarker locates the position of the insert marker in the outbounds array.
+// It returns the index and the marker outbound configuration, or an error if not found.
 func (u *Updater) findInsertMarker(outbounds []any) (int, map[string]any, error) {
 	for i, outboundRaw := range outbounds {
 		if outboundMap, ok := outboundRaw.(map[string]any); ok {
@@ -101,19 +119,21 @@ func (u *Updater) findInsertMarker(outbounds []any) (int, map[string]any, error)
 			}
 		}
 	}
-	return -1, nil, fmt.Errorf("未找到插入标记: %s", u.insertMarker)
+	return -1, nil, fmt.Errorf("%w: %s", ErrInsertMarkerNotFound, u.insertMarker)
 }
 
-// validateMarkerType 验证插入标记是否为selector类型
+// validateMarkerType validates that the insert marker is of selector type.
+// Only selector type outbounds can be used as insert markers for proxy nodes.
 func (u *Updater) validateMarkerType(markerOutbound map[string]any) error {
 	markerType, ok := markerOutbound["type"].(string)
 	if !ok || markerType != "selector" {
-		return fmt.Errorf("插入标记 %s 不是selector类型", u.insertMarker)
+		return fmt.Errorf("%w: %s", ErrInvalidMarkerType, u.insertMarker)
 	}
 	return nil
 }
 
-// removeOldSubscriptionNodes 移除旧的订阅节点
+// removeOldSubscriptionNodes removes old subscription nodes from the outbounds array.
+// It identifies subscription nodes by checking if their tags contain subscription name prefixes.
 func (u *Updater) removeOldSubscriptionNodes(outbounds []any, subscriptionNames []string) []any {
 	var newOutbounds []any
 
@@ -141,7 +161,8 @@ func (u *Updater) removeOldSubscriptionNodes(outbounds []any, subscriptionNames 
 	return newOutbounds
 }
 
-// updateSelectorOutbounds 更新selector的outbounds列表
+// updateSelectorOutbounds updates the outbounds list of the selector marker.
+// It removes old subscription node tags and adds new node tags to the selector's outbounds array.
 func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]any, subscriptionNames []string) error {
 	// 收集新节点的标签
 	var nodeTags []string
@@ -197,15 +218,16 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 	return nil
 }
 
-// writeConfigFile 将配置写回文件
+// writeConfigFile writes the updated configuration back to the file.
+// It serializes the configuration to JSON with proper indentation and writes it to disk.
 func (u *Updater) writeConfigFile(configPath string, config map[string]any) error {
 	updatedData, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return fmt.Errorf("序列化配置失败: %v", err)
+		return fmt.Errorf("%w: %v", ErrConfigSerialization, err)
 	}
 
 	if err := os.WriteFile(configPath, updatedData, 0644); err != nil {
-		return fmt.Errorf("写入配置文件失败: %v", err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileWrite, configPath, err)
 	}
 
 	return nil

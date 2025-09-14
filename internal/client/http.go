@@ -3,6 +3,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,6 +11,15 @@ import (
 	"time"
 
 	"node-box/internal/config"
+)
+
+// Client package errors
+var (
+	ErrUnsupportedProxyType = errors.New("unsupported proxy type")
+	ErrProxyConfigNil       = errors.New("proxy configuration is nil")
+	ErrHTTPRequestFailed    = errors.New("HTTP request failed")
+	ErrInvalidStatusCode    = errors.New("invalid HTTP status code")
+	ErrReadResponseBody     = errors.New("failed to read response body")
 )
 
 // HTTPClient defines the interface for making HTTP requests.
@@ -71,13 +81,13 @@ func NewHTTPClient(proxy *config.ProxyConfig) (HTTPClient, error) {
 func (c *Client) Get(targetURL string) ([]byte, error) {
 	resp, err := c.httpClient.Get(targetURL)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP GET request failed: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
 	}
 	defer resp.Body.Close()
 
 	// Check for HTTP error status codes
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP request failed with status: %d %s", resp.StatusCode, resp.Status)
+		return nil, fmt.Errorf("%w: %d %s", ErrInvalidStatusCode, resp.StatusCode, resp.Status)
 	}
 
 	// Read response body
@@ -92,7 +102,7 @@ func (c *Client) Get(targetURL string) ([]byte, error) {
 			if err.Error() == "EOF" {
 				break
 			}
-			return nil, fmt.Errorf("failed to read response body: %w", err)
+			return nil, fmt.Errorf("%w: %v", ErrReadResponseBody, err)
 		}
 	}
 
@@ -103,7 +113,7 @@ func (c *Client) Get(targetURL string) ([]byte, error) {
 // It handles different proxy types (HTTP, HTTPS, SOCKS5) and optional authentication.
 func buildProxyURL(proxy *config.ProxyConfig) (string, error) {
 	if proxy == nil {
-		return "", fmt.Errorf("proxy configuration is nil")
+		return "", ErrProxyConfigNil
 	}
 
 	proxyType := strings.ToLower(proxy.Type)
@@ -113,7 +123,7 @@ func buildProxyURL(proxy *config.ProxyConfig) (string, error) {
 	case "http", "https", "socks5":
 		// Valid proxy types
 	default:
-		return "", fmt.Errorf("unsupported proxy type: %s", proxy.Type)
+		return "", fmt.Errorf("%w: %s", ErrUnsupportedProxyType, proxy.Type)
 	}
 
 	// Build proxy URL with or without authentication

@@ -9,19 +9,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ClashProcessor Clash订阅处理器
+// ClashProcessor handles Clash subscription data processing.
+// It converts Clash format proxy configurations to SingBox format nodes.
 type ClashProcessor struct{}
 
-// NewClashProcessor 创建新的Clash处理器
+// NewClashProcessor creates a new Clash processor instance.
+// Returns a processor that can handle Clash format subscription data.
 func NewClashProcessor() *ClashProcessor {
 	return &ClashProcessor{}
 }
 
-// Process 处理Clash订阅数据，转换为SingBox格式的节点
+// Process handles Clash subscription data and converts it to SingBox format nodes.
+// It parses the YAML data, extracts proxy configurations, and converts each
+// proxy to the unified Node format compatible with SingBox.
 func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 	var clashConfig ClashConfig
 	if err := yaml.Unmarshal(data, &clashConfig); err != nil {
-		return nil, fmt.Errorf("解析Clash配置失败: %v", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidClashConfig, err)
 	}
 
 	var nodes []Node
@@ -35,7 +39,9 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 	return nodes, nil
 }
 
-// convertClashToSingBox 转换Clash代理到SingBox格式
+// convertClashToSingBox converts a Clash proxy configuration to SingBox format.
+// It handles different proxy types (shadowsocks, vmess, vless, trojan) and
+// converts their specific configurations to SingBox compatible format.
 func (cp *ClashProcessor) convertClashToSingBox(proxy ClashProxy) Node {
 	node := Node{
 		"type":   strings.ToLower(proxy.Type),
@@ -46,7 +52,7 @@ func (cp *ClashProcessor) convertClashToSingBox(proxy ClashProxy) Node {
 	// 转换端口
 	port, err := strconv.Atoi(proxy.Port)
 	if err != nil {
-		log.Printf("转换端口失败: %v", err)
+		log.Printf("%v for proxy %s: %v", ErrPortConversionFailed, proxy.Name, err)
 		return nil
 	}
 	node["server_port"] = port
@@ -109,7 +115,7 @@ func (cp *ClashProcessor) convertClashToSingBox(proxy ClashProxy) Node {
 		node["password"] = proxy.Password
 
 	default:
-		log.Printf("不支持的代理类型: %s", proxy.Type)
+		log.Printf("%v: %s for proxy %s", ErrUnsupportedProxyType, proxy.Type, proxy.Name)
 		return nil
 	}
 

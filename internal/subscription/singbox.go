@@ -5,29 +5,33 @@ import (
 	"fmt"
 )
 
-// SingBoxProcessor SingBox订阅处理器
+// SingBoxProcessor handles SingBox subscription data processing.
+// It processes native SingBox format configurations and extracts proxy nodes.
 type SingBoxProcessor struct{}
 
-// NewSingBoxProcessor 创建新的SingBox处理器
+// NewSingBoxProcessor creates a new SingBox processor instance.
+// Returns a processor that can handle SingBox format subscription data.
 func NewSingBoxProcessor() *SingBoxProcessor {
 	return &SingBoxProcessor{}
 }
 
-// Process 处理SingBox订阅数据，保留所有原始字段
+// Process handles SingBox subscription data and preserves all original fields.
+// It parses the JSON configuration, extracts outbound proxy configurations,
+// and filters out non-proxy entries like direct, block, and selector types.
 func (sp *SingBoxProcessor) Process(data []byte) ([]Node, error) {
 	var config map[string]any
 	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("解析SingBox配置失败: %v", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidSingBoxConfig, err)
 	}
 
 	outboundsRaw, ok := config["outbounds"]
 	if !ok {
-		return nil, fmt.Errorf("配置中缺少 outbounds 字段")
+		return nil, ErrMissingOutbounds
 	}
 
 	outboundsArray, ok := outboundsRaw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("outbounds 字段格式错误")
+		return nil, ErrInvalidOutboundsFormat
 	}
 
 	var nodes []Node

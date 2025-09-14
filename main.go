@@ -179,7 +179,7 @@ func (nm *NodeManager) createHTTPClient() (*http.Client, error) {
 }
 
 // 处理订阅数据，根据类型选择不同的处理方式
-func (nm *NodeManager) processSubscription(subType string, data []byte) ([]map[string]interface{}, error) {
+func (nm *NodeManager) processSubscription(subType string, data []byte) ([]map[string]any, error) {
 	switch strings.ToLower(subType) {
 	case "singbox":
 		return nm.processSingBoxSubscription(data)
@@ -191,8 +191,8 @@ func (nm *NodeManager) processSubscription(subType string, data []byte) ([]map[s
 }
 
 // 处理SingBox订阅 - 保留所有原始字段
-func (nm *NodeManager) processSingBoxSubscription(data []byte) ([]map[string]interface{}, error) {
-	var config map[string]interface{}
+func (nm *NodeManager) processSingBoxSubscription(data []byte) ([]map[string]any, error) {
+	var config map[string]any
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("解析SingBox配置失败: %v", err)
 	}
@@ -202,14 +202,14 @@ func (nm *NodeManager) processSingBoxSubscription(data []byte) ([]map[string]int
 		return nil, fmt.Errorf("配置中缺少 outbounds 字段")
 	}
 
-	outboundsArray, ok := outboundsRaw.([]interface{})
+	outboundsArray, ok := outboundsRaw.([]any)
 	if !ok {
 		return nil, fmt.Errorf("outbounds 字段格式错误")
 	}
 
-	var nodes []map[string]interface{}
+	var nodes []map[string]any
 	for _, outboundRaw := range outboundsArray {
-		outboundMap, ok := outboundRaw.(map[string]interface{})
+		outboundMap, ok := outboundRaw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -228,13 +228,13 @@ func (nm *NodeManager) processSingBoxSubscription(data []byte) ([]map[string]int
 }
 
 // 处理Clash订阅 - 转换为SingBox格式
-func (nm *NodeManager) processClashSubscription(data []byte) ([]map[string]interface{}, error) {
+func (nm *NodeManager) processClashSubscription(data []byte) ([]map[string]any, error) {
 	var clashConfig ClashConfig
 	if err := yaml.Unmarshal(data, &clashConfig); err != nil {
 		return nil, fmt.Errorf("解析Clash配置失败: %v", err)
 	}
 
-	var nodes []map[string]interface{}
+	var nodes []map[string]any
 	for _, proxy := range clashConfig.Proxies {
 		node := nm.convertClashToSingBox(proxy)
 		if node != nil {
@@ -246,8 +246,8 @@ func (nm *NodeManager) processClashSubscription(data []byte) ([]map[string]inter
 }
 
 // 转换Clash代理到SingBox格式
-func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) map[string]interface{} {
-	node := map[string]interface{}{
+func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) map[string]any {
+	node := map[string]any{
 		"type":   strings.ToLower(proxy.Type),
 		"tag":    proxy.Name,
 		"server": proxy.Server,
@@ -270,12 +270,12 @@ func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) map[string]interf
 
 	// 处理WebSocket传输配置
 	if proxy.Network == "ws" {
-		transport := map[string]interface{}{
+		transport := map[string]any{
 			"type": "ws",
 			"path": proxy.WSPath,
 		}
 		if len(proxy.WSHeaders) > 0 {
-			headers := make(map[string]interface{})
+			headers := make(map[string]any)
 			for k, v := range proxy.WSHeaders {
 				headers[k] = v
 			}
@@ -286,7 +286,7 @@ func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) map[string]interf
 
 	// 处理TLS配置
 	if proxy.TLS {
-		tls := map[string]interface{}{
+		tls := map[string]any{
 			"enabled":     true,
 			"server_name": proxy.ServerName,
 			"insecure":    proxy.SkipCertVerify,
@@ -327,7 +327,7 @@ func (nm *NodeManager) convertClashToSingBox(proxy ClashProxy) map[string]interf
 }
 
 // 统一处理tag转换逻辑
-func (nm *NodeManager) addSubscriptionPrefix(nodes []map[string]interface{}, subName string) []map[string]interface{} {
+func (nm *NodeManager) addSubscriptionPrefix(nodes []map[string]any, subName string) []map[string]any {
 	for _, node := range nodes {
 		if tag, ok := node["tag"].(string); ok {
 			node["tag"] = fmt.Sprintf("[%s] %s", subName, tag)
@@ -337,8 +337,8 @@ func (nm *NodeManager) addSubscriptionPrefix(nodes []map[string]interface{}, sub
 }
 
 // 过滤排除关键词的节点
-func (nm *NodeManager) filterNodes(nodes []map[string]interface{}) []map[string]interface{} {
-	var filteredNodes []map[string]interface{}
+func (nm *NodeManager) filterNodes(nodes []map[string]any) []map[string]any {
+	var filteredNodes []map[string]any
 	for _, node := range nodes {
 		tag, ok := node["tag"].(string)
 		if !ok {
@@ -361,8 +361,8 @@ func (nm *NodeManager) filterNodes(nodes []map[string]interface{}) []map[string]
 }
 
 // 获取所有节点
-func (nm *NodeManager) fetchAllNodes() ([]map[string]interface{}, error) {
-	var allNodes []map[string]interface{}
+func (nm *NodeManager) fetchAllNodes() ([]map[string]any, error) {
+	var allNodes []map[string]any
 
 	for _, sub := range nm.config.Subscriptions {
 		if !sub.Enable {
@@ -417,13 +417,13 @@ func (nm *NodeManager) scanConfigFiles() ([]string, error) {
 }
 
 // 直接修改配置文件，不重组
-func (nm *NodeManager) updateConfigFile(configPath string, nodes []map[string]interface{}) error {
+func (nm *NodeManager) updateConfigFile(configPath string, nodes []map[string]any) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("读取配置文件失败: %v", err)
 	}
 
-	var config map[string]interface{}
+	var config map[string]any
 	if err := json.Unmarshal(data, &config); err != nil {
 		return fmt.Errorf("解析配置文件失败: %v", err)
 	}
@@ -433,16 +433,16 @@ func (nm *NodeManager) updateConfigFile(configPath string, nodes []map[string]in
 		return fmt.Errorf("配置文件中缺少 outbounds 字段")
 	}
 
-	outboundsArray, ok := outboundsRaw.([]interface{})
+	outboundsArray, ok := outboundsRaw.([]any)
 	if !ok {
 		return fmt.Errorf("outbounds 字段格式错误")
 	}
 
 	// 找到插入标记的位置
 	var markerIndex = -1
-	var markerOutbound map[string]interface{}
+	var markerOutbound map[string]any
 	for i, outboundRaw := range outboundsArray {
-		if outboundMap, ok := outboundRaw.(map[string]interface{}); ok {
+		if outboundMap, ok := outboundRaw.(map[string]any); ok {
 			if tag, ok := outboundMap["tag"].(string); ok && tag == nm.config.InsertMarker {
 				markerIndex = i
 				markerOutbound = outboundMap
@@ -461,9 +461,9 @@ func (nm *NodeManager) updateConfigFile(configPath string, nodes []map[string]in
 	}
 
 	// 移除旧的订阅节点
-	var newOutbounds []interface{}
+	var newOutbounds []any
 	for _, outboundRaw := range outboundsArray {
-		if outboundMap, ok := outboundRaw.(map[string]interface{}); ok {
+		if outboundMap, ok := outboundRaw.(map[string]any); ok {
 			if tag, ok := outboundMap["tag"].(string); ok {
 				isSubscriptionNode := false
 				for _, sub := range nm.config.Subscriptions {
@@ -498,12 +498,12 @@ func (nm *NodeManager) updateConfigFile(configPath string, nodes []map[string]in
 
 	// 找到更新后的插入标记位置
 	for i, outboundRaw := range newOutbounds {
-		if outboundMap, ok := outboundRaw.(map[string]interface{}); ok {
+		if outboundMap, ok := outboundRaw.(map[string]any); ok {
 			if tag, ok := outboundMap["tag"].(string); ok && tag == nm.config.InsertMarker {
 				// 更新selector的outbounds列表
-				if outboundList, ok := outboundMap["outbounds"].([]interface{}); ok {
+				if outboundList, ok := outboundMap["outbounds"].([]any); ok {
 					// 移除旧的订阅节点标签
-					var newOutboundList []interface{}
+					var newOutboundList []any
 					for _, tag := range outboundList {
 						if tagStr, ok := tag.(string); ok {
 							isSubscriptionTag := false
@@ -527,7 +527,7 @@ func (nm *NodeManager) updateConfigFile(configPath string, nodes []map[string]in
 					outboundMap["outbounds"] = newOutboundList
 				} else {
 					// 如果outbounds字段不存在，直接设置为节点标签数组
-					var newOutboundList []interface{}
+					var newOutboundList []any
 					for _, tag := range nodeTags {
 						newOutboundList = append(newOutboundList, tag)
 					}

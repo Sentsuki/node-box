@@ -5,24 +5,24 @@ import (
 	"log"
 )
 
-// Fetcher 处理从远程URL获取订阅数据。
-// 它使用HTTPClient执行实际的HTTP请求，
-// 并为订阅操作提供更高级别的接口。
+// Fetcher handles fetching subscription data from remote URLs.
+// It uses an HTTPClient to perform the actual HTTP requests and provides
+// a higher-level interface for subscription operations.
 type Fetcher struct {
 	client HTTPClient
 }
 
-// NewFetcher 使用提供的HTTPClient创建新的Fetcher实例。
-// HTTPClient可以配置为支持或不支持代理。
+// NewFetcher creates a new Fetcher instance with the provided HTTPClient.
+// The HTTPClient can be configured with or without proxy support.
 func NewFetcher(client HTTPClient) *Fetcher {
 	return &Fetcher{
 		client: client,
 	}
 }
 
-// FetchSubscription 从指定URL获取订阅数据。
-// 返回原始订阅数据字节或获取失败时的错误。
-// 此方法处理日志记录和错误包装以便更好地调试。
+// FetchSubscription retrieves subscription data from the specified URL.
+// It returns the raw subscription data as bytes or an error if fetching fails.
+// This method handles logging and error wrapping for better debugging.
 func (f *Fetcher) FetchSubscription(url string) ([]byte, error) {
 	log.Printf("获取订阅: %s", url)
 
