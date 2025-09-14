@@ -123,14 +123,23 @@
   - 将相关逻辑从main.go移到此处
   - _需求: 4.4, 8.3_
 
-- [ ] 5. 实现fileops包
-- [ ] 5.1 实现配置文件扫描器
+- [x] 5. 实现fileops包
+
+
+
+
+
+- [x] 5.1 实现配置文件扫描器
+
+
   - 创建Scanner结构体
   - 实现ScanConfigFiles方法
   - 将scanConfigFiles逻辑移到fileops包
   - _需求: 5.1, 5.3_
 
-- [ ] 5.2 实现配置文件更新器
+- [x] 5.2 实现配置文件更新器
+
+
   - 创建Updater结构体
   - 实现UpdateConfigFile方法
   - 将updateConfigFile逻辑移到fileops包
