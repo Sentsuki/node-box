@@ -11,6 +11,7 @@ import (
 	"node-box/internal/client"
 	"node-box/internal/config"
 	"node-box/internal/fileops"
+	"node-box/internal/modules"
 	"node-box/internal/subscription"
 )
 
@@ -28,12 +29,14 @@ var (
 // It manages the complete workflow of fetching subscriptions, processing nodes,
 // and updating configuration files.
 type NodeManager struct {
-	config     *config.Config
-	fetcher    *client.Fetcher
-	processors map[string]subscription.Processor
-	scanners   map[string]*fileops.Scanner
-	updaters   map[string]*fileops.Updater
-	filter     *subscription.Filter
+	config        *config.Config
+	fetcher       *client.Fetcher
+	processors    map[string]subscription.Processor
+	scanners      map[string]*fileops.Scanner
+	updaters      map[string]*fileops.Updater
+	filter        *subscription.Filter
+	moduleManager *modules.ModuleManager
+	configUpdater *modules.ConfigUpdater
 }
 
 // NewNodeManager creates a new NodeManager instance with all necessary components.
@@ -66,13 +69,21 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	// 创建节点过滤器
 	filter := subscription.NewFilter(cfg.Nodes.ExcludeKeywords)
 
+	// 创建模块管理器
+	moduleManager := modules.NewModuleManager(cfg, fetcher)
+
+	// 创建配置更新器
+	configUpdater := modules.NewConfigUpdater(moduleManager)
+
 	return &NodeManager{
-		config:     cfg,
-		fetcher:    fetcher,
-		processors: processors,
-		scanners:   scanners,
-		updaters:   updaters,
-		filter:     filter,
+		config:        cfg,
+		fetcher:       fetcher,
+		processors:    processors,
+		scanners:      scanners,
+		updaters:      updaters,
+		filter:        filter,
+		moduleManager: moduleManager,
+		configUpdater: configUpdater,
 	}, nil
 }
 
@@ -236,5 +247,100 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	}
 
 	log.Println("所有配置文件更新成功")
+	return nil
+}
+
+// UpdateModuleConfigs updates configuration files with module data.
+// It fetches all configured modules and applies them to the specified configuration files.
+func (nm *NodeManager) UpdateModuleConfigs() error {
+	if nm.config.Modules == nil || len(nm.config.Configs) == 0 {
+		log.Println("没有配置模块或配置文件，跳过模块配置更新")
+		return nil
+	}
+
+	log.Println("开始更新模块配置...")
+
+	// 1. 获取所有模块
+	if err := nm.moduleManager.FetchAllModules(); err != nil {
+		return fmt.Errorf("获取模块失败: %v", err)
+	}
+
+	// 2. 更新每个配置文件
+	var updateErrors []string
+	successCount := 0
+
+	for _, configFile := range nm.config.Configs {
+		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.Path)
+
+		if err := nm.configUpdater.UpdateConfigFile(configFile); err != nil {
+			errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile.Name, err)
+			log.Printf("%s", errorMsg)
+			updateErrors = append(updateErrors, errorMsg)
+			continue
+		}
+
+		successCount++
+		log.Printf("成功更新配置文件: %s", configFile.Name)
+	}
+
+	// 3. 汇总结果
+	log.Printf("模块配置更新完成: 成功 %d 个，失败 %d 个", successCount, len(updateErrors))
+
+	if len(updateErrors) > 0 {
+		log.Println("更新失败的配置文件:")
+		for _, errMsg := range updateErrors {
+			log.Printf("  - %s", errMsg)
+		}
+
+		if successCount > 0 {
+			return fmt.Errorf("部分模块配置更新失败: %d 成功, %d 失败", successCount, len(updateErrors))
+		}
+
+		return fmt.Errorf("所有模块配置更新失败: %v", updateErrors)
+	}
+
+	if successCount == 0 {
+		return fmt.Errorf("没有配置文件需要更新")
+	}
+
+	log.Println("所有模块配置更新成功")
+	return nil
+}
+
+// UpdateAllConfigurations updates both node configurations and module configurations.
+// It coordinates the complete workflow of updating all types of configurations.
+func (nm *NodeManager) UpdateAllConfigurations() error {
+	log.Println("开始更新所有配置...")
+
+	var errors []string
+
+	// 1. 更新节点配置
+	if err := nm.UpdateAllConfigs(); err != nil {
+		errorMsg := fmt.Sprintf("节点配置更新失败: %v", err)
+		log.Printf("%s", errorMsg)
+		errors = append(errors, errorMsg)
+	} else {
+		log.Println("节点配置更新成功")
+	}
+
+	// 2. 更新模块配置
+	if err := nm.UpdateModuleConfigs(); err != nil {
+		errorMsg := fmt.Sprintf("模块配置更新失败: %v", err)
+		log.Printf("%s", errorMsg)
+		errors = append(errors, errorMsg)
+	} else {
+		log.Println("模块配置更新成功")
+	}
+
+	// 3. 汇总结果
+	if len(errors) > 0 {
+		log.Println("配置更新完成，但有错误:")
+		for _, errMsg := range errors {
+			log.Printf("  - %s", errMsg)
+		}
+		return fmt.Errorf("配置更新完成，但有 %d 个错误", len(errors))
+	}
+
+	log.Println("所有配置更新成功")
 	return nil
 }

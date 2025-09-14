@@ -39,6 +39,40 @@ func GenerateExample(configPath string) error {
 			},
 			ExcludeKeywords: []string{"故障转移", "流量"},
 		},
+		Modules: &ModulesConfig{
+			Log: []Module{
+				{
+					Name:     "log1",
+					FromPath: "./configs/log.json",
+				},
+				{
+					Name:    "log2",
+					FromURL: "https://example.com/log.json",
+				},
+			},
+			DNS: []Module{
+				{
+					Name:     "dns1",
+					FromPath: "./configs/dns.json",
+				},
+				{
+					Name:    "dns2",
+					FromURL: "https://example.com/dns.json",
+				},
+			},
+		},
+		Configs: []ConfigFile{
+			{
+				Name:    "config1",
+				Path:    "./singbox/my_config.json",
+				Modules: []string{"log1", "dns1"},
+			},
+			{
+				Name:    "config2",
+				Path:    "./singbox/test_config.yaml",
+				Modules: []string{"log2", "dns2"},
+			},
+		},
 		UpdateInterval: 6,
 		Proxy: &ProxyConfig{
 			Type:     "http",
