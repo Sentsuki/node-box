@@ -39,11 +39,7 @@ func NewConfigUpdater(moduleManager *ModuleManager) *ConfigUpdater {
 // UpdateConfigFile updates a configuration file with the specified modules.
 // It merges the module configurations into the target file based on the module types.
 func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
-	// Support both 'path' and 'file' field names
-	filePath := configFile.Path
-	if filePath == "" {
-		filePath = configFile.File
-	}
+	filePath := configFile.File
 
 	log.Printf("开始更新配置文件: %s (%s)", configFile.Name, filePath)
 

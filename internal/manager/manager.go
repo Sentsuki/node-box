@@ -270,7 +270,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 	successCount := 0
 
 	for _, configFile := range nm.config.Configs {
-		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.Path)
+		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.File)
 
 		if err := nm.configUpdater.UpdateConfigFile(configFile); err != nil {
 			errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile.Name, err)
