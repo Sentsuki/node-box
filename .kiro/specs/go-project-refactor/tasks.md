@@ -146,20 +146,31 @@
   - 优化错误处理和日志记录
   - _需求: 5.2, 8.4_
 
-- [ ] 6. 实现manager包
-- [ ] 6.1 创建NodeManager结构体和核心方法
+- [x] 6. 实现manager包
+
+
+
+
+
+- [x] 6.1 创建NodeManager结构体和核心方法
+
+
   - 定义NodeManager结构体，包含各组件的依赖
   - 实现NewNodeManager构造函数
   - 实现FetchAllNodes方法协调订阅获取和处理
   - _需求: 6.1, 6.2_
 
-- [ ] 6.2 实现配置更新协调逻辑
+- [x] 6.2 实现配置更新协调逻辑
+
+
   - 实现UpdateAllConfigs方法
   - 协调文件扫描、节点获取和配置更新
   - 优化错误处理和日志记录
   - _需求: 6.2, 8.4_
 
-- [ ] 6.3 实现定时调度器
+- [x] 6.3 实现定时调度器
+
+
   - 创建Scheduler结构体
   - 实现Start方法处理定时任务
   - 将startScheduler逻辑移到manager包
