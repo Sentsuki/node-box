@@ -23,13 +23,19 @@ var (
 	ErrInvalidModuleData     = errors.New("invalid module data")
 )
 
+// ModuleCache holds cached module data
+type ModuleCache struct {
+	modules map[string]map[string]any // module name -> module data
+	valid   bool                      // 缓存是否有效
+}
+
 // ModuleManager handles fetching and managing configuration modules.
 // It can fetch modules from local files or remote URLs and provides
 // a unified interface for accessing module data.
 type ModuleManager struct {
 	config  *config.Config
 	fetcher *client.Fetcher
-	modules map[string]map[string]any // module name -> module data
+	cache   *ModuleCache
 }
 
 // NewModuleManager creates a new ModuleManager instance.
@@ -38,102 +44,175 @@ func NewModuleManager(cfg *config.Config, fetcher *client.Fetcher) *ModuleManage
 	return &ModuleManager{
 		config:  cfg,
 		fetcher: fetcher,
-		modules: make(map[string]map[string]any),
+		cache: &ModuleCache{
+			modules: make(map[string]map[string]any),
+			valid:   false,
+		},
 	}
 }
 
-// FetchAllModules fetches all configured modules from their sources.
+// InvalidateCache invalidates the module cache, forcing a fresh fetch on next request.
+func (mm *ModuleManager) InvalidateCache() {
+	mm.cache.valid = false
+	mm.cache.modules = make(map[string]map[string]any)
+	log.Println("模块缓存已失效")
+}
+
+// FetchAllModules fetches all configured modules from their sources and caches them.
 // It processes both local file modules and remote URL modules,
 // returning any errors encountered during the process.
+// Uses cached data if available and valid.
 func (mm *ModuleManager) FetchAllModules() error {
+	// 如果缓存有效，直接返回
+	if mm.cache.valid {
+		log.Printf("使用缓存的模块数据，共 %d 个模块", len(mm.cache.modules))
+		return nil
+	}
+
 	if mm.config.Modules == nil {
 		log.Println("No modules configured, skipping module fetch")
 		return nil
 	}
 
-	log.Println("开始获取所有模块...")
+	log.Println("开始获取并缓存所有模块...")
+
+	// 清空缓存
+	mm.cache.modules = make(map[string]map[string]any)
+	mm.cache.valid = false
+
+	var fetchErrors []string
+	successCount := 0
 
 	// Fetch log modules
 	for _, module := range mm.config.Modules.Log {
 		if err := mm.fetchModule(module, "log"); err != nil {
-			log.Printf("获取日志模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取日志模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch DNS modules
 	for _, module := range mm.config.Modules.DNS {
 		if err := mm.fetchModule(module, "dns"); err != nil {
-			log.Printf("获取DNS模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取DNS模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch NTP modules
 	for _, module := range mm.config.Modules.NTP {
 		if err := mm.fetchModule(module, "ntp"); err != nil {
-			log.Printf("获取NTP模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取NTP模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch Certificate modules
 	for _, module := range mm.config.Modules.Certificate {
 		if err := mm.fetchModule(module, "certificate"); err != nil {
-			log.Printf("获取Certificate模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取Certificate模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch Endpoints modules
 	for _, module := range mm.config.Modules.Endpoints {
 		if err := mm.fetchModule(module, "endpoints"); err != nil {
-			log.Printf("获取Endpoints模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取Endpoints模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch Inbounds modules
 	for _, module := range mm.config.Modules.Inbounds {
 		if err := mm.fetchModule(module, "inbounds"); err != nil {
-			log.Printf("获取Inbounds模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取Inbounds模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch Outbounds modules
 	for _, module := range mm.config.Modules.Outbounds {
 		if err := mm.fetchModule(module, "outbounds"); err != nil {
-			log.Printf("获取Outbounds模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取Outbounds模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch Route modules
 	for _, module := range mm.config.Modules.Route {
 		if err := mm.fetchModule(module, "route"); err != nil {
-			log.Printf("获取Route模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取Route模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch Services modules
 	for _, module := range mm.config.Modules.Services {
 		if err := mm.fetchModule(module, "services"); err != nil {
-			log.Printf("获取Services模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取Services模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
 	// Fetch Experimental modules
 	for _, module := range mm.config.Modules.Experimental {
 		if err := mm.fetchModule(module, "experimental"); err != nil {
-			log.Printf("获取Experimental模块失败 %s: %v", module.Name, err)
+			errorMsg := fmt.Sprintf("获取Experimental模块失败 %s: %v", module.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
+		successCount++
 	}
 
-	log.Printf("模块获取完成，共获取 %d 个模块", len(mm.modules))
+	// 标记缓存为有效（即使有部分失败）
+	if successCount > 0 {
+		mm.cache.valid = true
+		log.Printf("模块缓存完成: 成功 %d 个，失败 %d 个", successCount, len(fetchErrors))
+	}
+
+	if len(fetchErrors) > 0 {
+		log.Println("获取失败的模块:")
+		for _, errMsg := range fetchErrors {
+			log.Printf("  - %s", errMsg)
+		}
+
+		if successCount == 0 {
+			return fmt.Errorf("所有模块获取失败: %v", fetchErrors)
+		}
+
+		return fmt.Errorf("部分模块获取失败: %d 成功, %d 失败", successCount, len(fetchErrors))
+	}
+
+	log.Printf("所有模块缓存成功，总计 %d 个模块", successCount)
 	return nil
 }
 
@@ -166,8 +245,8 @@ func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) er
 		return fmt.Errorf("%w %s: %v", ErrModuleParseFailed, module.Name, err)
 	}
 
-	// Store module data
-	mm.modules[module.Name] = moduleData
+	// Store module data in cache
+	mm.cache.modules[module.Name] = moduleData
 	log.Printf("成功获取模块 %s (%s)", module.Name, moduleType)
 
 	return nil
@@ -192,10 +271,10 @@ func (mm *ModuleManager) fetchFromPath(path string) ([]byte, error) {
 	return data, nil
 }
 
-// GetModule retrieves a module by name.
+// GetModule retrieves a module by name from cache.
 // It returns the module data and a boolean indicating if the module was found.
 func (mm *ModuleManager) GetModule(name string) (map[string]any, bool) {
-	module, exists := mm.modules[name]
+	module, exists := mm.cache.modules[name]
 	return module, exists
 }
 
@@ -236,7 +315,7 @@ func (mm *ModuleManager) GetModulesByType(moduleType string) map[string]map[stri
 	}
 
 	for _, module := range modules {
-		if moduleData, exists := mm.modules[module.Name]; exists {
+		if moduleData, exists := mm.cache.modules[module.Name]; exists {
 			result[module.Name] = moduleData
 		}
 	}
@@ -244,17 +323,17 @@ func (mm *ModuleManager) GetModulesByType(moduleType string) map[string]map[stri
 	return result
 }
 
-// ListModules returns a list of all available module names.
+// ListModules returns a list of all available module names from cache.
 func (mm *ModuleManager) ListModules() []string {
 	var names []string
-	for name := range mm.modules {
+	for name := range mm.cache.modules {
 		names = append(names, name)
 	}
 	return names
 }
 
-// HasModule checks if a module exists.
+// HasModule checks if a module exists in cache.
 func (mm *ModuleManager) HasModule(name string) bool {
-	_, exists := mm.modules[name]
+	_, exists := mm.cache.modules[name]
 	return exists
 }

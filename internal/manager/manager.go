@@ -377,6 +377,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 
 // UpdateModuleConfigs updates configuration files with module data.
 // It fetches all configured modules and applies them to the specified configuration files.
+// Uses cached module data if available.
 func (nm *NodeManager) UpdateModuleConfigs() error {
 	if nm.config.Modules == nil || len(nm.config.Configs) == 0 {
 		log.Println("没有配置模块或配置文件，跳过模块配置更新")
@@ -385,7 +386,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 
 	log.Println("开始更新模块配置...")
 
-	// 1. 获取所有模块
+	// 1. 获取所有模块（使用缓存机制，只在需要时请求）
 	if err := nm.moduleManager.FetchAllModules(); err != nil {
 		return fmt.Errorf("获取模块失败: %v", err)
 	}
@@ -442,6 +443,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 
 	// 1. 失效缓存，确保获取最新数据
 	nm.InvalidateCache()
+	nm.moduleManager.InvalidateCache()
 
 	// 2. 更新节点配置
 	log.Println("步骤 1/2: 更新节点配置...")
