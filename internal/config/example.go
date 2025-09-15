@@ -31,10 +31,18 @@ func GenerateExample(configPath string) error {
 				{
 					InsertPath:   "./configs",
 					InsertMarker: "🚀 节点选择",
+					// 不指定 Subscriptions，默认插入所有启用的订阅
 				},
 				{
-					InsertPath:   "./test",
-					InsertMarker: "Proxy",
+					InsertPath:    "./test/specific_config.json",
+					InsertMarker:  "Proxy",
+					Subscriptions: []string{"示例订阅1"}, // 只插入指定的订阅
+					IsFile:        true,              // 标识这是一个具体文件
+				},
+				{
+					InsertPath:    "./configs",
+					InsertMarker:  "🌟 特定节点",
+					Subscriptions: []string{"示例订阅2"}, // 只插入示例订阅2的节点
 				},
 			},
 			ExcludeKeywords: []string{"故障转移", "流量"},

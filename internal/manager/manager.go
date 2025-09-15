@@ -62,7 +62,7 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	updaters := make(map[string]*fileops.Updater)
 
 	for _, target := range cfg.Nodes.Targets {
-		scanners[target.InsertPath] = fileops.NewScanner(target.InsertPath)
+		scanners[target.InsertPath] = fileops.NewScanner(target.InsertPath, target.IsFile)
 		updaters[target.InsertPath] = fileops.NewUpdater(target.InsertMarker)
 	}
 
@@ -91,14 +91,38 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 // It coordinates the subscription fetching and processing workflow,
 // returning a list of processed and filtered proxy nodes.
 func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
+	return nm.FetchNodesFromSubscriptions(nil)
+}
+
+// FetchNodesFromSubscriptions retrieves nodes from specified subscriptions.
+// If subscriptionNames is nil or empty, it fetches from all enabled subscriptions.
+// It coordinates the subscription fetching and processing workflow,
+// returning a list of processed and filtered proxy nodes.
+func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) ([]subscription.Node, error) {
 	var allNodes []subscription.Node
 	var enabledSubscriptions []string
 
-	log.Println("开始获取所有订阅节点...")
+	// 创建订阅名称映射，用于快速查找
+	var targetSubscriptions map[string]bool
+	if len(subscriptionNames) > 0 {
+		targetSubscriptions = make(map[string]bool)
+		for _, name := range subscriptionNames {
+			targetSubscriptions[name] = true
+		}
+		log.Printf("开始获取指定订阅节点: %v", subscriptionNames)
+	} else {
+		log.Println("开始获取所有订阅节点...")
+	}
 
 	for _, sub := range nm.config.Nodes.Subscriptions {
 		if !sub.Enable {
 			log.Printf("跳过已禁用的订阅: %s", sub.Name)
+			continue
+		}
+
+		// 如果指定了订阅名称，只处理指定的订阅
+		if targetSubscriptions != nil && !targetSubscriptions[sub.Name] {
+			log.Printf("跳过未指定的订阅: %s", sub.Name)
 			continue
 		}
 
@@ -146,32 +170,7 @@ func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
 func (nm *NodeManager) UpdateAllConfigs() error {
 	log.Println("开始更新所有配置文件...")
 
-	// 1. 获取所有节点
-	allNodes, err := nm.FetchAllNodes()
-	if err != nil {
-		return fmt.Errorf("获取节点失败: %v", err)
-	}
-
-	if len(allNodes) == 0 {
-		log.Printf("%v, skipping configuration update", ErrNoNodes)
-		return fmt.Errorf("%w", ErrNoNodes)
-	}
-
-	// 2. 准备订阅名称列表（用于清理旧节点）
-	var subscriptionNames []string
-	for _, sub := range nm.config.Nodes.Subscriptions {
-		if sub.Enable {
-			subscriptionNames = append(subscriptionNames, sub.Name)
-		}
-	}
-
-	// 3. 转换节点格式为updater期望的格式
-	nodesMaps := make([]map[string]any, len(allNodes))
-	for i, node := range allNodes {
-		nodesMaps[i] = map[string]any(node)
-	}
-
-	// 4. 处理每个配置路径
+	// 处理每个配置路径
 	var updateErrors []string
 	totalSuccessCount := 0
 	totalFileCount := 0
@@ -179,7 +178,41 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	for _, target := range nm.config.Nodes.Targets {
 		log.Printf("处理配置路径: %s (marker: %s)", target.InsertPath, target.InsertMarker)
 
-		// 扫描当前路径下的配置文件
+		// 1. 获取当前目标的节点（根据订阅过滤）
+		targetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
+		if err != nil {
+			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.InsertPath, err)
+			log.Printf("%s", errorMsg)
+			updateErrors = append(updateErrors, errorMsg)
+			continue
+		}
+
+		if len(targetNodes) == 0 {
+			log.Printf("路径 %s 未获取到节点，跳过更新", target.InsertPath)
+			continue
+		}
+
+		// 2. 准备订阅名称列表（用于清理旧节点）
+		var subscriptionNames []string
+		if len(target.Subscriptions) > 0 {
+			// 使用指定的订阅
+			subscriptionNames = target.Subscriptions
+		} else {
+			// 使用所有启用的订阅
+			for _, sub := range nm.config.Nodes.Subscriptions {
+				if sub.Enable {
+					subscriptionNames = append(subscriptionNames, sub.Name)
+				}
+			}
+		}
+
+		// 3. 转换节点格式为updater期望的格式
+		nodesMaps := make([]map[string]any, len(targetNodes))
+		for i, node := range targetNodes {
+			nodesMaps[i] = map[string]any(node)
+		}
+
+		// 4. 扫描当前路径下的配置文件
 		scanner := nm.scanners[target.InsertPath]
 		configFiles, err := scanner.ScanConfigFiles()
 		if err != nil {
@@ -190,17 +223,21 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		}
 
 		if len(configFiles) == 0 {
-			log.Printf("路径 %s 下未找到配置文件", target.InsertPath)
+			if target.IsFile {
+				log.Printf("指定的配置文件不存在: %s", target.InsertPath)
+			} else {
+				log.Printf("路径 %s 下未找到配置文件", target.InsertPath)
+			}
 			continue
 		}
 
-		log.Printf("在路径 %s 下找到 %d 个配置文件", target.InsertPath, len(configFiles))
+		log.Printf("在路径 %s 下找到 %d 个配置文件，节点数量: %d", target.InsertPath, len(configFiles), len(targetNodes))
 		totalFileCount += len(configFiles)
 
-		// 获取对应的更新器
+		// 5. 获取对应的更新器
 		updater := nm.updaters[target.InsertPath]
 
-		// 更新当前路径下的每个配置文件
+		// 6. 更新当前路径下的每个配置文件
 		pathSuccessCount := 0
 		for _, configFile := range configFiles {
 			log.Printf("更新配置文件: %s", configFile)

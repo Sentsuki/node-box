@@ -9,6 +9,8 @@
 - 支持 HTTP/HTTPS/SOCKS5 代理获取订阅
 - 自动更新配置文件中的节点列表
 - 支持关键词过滤排除特定节点
+- **🆕 支持文件级别的精确配置更新**
+- **🆕 支持选择性订阅节点插入**
 - 定期自动更新功能
 - 模块化架构，易于维护和扩展
 
@@ -93,18 +95,30 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 
 ```json
 {
-  "subscriptions": [
-    {
-      "name": "订阅名称",
-      "url": "订阅链接",
-      "type": "clash",
-      "enable": true
-    }
-  ],
-  "config_dir": "./configs",
-  "insert_marker": "🚀 节点选择",
+  "nodes": {
+    "subscriptions": [
+      {
+        "name": "订阅名称",
+        "url": "订阅链接",
+        "type": "clash",
+        "enable": true
+      }
+    ],
+    "targets": [
+      {
+        "insert_path": "./configs",
+        "insert_marker": "🚀 节点选择"
+      },
+      {
+        "insert_path": "./configs/gaming.json",
+        "insert_marker": "🎮 游戏节点",
+        "subscriptions": ["订阅A"],
+        "is_file": true
+      }
+    ],
+    "exclude_keywords": ["故障转移", "流量"]
+  },
   "update_interval_hours": 6,
-  "exclude_keywords": ["故障转移", "流量"],
   "proxy": {
     "type": "http",
     "host": "127.0.0.1",
@@ -114,6 +128,45 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
   }
 }
 ```
+
+### 🆕 增强功能说明
+
+#### 1. 文件级别配置支持
+
+现在支持两种配置模式：
+
+**目录模式（默认）**：
+```json
+{
+  "insert_path": "./configs",
+  "insert_marker": "🚀 节点选择"
+}
+```
+
+**文件模式（新增）**：
+```json
+{
+  "insert_path": "./configs/specific.json",
+  "insert_marker": "🌟 特定节点",
+  "is_file": true
+}
+```
+
+#### 2. 选择性订阅插入
+
+支持为不同配置指定不同的订阅源：
+
+```json
+{
+  "insert_path": "./configs/gaming.json",
+  "insert_marker": "🎮 游戏节点",
+  "subscriptions": ["低延迟订阅", "游戏专用"],
+  "is_file": true
+}
+```
+
+- 不指定 `subscriptions`：使用所有启用的订阅
+- 指定 `subscriptions`：只使用指定的订阅源
 
 ### 代理配置说明
 

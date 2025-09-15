@@ -44,9 +44,12 @@ type Subscription struct {
 
 // ConfigPath represents a configuration path with its associated insert marker.
 // It defines where configuration files are located and which marker to use for updates.
+// It now supports both directory and file-level targeting, and subscription filtering.
 type ConfigPath struct {
-	InsertPath   string `json:"insert_path"`
-	InsertMarker string `json:"insert_marker"`
+	InsertPath    string   `json:"insert_path"`
+	InsertMarker  string   `json:"insert_marker"`
+	Subscriptions []string `json:"subscriptions,omitempty"` // 指定要插入的订阅名称，为空则插入所有启用的订阅
+	IsFile        bool     `json:"is_file,omitempty"`       // 标识 insert_path 是否为具体文件路径
 }
 
 // ModulesConfig represents the modules configuration section.
@@ -190,6 +193,20 @@ func (c *Config) validateConfigPath(configPath ConfigPath, index int) error {
 
 	if configPath.InsertMarker == "" {
 		return fmt.Errorf("targets[%d]: insert_marker cannot be empty", index)
+	}
+
+	// 验证指定的订阅是否存在
+	if len(configPath.Subscriptions) > 0 {
+		subscriptionMap := make(map[string]bool)
+		for _, sub := range c.Nodes.Subscriptions {
+			subscriptionMap[sub.Name] = true
+		}
+
+		for _, subName := range configPath.Subscriptions {
+			if !subscriptionMap[subName] {
+				return fmt.Errorf("targets[%d]: subscription '%s' not found in subscriptions list", index, subName)
+			}
+		}
 	}
 
 	return nil

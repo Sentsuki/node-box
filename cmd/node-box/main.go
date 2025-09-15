@@ -31,6 +31,11 @@ func printUsage() {
 参数:
   配置文件路径                配置文件的路径，默认为 %s
 
+🆕 增强功能:
+  - 支持文件级别的精确配置更新 (is_file: true)
+  - 支持选择性订阅节点插入 (subscriptions: [...])
+  - 灵活的目标配置管理
+
 示例:
   %s                        使用默认配置文件运行（更新所有配置）
   %s config.json            使用指定配置文件运行
@@ -38,6 +43,20 @@ func printUsage() {
   %s modules                仅更新模块配置
   %s init                   生成默认配置文件
   %s init my-config.json    生成指定路径的配置文件
+
+配置示例:
+  {
+    "nodes": {
+      "targets": [
+        {
+          "insert_path": "./configs/gaming.json",
+          "insert_marker": "🎮 游戏节点",
+          "subscriptions": ["低延迟订阅"],
+          "is_file": true
+        }
+      ]
+    }
+  }
 
 `, appName, version, appName, appName, appName, appName, appName, appName, defaultConfigPath, appName, appName, appName, appName, appName, appName)
 }
