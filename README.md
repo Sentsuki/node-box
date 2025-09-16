@@ -5,7 +5,6 @@
 ## 功能特性
 
 - 支持 Clash 和 SingBox 订阅格式
-- **🆕 支持 Base64 编码的订阅链接自动解码**
 - 自动转换 Clash 代理配置到 SingBox 格式
 - 支持 HTTP/HTTPS/SOCKS5 代理获取订阅
 - 自动更新配置文件中的节点列表
@@ -189,22 +188,6 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 优化后：所有订阅只获取一次 -> 3次请求，6秒
 ```
 
-#### 🆕 Base64 订阅支持
-- 自动检测 Base64 编码的订阅内容
-- 支持标准 Base64 和 URL-safe Base64 格式
-- 智能识别编码内容，避免误解码
-- 解码后自动验证内容有效性
-
-**支持的编码格式：**
-- 标准 Base64 编码 (`A-Z`, `a-z`, `0-9`, `+`, `/`, `=`)
-- URL-safe Base64 编码 (`A-Z`, `a-z`, `0-9`, `-`, `_`, `=`)
-
-**自动检测逻辑：**
-1. 检查内容长度是否为4的倍数
-2. 验证字符集是否符合 Base64 规范
-3. 排除明显的配置文件格式（包含 `proxies:`、`outbounds:` 等关键词）
-4. 解码后验证内容是否为有效的配置文件
-
 ### 代理配置说明
 
 - `type`: 代理类型，支持 `http`、`https`、`socks5`
@@ -299,41 +282,10 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 - VLESS
 - Trojan
 - 支持 WebSocket 和 TLS 配置
-- **🆕 支持 Base64 编码的订阅内容**
 
 ### SingBox
 - 保留所有原始字段
 - 自动添加订阅前缀到节点标签
-- **🆕 支持 Base64 编码的订阅内容**
-
-### Base64 编码支持详情
-
-程序会自动检测订阅内容是否为 Base64 编码，检测逻辑包括：
-
-1. **长度验证**：内容长度必须是4的倍数
-2. **字符集验证**：只包含有效的 Base64 字符
-3. **内容排除**：不包含明显的配置文件关键词（如 `proxies:`、`outbounds:` 等）
-4. **解码验证**：解码后内容必须是有效的 UTF-8 文本且包含配置相关关键词
-
-**支持的编码格式：**
-- 标准 Base64：`A-Z a-z 0-9 + / =`
-- URL-safe Base64：`A-Z a-z 0-9 - _ =`
-
-**使用示例：**
-```json
-{
-  "subscriptions": [
-    {
-      "name": "Base64编码订阅",
-      "url": "https://example.com/base64-subscription",
-      "type": "clash",
-      "enable": true
-    }
-  ]
-}
-```
-
-程序会自动处理解码过程，无需额外配置。如果解码失败，会使用原始数据继续处理。
 
 ## 开发
 
