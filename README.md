@@ -7,6 +7,7 @@
 - 支持 Clash 和 SingBox 订阅格式
 - 自动转换 Clash 代理配置到 SingBox 格式
 - 支持 HTTP/HTTPS/SOCKS5 代理获取订阅
+- **🆕 支持自定义 User-Agent（全局和订阅级别，避免订阅服务器拦截）**
 - 自动更新配置文件中的节点列表
 - 支持关键词过滤排除特定节点
 - **🆕 支持文件级别的精确配置更新**
@@ -103,7 +104,8 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
         "name": "订阅名称",
         "url": "订阅链接",
         "type": "clash",
-        "enable": true
+        "enable": true,
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
       }
     ],
     "targets": [
@@ -121,6 +123,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
     "exclude_keywords": ["故障转移", "流量"]
   },
   "update_interval_hours": 6,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "proxy": {
     "type": "http",
     "host": "127.0.0.1",
@@ -198,6 +201,73 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 
 如果不配置代理，程序将使用直连方式获取订阅。
 
+### User-Agent 配置说明
+
+支持两个级别的User-Agent配置：
+
+#### 1. 全局User-Agent配置
+- `user_agent`: 全局默认的HTTP请求User-Agent头（可选）
+- 如果不配置，将使用默认值：`sing-box`
+- 作为所有订阅的后备User-Agent
+
+#### 2. 订阅级别User-Agent配置（🆕）
+- 每个订阅可以单独配置 `user_agent` 字段
+- 订阅级别的User-Agent优先级高于全局配置
+- 如果订阅没有配置User-Agent，则使用全局User-Agent
+
+**优先级顺序：**
+1. 订阅的 `user_agent` 字段（最高优先级）
+2. 全局的 `user_agent` 字段
+3. 默认值 `sing-box`（最低优先级）
+
+**多订阅不同User-Agent示例：**
+```json
+{
+  "nodes": {
+    "subscriptions": [
+      {
+        "name": "桌面端订阅",
+        "url": "https://example.com/desktop",
+        "type": "clash",
+        "enable": true,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      },
+      {
+        "name": "移动端订阅",
+        "url": "https://example.com/mobile",
+        "type": "clash",
+        "enable": true,
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+      },
+      {
+        "name": "默认订阅",
+        "url": "https://example.com/default",
+        "type": "clash",
+        "enable": true
+      }
+    ]
+  },
+  "user_agent": "sing-box (Global Default)"
+}
+```
+
+**常用User-Agent示例：**
+
+桌面端Chrome：
+```json
+"user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+```
+
+移动端Safari：
+```json
+"user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+```
+
+Android Chrome：
+```json
+"user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+```
+
 ## 使用方法
 
 ### 基本使用
@@ -234,7 +304,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 
 处理 HTTP 请求和代理配置：
 
-- `NewHTTPClient(proxy *config.ProxyConfig)`: 创建 HTTP 客户端
+- `NewHTTPClient(proxy *config.ProxyConfig, userAgent string)`: 创建 HTTP 客户端
 - `NewFetcher(client HTTPClient)`: 创建订阅获取器
 - `FetchSubscription(url string)`: 获取订阅内容
 
