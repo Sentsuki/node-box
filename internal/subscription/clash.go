@@ -1,123 +1,69 @@
 package subscription
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
-	"strings"
+
+	"node-box/internal/subscription/clash/convert"
+	"node-box/internal/subscription/clash/model"
+	"node-box/internal/subscription/clash/model/clash"
 
 	"gopkg.in/yaml.v3"
 )
 
 // ClashProcessor handles Clash subscription data processing.
-// It converts Clash format proxy configurations to SingBox format nodes.
-type ClashProcessor struct{}
+// It converts Clash format proxy configurations to SingBox format nodes using the new conversion logic.
+type ClashProcessor struct {
+	version model.SingBoxVer
+}
 
 // NewClashProcessor creates a new Clash processor instance.
 // Returns a processor that can handle Clash format subscription data.
 func NewClashProcessor() *ClashProcessor {
-	return &ClashProcessor{}
+	return &ClashProcessor{
+		version: model.SINGLATEST, // 使用最新版本
+	}
 }
 
 // Process handles Clash subscription data and converts it to SingBox format nodes.
 // It parses the YAML data, extracts proxy configurations, and converts each
-// proxy to the unified Node format compatible with SingBox.
+// proxy to the unified Node format compatible with SingBox using the new conversion logic.
 func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
-	var clashConfig ClashConfig
+	var clashConfig clash.Clash
 	if err := yaml.Unmarshal(data, &clashConfig); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidClashConfig, err)
 	}
 
+	// 使用新的转换逻辑
+	singboxNodes, err := convert.Clash2sing(clashConfig, cp.version)
+	if err != nil {
+		log.Printf("Conversion warnings: %v", err)
+		// 继续处理，因为可能只是部分节点转换失败
+	}
+
 	var nodes []Node
-	for _, proxy := range clashConfig.Proxies {
-		node := cp.convertClashToSingBox(proxy)
-		if node != nil {
-			nodes = append(nodes, node)
+	for _, singboxNode := range singboxNodes {
+		// 将SingBoxOut转换为Node (map[string]any)
+		nodeBytes, err := json.Marshal(singboxNode)
+		if err != nil {
+			log.Printf("Failed to marshal node %s: %v", singboxNode.Tag, err)
+			continue
 		}
+
+		var node Node
+		if err := json.Unmarshal(nodeBytes, &node); err != nil {
+			log.Printf("Failed to unmarshal node %s: %v", singboxNode.Tag, err)
+			continue
+		}
+
+		// 过滤掉被忽略的节点
+		if singboxNode.Ignored {
+			continue
+		}
+
+		nodes = append(nodes, node)
 	}
 
 	return nodes, nil
-}
-
-// convertClashToSingBox converts a Clash proxy configuration to SingBox format.
-// It handles different proxy types (shadowsocks, vmess, vless, trojan) and
-// converts their specific configurations to SingBox compatible format.
-func (cp *ClashProcessor) convertClashToSingBox(proxy ClashProxy) Node {
-	node := Node{
-		"type":   strings.ToLower(proxy.Type),
-		"tag":    proxy.Name,
-		"server": proxy.Server,
-	}
-
-	// 转换端口
-	port, err := strconv.Atoi(proxy.Port)
-	if err != nil {
-		log.Printf("%v for proxy %s: %v", ErrPortConversionFailed, proxy.Name, err)
-		return nil
-	}
-	node["server_port"] = port
-
-	// 处理UDP相关的packet_encoding
-	if proxy.UDP {
-		if proxy.Type == "vmess" || proxy.Type == "vless" {
-			node["packet_encoding"] = "xudp"
-		}
-	}
-
-	// 处理WebSocket传输配置
-	if proxy.Network == "ws" {
-		transport := map[string]any{
-			"type": "ws",
-			"path": proxy.WSPath,
-		}
-		if len(proxy.WSHeaders) > 0 {
-			headers := make(map[string]any)
-			for k, v := range proxy.WSHeaders {
-				headers[k] = v
-			}
-			transport["headers"] = headers
-		}
-		node["transport"] = transport
-	}
-
-	// 处理TLS配置
-	if proxy.TLS {
-		tls := map[string]any{
-			"enabled":     true,
-			"server_name": proxy.ServerName,
-			"insecure":    proxy.SkipCertVerify,
-		}
-		node["tls"] = tls
-	}
-
-	// 根据不同类型设置特定字段
-	switch strings.ToLower(proxy.Type) {
-	case "ss":
-		node["type"] = "shadowsocks"
-		node["method"] = proxy.Cipher
-		node["password"] = proxy.Password
-
-	case "vmess":
-		node["type"] = "vmess"
-		node["uuid"] = proxy.UUID
-		if alterId, err := strconv.Atoi(proxy.AlterId); err == nil {
-			node["alter_id"] = alterId
-		}
-		node["security"] = proxy.Cipher
-
-	case "vless":
-		node["type"] = "vless"
-		node["uuid"] = proxy.UUID
-		node["security"] = proxy.Cipher
-
-	case "trojan":
-		node["type"] = "trojan"
-		node["password"] = proxy.Password
-
-	default:
-		log.Printf("%v: %s for proxy %s", ErrUnsupportedProxyType, proxy.Type, proxy.Name)
-		return nil
-	}
-
-	return node
 }

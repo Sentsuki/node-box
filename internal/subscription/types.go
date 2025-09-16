@@ -29,29 +29,6 @@ type Processor interface {
 	Process(data []byte) ([]Node, error)
 }
 
-// ClashProxy represents a Clash proxy structure for parsing Clash format subscriptions.
-// It contains all the fields commonly found in Clash proxy configurations.
-type ClashProxy struct {
-	Name           string            `yaml:"name"`
-	Type           string            `yaml:"type"`
-	Server         string            `yaml:"server"`
-	Port           string            `yaml:"port"`
-	Cipher         string            `yaml:"cipher,omitempty"`
-	Password       string            `yaml:"password,omitempty"`
-	UUID           string            `yaml:"uuid,omitempty"`
-	AlterId        string            `yaml:"alterId,omitempty"`
-	Security       string            `yaml:"security,omitempty"`
-	Network        string            `yaml:"network,omitempty"`
-	WSPath         string            `yaml:"ws-path,omitempty"`
-	WSHeaders      map[string]string `yaml:"ws-headers,omitempty"`
-	TLS            bool              `yaml:"tls,omitempty"`
-	SkipCertVerify bool              `yaml:"skip-cert-verify,omitempty"`
-	ServerName     string            `yaml:"servername,omitempty"`
-	UDP            bool              `yaml:"udp,omitempty"`
-}
-
-// ClashConfig represents the main Clash configuration structure.
-// It contains the list of proxy configurations parsed from Clash subscription data.
-type ClashConfig struct {
-	Proxies []ClashProxy `yaml:"proxies"`
-}
+// Note: ClashProxy and ClashConfig structures are now defined in
+// internal/subscription/clash/model/clash package for better organization
+// and more comprehensive field support.
