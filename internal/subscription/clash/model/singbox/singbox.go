@@ -19,7 +19,7 @@ type SingBoxOut struct {
 	Transport                *SingTransport            `json:"transport,omitempty"`
 	Type                     string                    `json:"type,omitempty"`
 	Method                   string                    `json:"method,omitempty"`
-	AlterID                  int                       `json:"alter_id,omitempty"`
+	AlterID                  int                       `json:"alter_id"`
 	Security                 string                    `json:"security,omitempty"`
 	UUID                     string                    `json:"uuid,omitempty"`
 	Default                  string                    `json:"default,omitempty"`
