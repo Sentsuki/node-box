@@ -49,7 +49,7 @@ type Client struct {
 func NewHTTPClient(proxy *config.ProxyConfig, userAgent string) (HTTPClient, error) {
 	// Set default user agent if not provided
 	if userAgent == "" {
-		userAgent = "node-box/1.0"
+		userAgent = "sing-box"
 	}
 
 	if proxy == nil {

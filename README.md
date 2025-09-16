@@ -207,7 +207,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 
 #### 1. 全局User-Agent配置
 - `user_agent`: 全局默认的HTTP请求User-Agent头（可选）
-- 如果不配置，将使用默认值：`node-box/1.0`
+- 如果不配置，将使用默认值：`sing-box`
 - 作为所有订阅的后备User-Agent
 
 #### 2. 订阅级别User-Agent配置（🆕）
@@ -218,7 +218,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 **优先级顺序：**
 1. 订阅的 `user_agent` 字段（最高优先级）
 2. 全局的 `user_agent` 字段
-3. 默认值 `node-box/1.0`（最低优先级）
+3. 默认值 `sing-box`（最低优先级）
 
 **多订阅不同User-Agent示例：**
 ```json
@@ -247,7 +247,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
       }
     ]
   },
-  "user_agent": "node-box/1.0 (Global Default)"
+  "user_agent": "sing-box (Global Default)"
 }
 ```
 
