@@ -37,10 +37,11 @@ type NodesConfig struct {
 // It defines the properties of a subscription including its URL, type,
 // and whether it's enabled for processing.
 type Subscription struct {
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	Type   string `json:"type"` // "clash" or "singbox"
-	Enable bool   `json:"enable"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Type      string `json:"type"` // "clash" or "singbox"
+	Enable    bool   `json:"enable"`
+	UserAgent string `json:"user_agent,omitempty"` // 自定义User-Agent，可选
 }
 
 // ConfigPath represents a configuration path with its associated insert marker.

@@ -29,6 +29,10 @@ type HTTPClient interface {
 	// Get performs an HTTP GET request to the specified URL
 	// and returns the response body as bytes or an error.
 	Get(url string) ([]byte, error)
+
+	// GetWithUserAgent performs an HTTP GET request with a custom User-Agent
+	// and returns the response body as bytes or an error.
+	GetWithUserAgent(url string, userAgent string) ([]byte, error)
 }
 
 // Client implements HTTPClient interface with proxy support.
@@ -45,7 +49,7 @@ type Client struct {
 func NewHTTPClient(proxy *config.ProxyConfig, userAgent string) (HTTPClient, error) {
 	// Set default user agent if not provided
 	if userAgent == "" {
-		userAgent = "sing-box"
+		userAgent = "node-box/1.0"
 	}
 
 	if proxy == nil {
@@ -90,6 +94,17 @@ func NewHTTPClient(proxy *config.ProxyConfig, userAgent string) (HTTPClient, err
 // Get performs an HTTP GET request to the specified URL.
 // It returns the response body as bytes or an error if the request fails.
 func (c *Client) Get(targetURL string) ([]byte, error) {
+	return c.GetWithUserAgent(targetURL, c.userAgent)
+}
+
+// GetWithUserAgent performs an HTTP GET request with a custom User-Agent.
+// It returns the response body as bytes or an error if the request fails.
+func (c *Client) GetWithUserAgent(targetURL string, userAgent string) ([]byte, error) {
+	// Use default user agent if not provided
+	if userAgent == "" {
+		userAgent = c.userAgent
+	}
+
 	// Create request with custom User-Agent
 	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
@@ -97,7 +112,7 @@ func (c *Client) Get(targetURL string) ([]byte, error) {
 	}
 
 	// Set custom User-Agent header
-	req.Header.Set("User-Agent", c.userAgent)
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -123,10 +123,20 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 			continue
 		}
 
-		log.Printf("获取订阅: %s", sub.Name)
+		// 确定要使用的User-Agent
+		userAgent := sub.UserAgent
+		if userAgent == "" {
+			userAgent = nm.config.UserAgent // 使用全局User-Agent作为后备
+		}
 
-		// 获取订阅数据（带重试）
-		data, err := nm.fetcher.FetchSubscription(sub.URL)
+		if userAgent != "" {
+			log.Printf("获取订阅: %s (User-Agent: %s)", sub.Name, userAgent)
+		} else {
+			log.Printf("获取订阅: %s", sub.Name)
+		}
+
+		// 获取订阅数据（带重试和自定义User-Agent）
+		data, err := nm.fetcher.FetchSubscriptionWithUserAgent(sub.URL, userAgent)
 		if err != nil {
 			errorMsg := fmt.Sprintf("获取订阅失败 %s: %v", sub.Name, err)
 			log.Printf("%s", errorMsg)
