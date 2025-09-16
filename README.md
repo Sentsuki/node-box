@@ -7,6 +7,7 @@
 - 支持 Clash 和 SingBox 订阅格式
 - 自动转换 Clash 代理配置到 SingBox 格式
 - 支持 HTTP/HTTPS/SOCKS5 代理获取订阅
+- **🆕 支持自定义 User-Agent（避免订阅服务器拦截）**
 - 自动更新配置文件中的节点列表
 - 支持关键词过滤排除特定节点
 - **🆕 支持文件级别的精确配置更新**
@@ -121,6 +122,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
     "exclude_keywords": ["故障转移", "流量"]
   },
   "update_interval_hours": 6,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "proxy": {
     "type": "http",
     "host": "127.0.0.1",
@@ -198,6 +200,26 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 
 如果不配置代理，程序将使用直连方式获取订阅。
 
+### User-Agent 配置说明
+
+- `user_agent`: 自定义HTTP请求的User-Agent头（可选）
+- 如果不配置，将使用默认值：`node-box/1.0`
+- 建议使用常见浏览器的User-Agent以避免被订阅服务器拦截
+
+**常用User-Agent示例：**
+```json
+{
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+```
+
+**移动端User-Agent示例：**
+```json
+{
+  "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+}
+```
+
 ## 使用方法
 
 ### 基本使用
@@ -234,7 +256,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 
 处理 HTTP 请求和代理配置：
 
-- `NewHTTPClient(proxy *config.ProxyConfig)`: 创建 HTTP 客户端
+- `NewHTTPClient(proxy *config.ProxyConfig, userAgent string)`: 创建 HTTP 客户端
 - `NewFetcher(client HTTPClient)`: 创建订阅获取器
 - `FetchSubscription(url string)`: 获取订阅内容
 

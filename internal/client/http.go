@@ -36,18 +36,25 @@ type HTTPClient interface {
 // functionality for proxy configuration and timeout handling.
 type Client struct {
 	httpClient *http.Client
+	userAgent  string
 }
 
-// NewHTTPClient creates a new HTTP client with optional proxy configuration.
+// NewHTTPClient creates a new HTTP client with optional proxy configuration and user agent.
 // If proxy is nil, it creates a client with direct connection.
 // Returns an HTTPClient interface implementation or an error if proxy configuration is invalid.
-func NewHTTPClient(proxy *config.ProxyConfig) (HTTPClient, error) {
+func NewHTTPClient(proxy *config.ProxyConfig, userAgent string) (HTTPClient, error) {
+	// Set default user agent if not provided
+	if userAgent == "" {
+		userAgent = "sing-box"
+	}
+
 	if proxy == nil {
 		// No proxy configuration, use default client with timeout
 		return &Client{
 			httpClient: &http.Client{
 				Timeout: 30 * time.Second,
 			},
+			userAgent: userAgent,
 		}, nil
 	}
 
@@ -74,13 +81,25 @@ func NewHTTPClient(proxy *config.ProxyConfig) (HTTPClient, error) {
 		Timeout:   30 * time.Second,
 	}
 
-	return &Client{httpClient: httpClient}, nil
+	return &Client{
+		httpClient: httpClient,
+		userAgent:  userAgent,
+	}, nil
 }
 
 // Get performs an HTTP GET request to the specified URL.
 // It returns the response body as bytes or an error if the request fails.
 func (c *Client) Get(targetURL string) ([]byte, error) {
-	resp, err := c.httpClient.Get(targetURL)
+	// Create request with custom User-Agent
+	req, err := http.NewRequest("GET", targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
+	}
+
+	// Set custom User-Agent header
+	req.Header.Set("User-Agent", c.userAgent)
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
 	}

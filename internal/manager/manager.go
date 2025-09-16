@@ -51,7 +51,7 @@ type NodeManager struct {
 // based on the provided configuration.
 func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	// 创建HTTP客户端
-	httpClient, err := client.NewHTTPClient(cfg.Proxy)
+	httpClient, err := client.NewHTTPClient(cfg.Proxy, cfg.UserAgent)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrHTTPClientCreation, err)
 	}

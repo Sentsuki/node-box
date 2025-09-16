@@ -22,6 +22,7 @@ type Config struct {
 	Configs        []ConfigFile   `json:"configs,omitempty"`
 	UpdateInterval int            `json:"update_interval_hours"`
 	Proxy          *ProxyConfig   `json:"proxy,omitempty"`
+	UserAgent      string         `json:"user_agent,omitempty"`
 }
 
 // NodesConfig represents the nodes configuration section.
