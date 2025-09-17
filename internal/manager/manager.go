@@ -39,7 +39,6 @@ type NodeManager struct {
 	fetcher       *client.Fetcher
 	processors    map[string]subscription.Processor
 	scanners      map[string]*fileops.Scanner
-	updaters      map[string]*fileops.Updater
 	filter        *subscription.Filter
 	moduleManager *modules.ModuleManager
 	configUpdater *modules.ConfigUpdater
@@ -64,13 +63,11 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	processors["clash"] = subscription.NewClashProcessor()
 	processors["singbox"] = subscription.NewSingBoxProcessor()
 
-	// 为每个配置路径创建扫描器和更新器
+	// 为每个配置路径创建扫描器
 	scanners := make(map[string]*fileops.Scanner)
-	updaters := make(map[string]*fileops.Updater)
 
 	for _, target := range cfg.Nodes.Targets {
-		scanners[target.InsertPath] = fileops.NewScanner(target.InsertPath, target.IsFile)
-		updaters[target.InsertPath] = fileops.NewUpdater(target.InsertMarker)
+		scanners[target.Path] = fileops.NewScanner(target.Path, target.IsFile)
 	}
 
 	// 创建节点过滤器
@@ -87,7 +84,6 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 		fetcher:       fetcher,
 		processors:    processors,
 		scanners:      scanners,
-		updaters:      updaters,
 		filter:        filter,
 		moduleManager: moduleManager,
 		configUpdater: configUpdater,
@@ -107,8 +103,9 @@ func (nm *NodeManager) InvalidateCache() {
 
 // FetchAndCacheAllSubscriptions fetches all enabled subscriptions and caches the results.
 // This method should be called once per update cycle to populate the cache.
+// 缓存原始节点（未经全局过滤），过滤将在使用时进行
 func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
-	log.Println("开始获取并缓存所有订阅节点...")
+	log.Println("获取所有订阅节点...")
 
 	// 清空缓存
 	nm.cache.nodes = make(map[string][]subscription.Node)
@@ -119,24 +116,31 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 
 	for _, sub := range nm.config.Nodes.Subscriptions {
 		if !sub.Enable {
-			log.Printf("跳过已禁用的订阅: %s", sub.Name)
 			continue
 		}
 
 		// 确定要使用的User-Agent
 		userAgent := sub.UserAgent
 		if userAgent == "" {
-			userAgent = nm.config.UserAgent // 使用全局User-Agent作为后备
+			userAgent = nm.config.UserAgent
 		}
 
-		if userAgent != "" {
-			log.Printf("获取订阅: %s (User-Agent: %s)", sub.Name, userAgent)
+		log.Printf("获取订阅: %s", sub.Name)
+
+		// 根据配置选择获取方式
+		var data []byte
+		var err error
+
+		if sub.URL != "" {
+			// 从URL获取订阅数据（带重试和自定义User-Agent）
+			data, err = nm.fetcher.FetchSubscriptionWithUserAgent(sub.URL, userAgent)
+		} else if sub.Path != "" {
+			// 从本地路径读取订阅数据
+			data, err = nm.fetcher.FetchSubscriptionFromPath(sub.Path)
 		} else {
-			log.Printf("获取订阅: %s", sub.Name)
+			err = fmt.Errorf("订阅 %s 既没有配置URL也没有配置Path", sub.Name)
 		}
 
-		// 获取订阅数据（带重试和自定义User-Agent）
-		data, err := nm.fetcher.FetchSubscriptionWithUserAgent(sub.URL, userAgent)
 		if err != nil {
 			errorMsg := fmt.Sprintf("获取订阅失败 %s: %v", sub.Name, err)
 			log.Printf("%s", errorMsg)
@@ -162,39 +166,37 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 			continue
 		}
 
-		// 过滤节点
-		filteredNodes := nm.filter.FilterNodes(nodes)
-		log.Printf("订阅 %s: 原始节点 %d 个，过滤后 %d 个", sub.Name, len(nodes), len(filteredNodes))
+		// 添加订阅前缀（缓存原始节点，不进行全局过滤）
+		prefixedNodes := subscription.AddSubscriptionPrefix(nodes, sub.Name)
 
-		// 添加订阅前缀
-		prefixedNodes := subscription.AddSubscriptionPrefix(filteredNodes, sub.Name)
-
-		// 缓存节点
+		// 缓存原始节点
 		nm.cache.nodes[sub.Name] = prefixedNodes
 		successCount++
-		log.Printf("成功缓存订阅 %s: %d 个节点", sub.Name, len(prefixedNodes))
+		log.Printf("缓存订阅 %s: %d 个节点", sub.Name, len(prefixedNodes))
 	}
 
 	// 标记缓存为有效（即使有部分失败）
 	if successCount > 0 {
 		nm.cache.valid = true
-		log.Printf("订阅缓存完成: 成功 %d 个，失败 %d 个", successCount, len(fetchErrors))
 	}
 
 	if len(fetchErrors) > 0 {
+		log.Printf("订阅获取完成: 成功 %d 个，失败 %d 个", successCount, len(fetchErrors))
 		log.Println("获取失败的订阅:")
 		for _, errMsg := range fetchErrors {
 			log.Printf("  - %s", errMsg)
 		}
 
 		if successCount == 0 {
-			return fmt.Errorf("所有订阅获取失败: %v", fetchErrors)
+			log.Println("警告: 所有订阅获取失败，但继续处理")
+			return nil // 不返回错误，允许继续处理
 		}
 
-		return fmt.Errorf("部分订阅获取失败: %d 成功, %d 失败", successCount, len(fetchErrors))
+		log.Printf("部分订阅获取失败，但继续处理成功的 %d 个订阅", successCount)
+		return nil // 不返回错误，允许继续处理
 	}
 
-	log.Printf("所有订阅缓存成功，总计 %d 个订阅", successCount)
+	log.Printf("订阅缓存完成: %d 个订阅", successCount)
 	return nil
 }
 
@@ -207,12 +209,12 @@ func (nm *NodeManager) FetchAllNodes() ([]subscription.Node, error) {
 // FetchNodesFromSubscriptions retrieves nodes from specified subscriptions using cache.
 // If subscriptionNames is nil or empty, it returns nodes from all cached subscriptions.
 // If cache is invalid, it will fetch fresh data first.
+// 返回原始节点（未经全局过滤）
 func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) ([]subscription.Node, error) {
 	// 如果缓存无效，先获取所有订阅
 	if !nm.cache.valid {
-		log.Println("缓存无效，重新获取所有订阅...")
 		if err := nm.FetchAndCacheAllSubscriptions(); err != nil {
-			return nil, fmt.Errorf("获取订阅失败: %v", err)
+			log.Printf("获取订阅时出现问题: %v，但继续处理", err)
 		}
 	}
 
@@ -225,12 +227,9 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 		for _, name := range subscriptionNames {
 			targetSubscriptions[name] = true
 		}
-		log.Printf("从缓存获取指定订阅节点: %v", subscriptionNames)
-	} else {
-		log.Println("从缓存获取所有订阅节点...")
 	}
 
-	// 从缓存中获取节点
+	// 从缓存中获取原始节点
 	for _, sub := range nm.config.Nodes.Subscriptions {
 		if !sub.Enable {
 			continue
@@ -241,62 +240,63 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 			continue
 		}
 
-		// 从缓存获取节点
+		// 从缓存获取原始节点
 		if cachedNodes, exists := nm.cache.nodes[sub.Name]; exists {
 			allNodes = append(allNodes, cachedNodes...)
-			log.Printf("从缓存获取订阅 %s: %d 个节点", sub.Name, len(cachedNodes))
 		} else {
 			log.Printf("警告: 订阅 %s 不在缓存中", sub.Name)
 		}
 	}
 
-	log.Printf("总共从缓存获取到 %d 个节点", len(allNodes))
 	return allNodes, nil
 }
+
+// 注意: per-proxy include/exclude 仅在写入 selector 标签时应用，
+// 不在此处对真实节点集合进行过滤。
 
 // UpdateAllConfigs updates all configuration files with new proxy nodes.
 // It coordinates the complete workflow of file scanning, node fetching,
 // and configuration updating with comprehensive error handling and caching.
+// 执行顺序：1.获取所有节点 2.根据全局exclude_keywords排除节点 3.将真实节点插入path指定的配置中 4.根据proxies里指定的规则更新selector
 func (nm *NodeManager) UpdateAllConfigs() error {
-	log.Println("开始更新所有配置文件...")
+	log.Println("开始更新配置文件...")
 
-	// 1. 确保缓存是最新的（只获取一次所有订阅）
+	// 1. 获取所有节点
 	if !nm.cache.valid {
-		log.Println("缓存无效，获取所有订阅数据...")
 		if err := nm.FetchAndCacheAllSubscriptions(); err != nil {
-			return fmt.Errorf("获取订阅数据失败: %v", err)
+			log.Printf("获取订阅数据时出现问题: %v，但继续处理", err)
 		}
 	}
 
-	// 2. 处理每个配置路径
 	var updateErrors []string
 	totalSuccessCount := 0
 	totalFileCount := 0
 
 	for _, target := range nm.config.Nodes.Targets {
-		log.Printf("处理配置路径: %s (marker: %s)", target.InsertPath, target.InsertMarker)
+		log.Printf("处理路径: %s", target.Path)
 
-		// 3. 从缓存获取当前目标的节点（根据订阅过滤）
-		targetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
+		// 扫描配置文件
+		scanner := nm.scanners[target.Path]
+		configFiles, err := scanner.ScanConfigFiles()
 		if err != nil {
-			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.InsertPath, err)
+			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err)
 			log.Printf("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}
 
-		if len(targetNodes) == 0 {
-			log.Printf("路径 %s 未获取到节点，跳过更新", target.InsertPath)
+		if len(configFiles) == 0 {
+			log.Printf("路径 %s 下未找到配置文件", target.Path)
 			continue
 		}
 
-		// 4. 准备订阅名称列表（用于清理旧节点）
+		totalFileCount += len(configFiles)
+
+		// 准备订阅名称列表
 		var subscriptionNames []string
 		if len(target.Subscriptions) > 0 {
-			// 使用指定的订阅
 			subscriptionNames = target.Subscriptions
 		} else {
-			// 使用所有启用的订阅
 			for _, sub := range nm.config.Nodes.Subscriptions {
 				if sub.Enable {
 					subscriptionNames = append(subscriptionNames, sub.Name)
@@ -304,84 +304,75 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			}
 		}
 
-		// 5. 转换节点格式为updater期望的格式
-		nodesMaps := make([]map[string]any, len(targetNodes))
-		for i, node := range targetNodes {
-			nodesMaps[i] = map[string]any(node)
-		}
-
-		// 6. 扫描当前路径下的配置文件
-		scanner := nm.scanners[target.InsertPath]
-		configFiles, err := scanner.ScanConfigFiles()
+		// 获取节点
+		allTargetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
 		if err != nil {
-			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.InsertPath, err)
+			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.Path, err)
 			log.Printf("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}
 
-		if len(configFiles) == 0 {
-			if target.IsFile {
-				log.Printf("指定的配置文件不存在: %s", target.InsertPath)
-			} else {
-				log.Printf("路径 %s 下未找到配置文件", target.InsertPath)
-			}
+		if len(allTargetNodes) == 0 {
+			log.Printf("路径 %s 未获取到节点，跳过", target.Path)
 			continue
 		}
 
-		log.Printf("在路径 %s 下找到 %d 个配置文件，节点数量: %d", target.InsertPath, len(configFiles), len(targetNodes))
-		totalFileCount += len(configFiles)
+		// 2. 根据全局exclude_keywords排除节点
+		filteredNodes := nm.filter.FilterNodes(allTargetNodes)
+		log.Printf("节点过滤: %d -> %d (排除 %d)", len(allTargetNodes), len(filteredNodes), len(allTargetNodes)-len(filteredNodes))
 
-		// 7. 获取对应的更新器
-		updater := nm.updaters[target.InsertPath]
+		// 转换为map格式
+		nodesMaps := make([]map[string]any, len(filteredNodes))
+		for i, node := range filteredNodes {
+			nodesMaps[i] = map[string]any(node)
+		}
 
-		// 8. 更新当前路径下的每个配置文件
+		// 3. 将真实节点插入配置文件（每个文件只插入一次）
 		pathSuccessCount := 0
 		for _, configFile := range configFiles {
-			log.Printf("更新配置文件: %s", configFile)
-
-			err := updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames)
-			if err != nil {
-				errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
-				log.Printf("%s", errorMsg)
-				updateErrors = append(updateErrors, errorMsg)
-				continue
+			if len(target.Proxies) > 0 {
+				updater := fileops.NewUpdater("")
+				if err := updater.InsertRealNodes(configFile, nodesMaps, subscriptionNames); err != nil {
+					errorMsg := fmt.Sprintf("插入节点失败 %s: %v", configFile, err)
+					log.Printf("%s", errorMsg)
+					updateErrors = append(updateErrors, errorMsg)
+					continue
+				}
+				pathSuccessCount++
 			}
-
-			pathSuccessCount++
-			log.Printf("成功更新配置文件: %s", configFile)
 		}
 
+		// 4. 根据proxies规则更新selector
+		for _, proxyRule := range target.Proxies {
+			updater := fileops.NewUpdater(proxyRule.InsertMarker)
+
+			for _, configFile := range configFiles {
+				if err := updater.UpdateSelectorOnly(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
+					errorMsg := fmt.Sprintf("更新selector失败 %s: %v", configFile, err)
+					log.Printf("%s", errorMsg)
+					updateErrors = append(updateErrors, errorMsg)
+				}
+			}
+		}
+
+		log.Printf("路径 %s 处理完成: %d 个文件", target.Path, len(configFiles))
 		totalSuccessCount += pathSuccessCount
-		log.Printf("路径 %s 处理完成: 成功 %d 个，失败 %d 个",
-			target.InsertPath, pathSuccessCount, len(configFiles)-pathSuccessCount)
 	}
 
-	// 9. 汇总结果
-	log.Printf("所有配置更新完成: 总文件 %d 个，成功 %d 个，失败 %d 个",
-		totalFileCount, totalSuccessCount, len(updateErrors))
-
+	// 汇总结果
 	if len(updateErrors) > 0 {
-		log.Println("更新失败的文件:")
-		for _, errMsg := range updateErrors {
-			log.Printf("  - %s", errMsg)
-		}
-
-		// 如果有部分成功，返回包含错误信息的错误，但不完全失败
 		if totalSuccessCount > 0 {
 			return fmt.Errorf("%w: %d successful, %d failed", ErrPartialUpdateFailure, totalSuccessCount, len(updateErrors))
 		}
-
-		// 如果全部失败，返回更严重的错误
 		return fmt.Errorf("%w: %v", ErrAllUpdatesFailure, updateErrors)
 	}
 
 	if totalFileCount == 0 {
-		log.Printf("%v in all configured paths", ErrNoConfigFiles)
 		return fmt.Errorf("%w in all configured paths", ErrNoConfigFiles)
 	}
 
-	log.Println("所有配置文件更新成功")
+	log.Printf("配置更新完成: %d 个文件", totalFileCount)
 	return nil
 }
 
@@ -398,7 +389,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 
 	// 1. 获取所有模块（使用缓存机制，只在需要时请求）
 	if err := nm.moduleManager.FetchAllModules(); err != nil {
-		return fmt.Errorf("获取模块失败: %v", err)
+		log.Printf("获取模块时出现问题: %v，但继续处理", err)
 	}
 
 	// 2. 更新每个配置文件
@@ -406,7 +397,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 	successCount := 0
 
 	for _, configFile := range nm.config.Configs {
-		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.File)
+		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.Path)
 
 		if err := nm.configUpdater.UpdateConfigFile(configFile); err != nil {
 			errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile.Name, err)

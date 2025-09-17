@@ -15,34 +15,47 @@ func GenerateExample(configPath string) error {
 		Nodes: &NodesConfig{
 			Subscriptions: []Subscription{
 				{
-					Name:   "示例订阅1",
+					Name:   "示例订阅1-远程",
 					URL:    "https://example.com/clash-subscription",
 					Type:   "clash",
 					Enable: true,
 				},
 				{
-					Name:   "示例订阅2",
+					Name:   "示例订阅2-远程",
 					URL:    "https://example.com/singbox-subscription",
 					Type:   "singbox",
 					Enable: true,
 				},
+				{
+					Name:   "示例订阅3-本地",
+					Path:   "./subscriptions/local-clash.yaml",
+					Type:   "clash",
+					Enable: true,
+				},
+				{
+					Name:   "示例订阅4-本地",
+					Path:   "./subscriptions/local-singbox.json",
+					Type:   "singbox",
+					Enable: false,
+				},
 			},
-			Targets: []ConfigPath{
+			Targets: []Target{
 				{
-					InsertPath:   "./configs",
-					InsertMarker: "🚀 节点选择",
-					// 不指定 Subscriptions，默认插入所有启用的订阅
+					Name: "默认目录多规则示例",
+					Path: "./configs",
+					Proxies: []ProxyTarget{
+						{InsertMarker: "🚀 节点选择"},
+						{InsertMarker: "🌟 特定节点", IncludeKeywords: []string{"美国", "日本"}},
+					},
 				},
 				{
-					InsertPath:    "./test/specific_config.json",
-					InsertMarker:  "Proxy",
-					Subscriptions: []string{"示例订阅1"}, // 只插入指定的订阅
-					IsFile:        true,              // 标识这是一个具体文件
-				},
-				{
-					InsertPath:    "./configs",
-					InsertMarker:  "🌟 特定节点",
-					Subscriptions: []string{"示例订阅2"}, // 只插入示例订阅2的节点
+					Name:          "单文件规则示例",
+					Path:          "./test/specific_config.json",
+					IsFile:        true,
+					Subscriptions: []string{"示例订阅1"},
+					Proxies: []ProxyTarget{
+						{InsertMarker: "Proxy"},
+					},
 				},
 			},
 			ExcludeKeywords: []string{"故障转移", "流量"},
@@ -50,8 +63,8 @@ func GenerateExample(configPath string) error {
 		Modules: &ModulesConfig{
 			Log: []Module{
 				{
-					Name:     "log1",
-					FromPath: "./configs/log.json",
+					Name: "log1",
+					Path: "./configs/log.json",
 				},
 				{
 					Name:    "log2",
@@ -60,8 +73,8 @@ func GenerateExample(configPath string) error {
 			},
 			DNS: []Module{
 				{
-					Name:     "dns1",
-					FromPath: "./configs/dns.json",
+					Name: "dns1",
+					Path: "./configs/dns.json",
 				},
 				{
 					Name:    "dns2",
@@ -70,8 +83,8 @@ func GenerateExample(configPath string) error {
 			},
 			NTP: []Module{
 				{
-					Name:     "ntp1",
-					FromPath: "./configs/ntp.json",
+					Name: "ntp1",
+					Path: "./configs/ntp.json",
 				},
 			},
 			Certificate: []Module{
@@ -82,8 +95,8 @@ func GenerateExample(configPath string) error {
 			},
 			Endpoints: []Module{
 				{
-					Name:     "endpoints1",
-					FromPath: "./configs/endpoints.json",
+					Name: "endpoints1",
+					Path: "./configs/endpoints.json",
 				},
 			},
 			Inbounds: []Module{
@@ -94,8 +107,8 @@ func GenerateExample(configPath string) error {
 			},
 			Outbounds: []Module{
 				{
-					Name:     "outbounds1",
-					FromPath: "./configs/outbounds.json",
+					Name: "outbounds1",
+					Path: "./configs/outbounds.json",
 				},
 			},
 			Route: []Module{
@@ -106,8 +119,8 @@ func GenerateExample(configPath string) error {
 			},
 			Services: []Module{
 				{
-					Name:     "services1",
-					FromPath: "./configs/services.json",
+					Name: "services1",
+					Path: "./configs/services.json",
 				},
 			},
 			Experimental: []Module{
@@ -120,12 +133,12 @@ func GenerateExample(configPath string) error {
 		Configs: []ConfigFile{
 			{
 				Name:    "config1",
-				File:    "./singbox/my_config.json",
+				Path:    "./singbox/my_config.json",
 				Modules: []string{"log1", "dns1", "ntp1", "cert1"},
 			},
 			{
 				Name:    "config2",
-				File:    "./singbox/test_config.json",
+				Path:    "./singbox/test_config.json",
 				Modules: []string{"log2", "dns2", "endpoints1", "inbounds1", "outbounds1", "route1", "services1", "experimental1"},
 			},
 		},

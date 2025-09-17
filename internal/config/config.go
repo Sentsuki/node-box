@@ -29,29 +29,41 @@ type Config struct {
 // It contains subscriptions, targets, and exclude keywords.
 type NodesConfig struct {
 	Subscriptions   []Subscription `json:"subscriptions"`
-	Targets         []ConfigPath   `json:"targets"`
+	Targets         []Target       `json:"targets"`
 	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
 }
 
 // Subscription represents a single subscription source configuration.
-// It defines the properties of a subscription including its URL, type,
+// It defines the properties of a subscription including its URL or local path, type,
 // and whether it's enabled for processing.
 type Subscription struct {
 	Name      string `json:"name"`
-	URL       string `json:"url"`
-	Type      string `json:"type"` // "clash" or "singbox"
+	URL       string `json:"url,omitempty"`  // 远程订阅URL，与Path二选一
+	Path      string `json:"path,omitempty"` // 本地文件路径，与URL二选一
+	Type      string `json:"type"`           // "clash" or "singbox"
 	Enable    bool   `json:"enable"`
 	UserAgent string `json:"user_agent,omitempty"` // 自定义User-Agent，可选
 }
 
-// ConfigPath represents a configuration path with its associated insert marker.
-// It defines where configuration files are located and which marker to use for updates.
-// It now supports both directory and file-level targeting, and subscription filtering.
-type ConfigPath struct {
-	InsertPath    string   `json:"insert_path"`
-	InsertMarker  string   `json:"insert_marker"`
-	Subscriptions []string `json:"subscriptions,omitempty"` // 指定要插入的订阅名称，为空则插入所有启用的订阅
-	IsFile        bool     `json:"is_file,omitempty"`       // 标识 insert_path 是否为具体文件路径
+// Target represents a configuration target path and a set of proxy insertion rules.
+// A target may point to a directory or a single file, and can specify which
+// subscriptions to include. Each target contains one or more proxy rules
+// that define the insert marker and keyword filters.
+type Target struct {
+	Name          string        `json:"name,omitempty"`
+	Path          string        `json:"path"`
+	IsFile        bool          `json:"is_file,omitempty"`
+	Subscriptions []string      `json:"subscriptions,omitempty"`
+	Proxies       []ProxyTarget `json:"proxies"`
+}
+
+// ProxyTarget represents a single proxy insertion rule under a target.
+// It defines the selector tag to insert into, and optional include/exclude
+// keyword filters applied to node tags.
+type ProxyTarget struct {
+	InsertMarker    string   `json:"insert_marker"`
+	IncludeKeywords []string `json:"include_keywords,omitempty"`
+	ExcludeKeywords []string `json:"exclude_keywords,omitempty"`
 }
 
 // ModulesConfig represents the modules configuration section.
@@ -72,16 +84,16 @@ type ModulesConfig struct {
 // Module represents a single module configuration.
 // It defines how to fetch a module from a local path or remote URL.
 type Module struct {
-	Name     string `json:"name"`                // module name
-	FromPath string `json:"from_path,omitempty"` // local file path
-	FromURL  string `json:"from_url,omitempty"`  // remote URL
+	Name    string `json:"name"`               // module name
+	Path    string `json:"path,omitempty"`     // local file path
+	FromURL string `json:"from_url,omitempty"` // remote URL
 }
 
 // ConfigFile represents a configuration file that uses modules.
 // It defines which modules should be applied to which configuration file.
 type ConfigFile struct {
 	Name    string   `json:"name"`    // configuration name
-	File    string   `json:"file"`    // target configuration file path
+	Path    string   `json:"path"`    // target configuration file path
 	Modules []string `json:"modules"` // list of module names to apply
 }
 
@@ -147,7 +159,7 @@ func (c *Config) Validate() error {
 	}
 
 	for i, target := range c.Nodes.Targets {
-		if err := c.validateConfigPath(target, i); err != nil {
+		if err := c.validateTarget(target, i); err != nil {
 			return err
 		}
 	}
@@ -187,28 +199,36 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// validateConfigPath validates a single config path configuration
-func (c *Config) validateConfigPath(configPath ConfigPath, index int) error {
-	if configPath.InsertPath == "" {
-		return fmt.Errorf("targets[%d]: insert_path cannot be empty", index)
+// validateTarget validates a single target configuration
+func (c *Config) validateTarget(target Target, index int) error {
+	if target.Path == "" {
+		return fmt.Errorf("targets[%d]: path cannot be empty", index)
 	}
 
-	if configPath.InsertMarker == "" {
-		return fmt.Errorf("targets[%d]: insert_marker cannot be empty", index)
+	if len(target.Proxies) == 0 {
+		return fmt.Errorf("targets[%d]: proxies cannot be empty", index)
 	}
 
 	// 验证指定的订阅是否存在
-	if len(configPath.Subscriptions) > 0 {
+	if len(target.Subscriptions) > 0 {
 		subscriptionMap := make(map[string]bool)
 		for _, sub := range c.Nodes.Subscriptions {
 			subscriptionMap[sub.Name] = true
 		}
 
-		for _, subName := range configPath.Subscriptions {
+		for _, subName := range target.Subscriptions {
 			if !subscriptionMap[subName] {
 				return fmt.Errorf("targets[%d]: subscription '%s' not found in subscriptions list", index, subName)
 			}
 		}
+	}
+
+	// 验证每个 proxy 配置
+	for j, p := range target.Proxies {
+		if strings.TrimSpace(p.InsertMarker) == "" {
+			return fmt.Errorf("targets[%d].proxies[%d]: insert_marker cannot be empty", index, j)
+		}
+		// include/exclude 关键词无需更多格式验证
 	}
 
 	return nil
@@ -220,8 +240,16 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 		return fmt.Errorf("subscription %d: name cannot be empty", index)
 	}
 
-	if sub.URL == "" {
-		return fmt.Errorf("subscription %d (%s): URL cannot be empty", index, sub.Name)
+	// URL和Path必须有且仅有一个
+	hasURL := sub.URL != ""
+	hasPath := sub.Path != ""
+
+	if !hasURL && !hasPath {
+		return fmt.Errorf("subscription %d (%s): either URL or Path must be provided", index, sub.Name)
+	}
+
+	if hasURL && hasPath {
+		return fmt.Errorf("subscription %d (%s): cannot specify both URL and Path", index, sub.Name)
 	}
 
 	validTypes := []string{"clash", "singbox"}
@@ -315,16 +343,16 @@ func (c *Config) validateModule(module Module, moduleType string, index int) err
 		return fmt.Errorf("modules.%s[%d]: name cannot be empty", moduleType, index)
 	}
 
-	// Either from_path or from_url must be provided, but not both
-	hasPath := module.FromPath != ""
+	// Either path or from_url must be provided, but not both
+	hasPath := module.Path != ""
 	hasURL := module.FromURL != ""
 
 	if !hasPath && !hasURL {
-		return fmt.Errorf("modules.%s[%d] (%s): either from_path or from_url must be provided", moduleType, index, module.Name)
+		return fmt.Errorf("modules.%s[%d] (%s): either path or from_url must be provided", moduleType, index, module.Name)
 	}
 
 	if hasPath && hasURL {
-		return fmt.Errorf("modules.%s[%d] (%s): cannot specify both from_path and from_url", moduleType, index, module.Name)
+		return fmt.Errorf("modules.%s[%d] (%s): cannot specify both path and from_url", moduleType, index, module.Name)
 	}
 
 	return nil
@@ -336,8 +364,8 @@ func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
 		return fmt.Errorf("configs[%d]: name cannot be empty", index)
 	}
 
-	if configFile.File == "" {
-		return fmt.Errorf("configs[%d] (%s): file cannot be empty", index, configFile.Name)
+	if configFile.Path == "" {
+		return fmt.Errorf("configs[%d] (%s): path cannot be empty", index, configFile.Name)
 	}
 
 	if len(configFile.Modules) == 0 {

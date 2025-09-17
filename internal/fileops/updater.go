@@ -36,12 +36,113 @@ func NewUpdater(insertMarker string) *Updater {
 	}
 }
 
+// InsertRealNodes inserts real proxy nodes into the configuration file without updating selectors.
+// This method only handles the insertion of actual proxy nodes into the outbounds array.
+func (u *Updater) InsertRealNodes(configPath string, nodes []map[string]any, subscriptionNames []string) error {
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
+	}
+
+	// 解析JSON配置
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
+	}
+
+	// 检查outbounds字段
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
+	}
+
+	outboundsArray, ok := outboundsRaw.([]any)
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
+	}
+
+	// 清理旧的订阅节点
+	newOutbounds := u.removeOldSubscriptionNodes(outboundsArray, subscriptionNames)
+
+	// 将真实节点插入配置中
+	for _, node := range nodes {
+		newOutbounds = append(newOutbounds, node)
+	}
+
+	// 更新配置
+	config["outbounds"] = newOutbounds
+
+	// 写回文件
+	if err := u.writeConfigFile(configPath, config); err != nil {
+		return err
+	}
+
+	log.Printf("插入节点: %s (%d个)", configPath, len(nodes))
+	return nil
+}
+
+// UpdateSelectorOnly updates only the selector outbounds list without inserting real nodes.
+// This method only handles updating the selector's outbounds array based on filtering rules.
+func (u *Updater) UpdateSelectorOnly(configPath string, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string) error {
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
+	}
+
+	// 解析JSON配置
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
+	}
+
+	// 检查outbounds字段
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
+	}
+
+	outboundsArray, ok := outboundsRaw.([]any)
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
+	}
+
+	// 查找插入标记
+	_, markerOutbound, err := u.findInsertMarker(outboundsArray)
+	if err != nil {
+		return err
+	}
+
+	// 验证插入标记类型
+	if err := u.validateMarkerType(markerOutbound); err != nil {
+		return err
+	}
+
+	// 根据proxies里指定的规则更新selector
+	if err := u.updateSelectorOutbounds(outboundsArray, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
+		return err
+	}
+
+	// 更新配置
+	config["outbounds"] = outboundsArray
+
+	// 写回文件
+	if err := u.writeConfigFile(configPath, config); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // UpdateConfigFile updates the specified configuration file by inserting nodes at the marker position.
 // Parameters:
 //   - configPath: path to the configuration file to update
-//   - nodes: list of proxy nodes to insert
+//   - nodes: list of proxy nodes to insert (real nodes; not filtered by per-rule include/exclude)
 //   - subscriptionNames: list of subscription names used to identify and clean old subscription nodes
-func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, subscriptionNames []string) error {
+//   - includeKeywords: only affect selector tag insertion (if non-empty, only tags containing any will be added)
+//   - excludeKeywords: only affect selector tag insertion (tags containing any will be removed)
+func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string) error {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -85,13 +186,15 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 	// 清理旧的订阅节点
 	newOutbounds := u.removeOldSubscriptionNodes(outboundsArray, subscriptionNames)
 
-	// 添加新节点
+	// 将真实节点插入配置中
+	log.Printf("将 %d 个真实节点插入到 outbounds", len(nodes))
 	for _, node := range nodes {
 		newOutbounds = append(newOutbounds, node)
 	}
 
-	// 更新selector的outbounds列表
-	if err := u.updateSelectorOutbounds(newOutbounds, nodes, subscriptionNames); err != nil {
+	// 根据proxies里指定的规则更新selector
+	log.Printf("根据proxies规则更新selector '%s' (include=%v, exclude=%v)", u.insertMarker, includeKeywords, excludeKeywords)
+	if err := u.updateSelectorOutbounds(newOutbounds, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
 		log.Printf("更新selector outbounds失败 %s: %v", configPath, err)
 		return err
 	}
@@ -163,7 +266,7 @@ func (u *Updater) removeOldSubscriptionNodes(outbounds []any, subscriptionNames 
 
 // updateSelectorOutbounds updates the outbounds list of the selector marker.
 // It removes old subscription node tags and adds new node tags to the selector's outbounds array.
-func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]any, subscriptionNames []string) error {
+func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string) error {
 	// 收集新节点的标签
 	var nodeTags []string
 	for _, node := range nodes {
@@ -171,6 +274,64 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 			nodeTags = append(nodeTags, tag)
 		}
 	}
+
+	// 对将要添加到 selector 的标签应用 include/exclude 过滤
+	toLower := func(arr []string) []string {
+		var out []string
+		for _, s := range arr {
+			out = append(out, strings.ToLower(s))
+		}
+		return out
+	}
+
+	inc := toLower(includeKeywords)
+	exc := toLower(excludeKeywords)
+
+	filterForSelector := func(tags []string) []string {
+		var included []string
+		if len(inc) > 0 {
+			for _, t := range tags {
+				tl := strings.ToLower(t)
+				for _, kw := range inc {
+					if kw == "" {
+						continue
+					}
+					if strings.Contains(tl, kw) {
+						included = append(included, t)
+						break
+					}
+				}
+			}
+		} else {
+			included = append(included, tags...)
+		}
+
+		if len(exc) == 0 {
+			return included
+		}
+
+		var result []string
+		for _, t := range included {
+			tl := strings.ToLower(t)
+			skip := false
+			for _, kw := range exc {
+				if kw == "" {
+					continue
+				}
+				if strings.Contains(tl, kw) {
+					skip = true
+					break
+				}
+			}
+			if !skip {
+				result = append(result, t)
+			}
+		}
+		return result
+	}
+
+	beforeFilterCount := len(nodeTags)
+	nodeTags = filterForSelector(nodeTags)
 
 	// 找到并更新插入标记的outbounds列表
 	for i, outboundRaw := range outbounds {
@@ -196,11 +357,13 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 							newOutboundList = append(newOutboundList, tag)
 						}
 					}
-					// 添加新的节点标签
+
+					// 添加新的节点标签（已按规则过滤）
 					for _, tag := range nodeTags {
 						newOutboundList = append(newOutboundList, tag)
 					}
 					outboundMap["outbounds"] = newOutboundList
+					log.Printf("更新selector %s: %d -> %d 标签", u.insertMarker, beforeFilterCount, len(nodeTags))
 				} else {
 					// 如果outbounds字段不存在，直接设置为节点标签数组
 					var newOutboundList []any
@@ -208,6 +371,7 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 						newOutboundList = append(newOutboundList, tag)
 					}
 					outboundMap["outbounds"] = newOutboundList
+					log.Printf("创建selector %s: %d 标签", u.insertMarker, len(nodeTags))
 				}
 				outbounds[i] = outboundMap
 				break

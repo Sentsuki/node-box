@@ -24,6 +24,8 @@ func NewFilter(excludeKeywords []string) *Filter {
 // It performs case-insensitive matching and logs excluded nodes for debugging.
 func (f *Filter) FilterNodes(nodes []Node) []Node {
 	var filteredNodes []Node
+	excludedCount := 0
+
 	for _, node := range nodes {
 		tag, ok := node["tag"].(string)
 		if !ok {
@@ -33,8 +35,8 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 		shouldExclude := false
 		for _, keyword := range f.excludeKeywords {
 			if strings.Contains(strings.ToLower(tag), strings.ToLower(keyword)) {
-				log.Printf("排除节点: %s (包含关键词: %s)", tag, keyword)
 				shouldExclude = true
+				excludedCount++
 				break
 			}
 		}
@@ -42,6 +44,11 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 			filteredNodes = append(filteredNodes, node)
 		}
 	}
+
+	if excludedCount > 0 {
+		log.Printf("排除节点: %d 个", excludedCount)
+	}
+
 	return filteredNodes
 }
 
