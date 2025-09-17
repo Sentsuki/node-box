@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"node-box/internal/config"
 )
@@ -108,68 +107,6 @@ func (cu *ConfigUpdater) applyModules(targetConfig map[string]any, moduleNames [
 func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleData map[string]any, moduleName string) error {
 	log.Printf("应用模块 %s", moduleName)
 
-	// 1. 检查 endpoints 里是否有节点tag带有 [ ] ，即来自订阅的节点，如果有，清除掉
-	if endpoints, ok := targetConfig["endpoints"].([]any); ok {
-		var cleanedEndpoints []any
-		for _, endpoint := range endpoints {
-			if endpointMap, ok := endpoint.(map[string]any); ok {
-				if tag, ok := endpointMap["tag"].(string); ok {
-					// 检查tag是否包含 [ ] 格式，表示来自订阅
-					if !cu.containsSubscriptionTag(tag) {
-						cleanedEndpoints = append(cleanedEndpoints, endpoint)
-					} else {
-						log.Printf("清除来自订阅的endpoints节点: %s", tag)
-					}
-				} else {
-					cleanedEndpoints = append(cleanedEndpoints, endpoint)
-				}
-			} else {
-				cleanedEndpoints = append(cleanedEndpoints, endpoint)
-			}
-		}
-		targetConfig["endpoints"] = cleanedEndpoints
-		log.Printf("清理endpoints完成，保留 %d 个节点", len(cleanedEndpoints))
-	}
-
-	// 2. 检查 outbounds 的节点是否有这些 type: wireguard tailscale，如果有，移动到 endpoints 里
-	if outbounds, ok := targetConfig["outbounds"].([]any); ok {
-		var remainingOutbounds []any
-		var movedToEndpoints []any
-
-		for _, outbound := range outbounds {
-			if outboundMap, ok := outbound.(map[string]any); ok {
-				if outboundType, ok := outboundMap["type"].(string); ok {
-					if outboundType == "wireguard" || outboundType == "tailscale" {
-						movedToEndpoints = append(movedToEndpoints, outbound)
-						if tag, ok := outboundMap["tag"].(string); ok {
-							log.Printf("移动 %s 节点到endpoints: %s", outboundType, tag)
-						}
-					} else {
-						remainingOutbounds = append(remainingOutbounds, outbound)
-					}
-				} else {
-					remainingOutbounds = append(remainingOutbounds, outbound)
-				}
-			} else {
-				remainingOutbounds = append(remainingOutbounds, outbound)
-			}
-		}
-
-		// 更新 outbounds
-		targetConfig["outbounds"] = remainingOutbounds
-
-		// 将移动的节点添加到 endpoints
-		if len(movedToEndpoints) > 0 {
-			if existingEndpoints, ok := targetConfig["endpoints"].([]any); ok {
-				targetConfig["endpoints"] = append(existingEndpoints, movedToEndpoints...)
-			} else {
-				targetConfig["endpoints"] = movedToEndpoints
-			}
-			log.Printf("移动 %d 个节点到endpoints", len(movedToEndpoints))
-		}
-	}
-
-	// 3. 然后再执行合并逻辑
 	// 直接替换整个模块数据到目标配置中
 	// 远程模块都是标准JSON，无需复杂解析，直接替换避免元素丢失
 	for key, value := range moduleData {
@@ -178,12 +115,6 @@ func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleDa
 	}
 
 	return nil
-}
-
-// containsSubscriptionTag 检查tag是否包含订阅标识符格式 [xxx]
-func (cu *ConfigUpdater) containsSubscriptionTag(tag string) bool {
-	// 检查是否包含 [ 和 ] 格式的订阅标识符
-	return strings.Contains(tag, "[") && strings.Contains(tag, "]")
 }
 
 // writeConfigFile writes the updated configuration to a file as JSON.
