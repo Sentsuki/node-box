@@ -7,9 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
-	"time"
 
 	"node-box/internal/client"
 	"node-box/internal/config"
@@ -218,16 +215,17 @@ func (mm *ModuleManager) FetchAllModules() error {
 }
 
 // fetchModule fetches a single module from its configured source with retry support.
-// It handles both local file paths and remote URLs.
+// It handles both local file paths and remote URLs using the client fetcher.
 // Remote modules are expected to be standard JSON format.
-// For remote URLs, it uses the same retry mechanism as subscription fetching (3 retries with delay).
+// Both local and remote fetching use the same retry mechanism for consistency.
 func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) error {
 	var data []byte
 	var err error
 
 	if module.Path != "" {
-		// Fetch from local file (no retry needed for local files)
-		data, err = mm.fetchFromPath(module.Path)
+		// Fetch from local file using client fetcher for consistency
+		log.Printf("获取本地模块: %s (%s) from %s", module.Name, moduleType, module.Path)
+		data, err = mm.fetcher.FetchModuleFromPath(module.Path)
 		if err != nil {
 			return fmt.Errorf("%w %s: %v", ErrModuleFetchFailed, module.Name, err)
 		}
@@ -253,44 +251,6 @@ func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) er
 	log.Printf("成功获取模块 %s (%s)", module.Name, moduleType)
 
 	return nil
-}
-
-// fetchFromPath reads a module from a local file path with retry support.
-// It handles both absolute and relative paths.
-// Retries up to 3 times for transient file access issues (e.g., file locks).
-func (mm *ModuleManager) fetchFromPath(path string) ([]byte, error) {
-	// Convert relative path to absolute path if needed
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(".", path)
-	}
-
-	const maxRetries = 3
-	const retryDelay = 500 * time.Millisecond
-
-	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			log.Printf("第 %d 次重试读取模块文件 %s，等待 %v...", attempt, path, retryDelay)
-			time.Sleep(retryDelay)
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				// File not found is not a transient error, don't retry
-				return nil, fmt.Errorf("module file not found: %s", path)
-			}
-
-			lastErr = err
-			log.Printf("读取模块文件失败 (尝试 %d/%d): %s - %v", attempt+1, maxRetries+1, path, err)
-			continue
-		}
-
-		log.Printf("成功读取模块文件: %s (%d 字节)", path, len(data))
-		return data, nil
-	}
-
-	return nil, fmt.Errorf("读取模块文件失败，已重试 %d 次: %s - %v", maxRetries, path, lastErr)
 }
 
 // GetModule retrieves a module by name from cache.
