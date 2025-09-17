@@ -834,11 +834,25 @@ func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscript
 				}
 			}
 
-			// 2. 然后检查是否匹配 include_relay 中的任何关键词
+			// 2. 然后根据 include_relay 规则检查是否匹配
 			shouldInclude := false
-			for _, keyword := range nm.config.Nodes.IncludeRelay {
-				if strings.Contains(tag, keyword) {
-					shouldInclude = true
+			for _, rule := range nm.config.Nodes.IncludeRelay {
+				if rule.Tag == "" || len(rule.Upstream) == 0 {
+					continue
+				}
+				if !strings.Contains(tag, rule.Tag) {
+					continue
+				}
+				for _, up := range rule.Upstream {
+					if up == "" {
+						continue
+					}
+					if strings.Contains(tag, up) {
+						shouldInclude = true
+						break
+					}
+				}
+				if shouldInclude {
 					break
 				}
 			}

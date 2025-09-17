@@ -28,10 +28,17 @@ type Config struct {
 // NodesConfig represents the nodes configuration section.
 // It contains subscriptions, targets, and exclude keywords.
 type NodesConfig struct {
-	Subscriptions   []Subscription `json:"subscriptions"`
-	Targets         []Target       `json:"targets"`
-	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
-	IncludeRelay    []string       `json:"include_relay,omitempty"` // 确定哪些节点作为真实节点写入
+	Subscriptions   []Subscription     `json:"subscriptions"`
+	Targets         []Target           `json:"targets"`
+	ExcludeKeywords []string           `json:"exclude_keywords,omitempty"`
+	IncludeRelay    []IncludeRelayRule `json:"include_relay,omitempty"` // 确定哪些节点作为真实节点写入
+}
+
+// IncludeRelayRule defines a rule to include relay nodes whose tag contains
+// the rule Tag and any of the Upstream keywords.
+type IncludeRelayRule struct {
+	Tag      string   `json:"tag"`
+	Upstream []string `json:"upstream"`
 }
 
 // Subscription represents a single subscription source configuration.
