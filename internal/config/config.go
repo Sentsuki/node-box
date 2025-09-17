@@ -23,7 +23,6 @@ type Config struct {
 	UpdateInterval int            `json:"update_interval_hours"`
 	Proxy          *ProxyConfig   `json:"proxy,omitempty"`
 	UserAgent      string         `json:"user_agent,omitempty"`
-	Relay          *RelayConfig   `json:"relay,omitempty"`
 }
 
 // NodesConfig represents the nodes configuration section.
@@ -106,19 +105,6 @@ type ProxyConfig struct {
 	Port     int    `json:"port"`     // proxy server port
 	Username string `json:"username"` // username (optional)
 	Password string `json:"password"` // password (optional)
-}
-
-// RelayConfig represents relay configuration for processing relay subscriptions.
-// It defines how relay nodes should be processed and which detour nodes to use.
-type RelayConfig struct {
-	RelayNode []RelayNodeConfig `json:"relay_node"`
-}
-
-// RelayNodeConfig represents configuration for a single relay node type.
-// It specifies the name and keywords to match for detour node selection.
-type RelayNodeConfig struct {
-	Name            string   `json:"name"`
-	IncludeKeywords []string `json:"include_keywords"`
 }
 
 // Configuration errors
@@ -266,7 +252,7 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 		return fmt.Errorf("subscription %d (%s): cannot specify both URL and Path", index, sub.Name)
 	}
 
-	validTypes := []string{"clash", "singbox", "relay"}
+	validTypes := []string{"clash", "singbox"}
 	subType := strings.ToLower(sub.Type)
 	if !slices.Contains(validTypes, subType) {
 		return fmt.Errorf("subscription %d (%s): invalid type '%s', must be one of: %v",

@@ -62,7 +62,6 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	processors := make(map[string]subscription.Processor)
 	processors["clash"] = subscription.NewClashProcessor()
 	processors["singbox"] = subscription.NewSingBoxProcessor()
-	// relay 处理器将在需要时动态创建
 
 	// 为每个配置路径创建扫描器
 	scanners := make(map[string]*fileops.Scanner)
@@ -149,32 +148,22 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 			continue
 		}
 
-		// 处理订阅数据
-		var nodes []subscription.Node
-		var err error
-
-		if strings.ToLower(sub.Type) == "relay" {
-			// relay 类型需要特殊处理，暂时跳过，稍后处理
-			log.Printf("跳过 relay 订阅 %s，将在第二阶段处理", sub.Name)
+		// 获取对应的处理器
+		processor, ok := nm.processors[strings.ToLower(sub.Type)]
+		if !ok {
+			errorMsg := fmt.Sprintf("%v: %s (subscription: %s)", ErrUnsupportedSubType, sub.Type, sub.Name)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
 			continue
-		} else {
-			// 获取对应的处理器
-			processor, ok := nm.processors[strings.ToLower(sub.Type)]
-			if !ok {
-				errorMsg := fmt.Sprintf("%v: %s (subscription: %s)", ErrUnsupportedSubType, sub.Type, sub.Name)
-				log.Printf("%s", errorMsg)
-				fetchErrors = append(fetchErrors, errorMsg)
-				continue
-			}
+		}
 
-			// 处理订阅数据
-			nodes, err = processor.Process(data)
-			if err != nil {
-				errorMsg := fmt.Sprintf("处理订阅失败 %s: %v", sub.Name, err)
-				log.Printf("%s", errorMsg)
-				fetchErrors = append(fetchErrors, errorMsg)
-				continue
-			}
+		// 处理订阅数据
+		nodes, err := processor.Process(data)
+		if err != nil {
+			errorMsg := fmt.Sprintf("处理订阅失败 %s: %v", sub.Name, err)
+			log.Printf("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
+			continue
 		}
 
 		// 添加订阅前缀（缓存原始节点，不进行全局过滤）
@@ -185,64 +174,6 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 		successCount++
 		log.Printf("缓存订阅 %s: %d 个节点", sub.Name, len(prefixedNodes))
 	}
-
-	// 第二阶段：处理 relay 订阅
-	relaySuccessCount := 0
-	for _, sub := range nm.config.Nodes.Subscriptions {
-		if !sub.Enable || strings.ToLower(sub.Type) != "relay" {
-			continue
-		}
-
-		log.Printf("处理 relay 订阅: %s", sub.Name)
-
-		// 重新获取 relay 订阅数据
-		var data []byte
-		var err error
-
-		// 确定要使用的User-Agent
-		userAgent := sub.UserAgent
-		if userAgent == "" {
-			userAgent = nm.config.UserAgent
-		}
-
-		if sub.URL != "" {
-			data, err = nm.fetcher.FetchSubscriptionWithUserAgent(sub.URL, userAgent)
-		} else if sub.Path != "" {
-			data, err = nm.fetcher.FetchSubscriptionFromPath(sub.Path)
-		} else {
-			err = fmt.Errorf("订阅 %s 既没有配置URL也没有配置Path", sub.Name)
-		}
-
-		if err != nil {
-			errorMsg := fmt.Sprintf("获取 relay 订阅失败 %s: %v", sub.Name, err)
-			log.Printf("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-
-		// 创建 relay 处理器
-		relayProcessor := subscription.NewRelayProcessor(nm.config.Relay, nm)
-
-		// 处理 relay 订阅数据
-		nodes, err := relayProcessor.Process(data)
-		if err != nil {
-			errorMsg := fmt.Sprintf("处理 relay 订阅失败 %s: %v", sub.Name, err)
-			log.Printf("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-
-		// 添加订阅前缀
-		prefixedNodes := subscription.AddSubscriptionPrefix(nodes, sub.Name)
-
-		// 缓存 relay 节点
-		nm.cache.nodes[sub.Name] = prefixedNodes
-		relaySuccessCount++
-		log.Printf("缓存 relay 订阅 %s: %d 个节点", sub.Name, len(prefixedNodes))
-	}
-
-	// 更新成功计数
-	successCount += relaySuccessCount
 
 	// 标记缓存为有效（即使有部分失败）
 	if successCount > 0 {
