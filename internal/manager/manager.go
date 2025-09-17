@@ -308,7 +308,8 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			}
 		}
 
-		// 5. 获取该 target 相关的所有节点（根据订阅过滤）
+		// 5. 获取该 target 相关的所有节点
+		log.Println("获取节点...")
 		allTargetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
 		if err != nil {
 			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.Path, err)
@@ -322,13 +323,19 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			continue
 		}
 
+		// 5.1 排除节点（应用全局 exclude 关键词）。注意：缓存阶段已做过，这里再次执行以符合期望流程并输出日志
+		before := len(allTargetNodes)
+		log.Printf("排除节点（全局 exclude_keywords），原始: %d", before)
+		excludedNodes := nm.filter.FilterNodes(allTargetNodes)
+		log.Printf("排除后剩余: %d", len(excludedNodes))
+
 		// 6. 针对每个 proxy 规则，仅用于 selector 标签过滤，不影响真实节点集合
 		for _, proxyRule := range target.Proxies {
 			log.Printf("处理插入规则 marker: %s", proxyRule.InsertMarker)
 
 			// 转换（不按规则过滤真实节点，只按全局外部 exclude 过滤已在缓存阶段完成）
-			nodesMaps := make([]map[string]any, len(allTargetNodes))
-			for i, node := range allTargetNodes {
+			nodesMaps := make([]map[string]any, len(excludedNodes))
+			for i, node := range excludedNodes {
 				nodesMaps[i] = map[string]any(node)
 			}
 

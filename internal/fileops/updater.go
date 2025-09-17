@@ -88,7 +88,7 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 	newOutbounds := u.removeOldSubscriptionNodes(outboundsArray, subscriptionNames)
 
 	// 添加新节点
-	log.Printf("插入真实节点 %d 个到 outbounds (marker: %s)", len(nodes), u.insertMarker)
+	log.Printf("插入真实节点 %d 个到 outbounds", len(nodes))
 	for _, node := range nodes {
 		newOutbounds = append(newOutbounds, node)
 	}
