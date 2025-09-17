@@ -88,11 +88,13 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 	newOutbounds := u.removeOldSubscriptionNodes(outboundsArray, subscriptionNames)
 
 	// 添加新节点
+	log.Printf("插入真实节点 %d 个到 outbounds (marker: %s)", len(nodes), u.insertMarker)
 	for _, node := range nodes {
 		newOutbounds = append(newOutbounds, node)
 	}
 
 	// 更新selector的outbounds列表（仅针对selector标签应用include/exclude关键词过滤）
+	log.Printf("更新 selector 标签 '%s' 的 outbounds（按规则筛选标签 include=%v, exclude=%v）", u.insertMarker, includeKeywords, excludeKeywords)
 	if err := u.updateSelectorOutbounds(newOutbounds, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
 		log.Printf("更新selector outbounds失败 %s: %v", configPath, err)
 		return err
