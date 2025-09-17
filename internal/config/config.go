@@ -29,7 +29,7 @@ type Config struct {
 // It contains subscriptions, targets, and exclude keywords.
 type NodesConfig struct {
 	Subscriptions   []Subscription `json:"subscriptions"`
-	Targets         []ConfigPath   `json:"targets"`
+	Targets         []Target       `json:"targets"`
 	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
 }
 
@@ -44,14 +44,25 @@ type Subscription struct {
 	UserAgent string `json:"user_agent,omitempty"` // 自定义User-Agent，可选
 }
 
-// ConfigPath represents a configuration path with its associated insert marker.
-// It defines where configuration files are located and which marker to use for updates.
-// It now supports both directory and file-level targeting, and subscription filtering.
-type ConfigPath struct {
-	Path          string   `json:"path"`
-	InsertMarker  string   `json:"insert_marker"`
-	Subscriptions []string `json:"subscriptions,omitempty"` // 指定要插入的订阅名称，为空则插入所有启用的订阅
-	IsFile        bool     `json:"is_file,omitempty"`       // 标识 path 是否为具体文件路径
+// Target represents a configuration target path and a set of proxy insertion rules.
+// A target may point to a directory or a single file, and can specify which
+// subscriptions to include. Each target contains one or more proxy rules
+// that define the insert marker and keyword filters.
+type Target struct {
+	Name          string        `json:"name,omitempty"`
+	Path          string        `json:"path"`
+	IsFile        bool          `json:"is_file,omitempty"`
+	Subscriptions []string      `json:"subscriptions,omitempty"`
+	Proxies       []ProxyTarget `json:"proxies"`
+}
+
+// ProxyTarget represents a single proxy insertion rule under a target.
+// It defines the selector tag to insert into, and optional include/exclude
+// keyword filters applied to node tags.
+type ProxyTarget struct {
+	InsertMarker    string   `json:"insert_marker"`
+	IncludeKeywords []string `json:"include_keywords,omitempty"`
+	ExcludeKeywords []string `json:"exclude_keywords,omitempty"`
 }
 
 // ModulesConfig represents the modules configuration section.
@@ -147,7 +158,7 @@ func (c *Config) Validate() error {
 	}
 
 	for i, target := range c.Nodes.Targets {
-		if err := c.validateConfigPath(target, i); err != nil {
+		if err := c.validateTarget(target, i); err != nil {
 			return err
 		}
 	}
@@ -187,28 +198,36 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// validateConfigPath validates a single config path configuration
-func (c *Config) validateConfigPath(configPath ConfigPath, index int) error {
-	if configPath.Path == "" {
+// validateTarget validates a single target configuration
+func (c *Config) validateTarget(target Target, index int) error {
+	if target.Path == "" {
 		return fmt.Errorf("targets[%d]: path cannot be empty", index)
 	}
 
-	if configPath.InsertMarker == "" {
-		return fmt.Errorf("targets[%d]: insert_marker cannot be empty", index)
+	if len(target.Proxies) == 0 {
+		return fmt.Errorf("targets[%d]: proxies cannot be empty", index)
 	}
 
 	// 验证指定的订阅是否存在
-	if len(configPath.Subscriptions) > 0 {
+	if len(target.Subscriptions) > 0 {
 		subscriptionMap := make(map[string]bool)
 		for _, sub := range c.Nodes.Subscriptions {
 			subscriptionMap[sub.Name] = true
 		}
 
-		for _, subName := range configPath.Subscriptions {
+		for _, subName := range target.Subscriptions {
 			if !subscriptionMap[subName] {
 				return fmt.Errorf("targets[%d]: subscription '%s' not found in subscriptions list", index, subName)
 			}
 		}
+	}
+
+	// 验证每个 proxy 配置
+	for j, p := range target.Proxies {
+		if strings.TrimSpace(p.InsertMarker) == "" {
+			return fmt.Errorf("targets[%d].proxies[%d]: insert_marker cannot be empty", index, j)
+		}
+		// include/exclude 关键词无需更多格式验证
 	}
 
 	return nil

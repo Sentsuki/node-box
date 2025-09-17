@@ -39,7 +39,6 @@ type NodeManager struct {
 	fetcher       *client.Fetcher
 	processors    map[string]subscription.Processor
 	scanners      map[string]*fileops.Scanner
-	updaters      map[string]*fileops.Updater
 	filter        *subscription.Filter
 	moduleManager *modules.ModuleManager
 	configUpdater *modules.ConfigUpdater
@@ -64,13 +63,11 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	processors["clash"] = subscription.NewClashProcessor()
 	processors["singbox"] = subscription.NewSingBoxProcessor()
 
-	// 为每个配置路径创建扫描器和更新器
+	// 为每个配置路径创建扫描器
 	scanners := make(map[string]*fileops.Scanner)
-	updaters := make(map[string]*fileops.Updater)
 
 	for _, target := range cfg.Nodes.Targets {
 		scanners[target.Path] = fileops.NewScanner(target.Path, target.IsFile)
-		updaters[target.Path] = fileops.NewUpdater(target.InsertMarker)
 	}
 
 	// 创建节点过滤器
@@ -87,7 +84,6 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 		fetcher:       fetcher,
 		processors:    processors,
 		scanners:      scanners,
-		updaters:      updaters,
 		filter:        filter,
 		moduleManager: moduleManager,
 		configUpdater: configUpdater,
@@ -254,6 +250,71 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 	return allNodes, nil
 }
 
+// filterNodesByKeywords filters nodes by include and exclude keyword lists.
+// - If includeKeywords is non-empty: keep nodes whose tag contains ANY include keyword
+// - If includeKeywords is empty: keep all nodes (before exclude filtering)
+// - Then remove nodes whose tag contains ANY exclude keyword
+func (nm *NodeManager) filterNodesByKeywords(nodes []subscription.Node, includeKeywords []string, excludeKeywords []string) []subscription.Node {
+	var included []subscription.Node
+
+	// Normalize keywords to lower for case-insensitive matching
+	normalize := func(arr []string) []string {
+		var out []string
+		for _, s := range arr {
+			out = append(out, strings.ToLower(s))
+		}
+		return out
+	}
+
+	inc := normalize(includeKeywords)
+	exc := normalize(excludeKeywords)
+
+	// Include filter
+	if len(inc) > 0 {
+		for _, n := range nodes {
+			tag, _ := n["tag"].(string)
+			tagLower := strings.ToLower(tag)
+			for _, kw := range inc {
+				if kw == "" {
+					continue
+				}
+				if strings.Contains(tagLower, kw) {
+					included = append(included, n)
+					break
+				}
+			}
+		}
+	} else {
+		included = append(included, nodes...)
+	}
+
+	if len(exc) == 0 {
+		return included
+	}
+
+	// Exclude filter
+	var result []subscription.Node
+	for _, n := range included {
+		tag, _ := n["tag"].(string)
+		tagLower := strings.ToLower(tag)
+		shouldExclude := false
+		for _, kw := range exc {
+			if kw == "" {
+				continue
+			}
+			if strings.Contains(tagLower, kw) {
+				shouldExclude = true
+				break
+			}
+		}
+		if !shouldExclude {
+			result = append(result, n)
+		}
+	}
+
+	return result
+}
+
 // UpdateAllConfigs updates all configuration files with new proxy nodes.
 // It coordinates the complete workflow of file scanning, node fetching,
 // and configuration updating with comprehensive error handling and caching.
@@ -274,43 +335,9 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	totalFileCount := 0
 
 	for _, target := range nm.config.Nodes.Targets {
-		log.Printf("处理配置路径: %s (marker: %s)", target.Path, target.InsertMarker)
+		log.Printf("处理配置路径: %s", target.Path)
 
-		// 3. 从缓存获取当前目标的节点（根据订阅过滤）
-		targetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
-		if err != nil {
-			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.Path, err)
-			log.Printf("%s", errorMsg)
-			updateErrors = append(updateErrors, errorMsg)
-			continue
-		}
-
-		if len(targetNodes) == 0 {
-			log.Printf("路径 %s 未获取到节点，跳过更新", target.Path)
-			continue
-		}
-
-		// 4. 准备订阅名称列表（用于清理旧节点）
-		var subscriptionNames []string
-		if len(target.Subscriptions) > 0 {
-			// 使用指定的订阅
-			subscriptionNames = target.Subscriptions
-		} else {
-			// 使用所有启用的订阅
-			for _, sub := range nm.config.Nodes.Subscriptions {
-				if sub.Enable {
-					subscriptionNames = append(subscriptionNames, sub.Name)
-				}
-			}
-		}
-
-		// 5. 转换节点格式为updater期望的格式
-		nodesMaps := make([]map[string]any, len(targetNodes))
-		for i, node := range targetNodes {
-			nodesMaps[i] = map[string]any(node)
-		}
-
-		// 6. 扫描当前路径下的配置文件
+		// 3. 扫描当前路径下的配置文件
 		scanner := nm.scanners[target.Path]
 		configFiles, err := scanner.ScanConfigFiles()
 		if err != nil {
@@ -329,32 +356,69 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			continue
 		}
 
-		log.Printf("在路径 %s 下找到 %d 个配置文件，节点数量: %d", target.Path, len(configFiles), len(targetNodes))
 		totalFileCount += len(configFiles)
 
-		// 7. 获取对应的更新器
-		updater := nm.updaters[target.Path]
+		// 4. 准备订阅名称列表（用于清理旧节点）
+		var subscriptionNames []string
+		if len(target.Subscriptions) > 0 {
+			subscriptionNames = target.Subscriptions
+		} else {
+			for _, sub := range nm.config.Nodes.Subscriptions {
+				if sub.Enable {
+					subscriptionNames = append(subscriptionNames, sub.Name)
+				}
+			}
+		}
 
-		// 8. 更新当前路径下的每个配置文件
-		pathSuccessCount := 0
-		for _, configFile := range configFiles {
-			log.Printf("更新配置文件: %s", configFile)
+		// 5. 获取该 target 相关的所有节点（根据订阅过滤）
+		allTargetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
+		if err != nil {
+			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.Path, err)
+			log.Printf("%s", errorMsg)
+			updateErrors = append(updateErrors, errorMsg)
+			continue
+		}
 
-			err := updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames)
-			if err != nil {
-				errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
-				log.Printf("%s", errorMsg)
-				updateErrors = append(updateErrors, errorMsg)
+		if len(allTargetNodes) == 0 {
+			log.Printf("路径 %s 未获取到节点，跳过更新", target.Path)
+			continue
+		}
+
+		// 6. 针对每个 proxy 规则分别过滤并更新
+		for _, proxyRule := range target.Proxies {
+			log.Printf("处理插入规则 marker: %s", proxyRule.InsertMarker)
+
+			filtered := nm.filterNodesByKeywords(allTargetNodes, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords)
+			if len(filtered) == 0 {
+				log.Printf("规则 %s 无匹配节点，跳过", proxyRule.InsertMarker)
 				continue
 			}
 
-			pathSuccessCount++
-			log.Printf("成功更新配置文件: %s", configFile)
-		}
+			// 转换为 updater 期望的格式
+			nodesMaps := make([]map[string]any, len(filtered))
+			for i, node := range filtered {
+				nodesMaps[i] = map[string]any(node)
+			}
 
-		totalSuccessCount += pathSuccessCount
-		log.Printf("路径 %s 处理完成: 成功 %d 个，失败 %d 个",
-			target.Path, pathSuccessCount, len(configFiles)-pathSuccessCount)
+			// 为该规则创建更新器
+			updater := fileops.NewUpdater(proxyRule.InsertMarker)
+
+			// 更新当前路径下的每个配置文件
+			pathSuccessCount := 0
+			for _, configFile := range configFiles {
+				log.Printf("更新配置文件: %s (marker: %s, 节点: %d)", configFile, proxyRule.InsertMarker, len(nodesMaps))
+				if err := updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames); err != nil {
+					errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
+					log.Printf("%s", errorMsg)
+					updateErrors = append(updateErrors, errorMsg)
+					continue
+				}
+				pathSuccessCount++
+			}
+
+			totalSuccessCount += pathSuccessCount
+			log.Printf("规则 %s 在路径 %s 处理完成: 成功 %d 个，失败 %d 个", proxyRule.InsertMarker, target.Path, pathSuccessCount, len(configFiles)-pathSuccessCount)
+		}
 	}
 
 	// 9. 汇总结果

@@ -27,22 +27,23 @@ func GenerateExample(configPath string) error {
 					Enable: true,
 				},
 			},
-			Targets: []ConfigPath{
+			Targets: []Target{
 				{
-					Path:         "./configs",
-					InsertMarker: "🚀 节点选择",
-					// 不指定 Subscriptions，默认插入所有启用的订阅
+					Name: "默认目录多规则示例",
+					Path: "./configs",
+					Proxies: []ProxyTarget{
+						{InsertMarker: "🚀 节点选择"},
+						{InsertMarker: "🌟 特定节点", IncludeKeywords: []string{"美国", "日本"}},
+					},
 				},
 				{
+					Name:          "单文件规则示例",
 					Path:          "./test/specific_config.json",
-					InsertMarker:  "Proxy",
-					Subscriptions: []string{"示例订阅1"}, // 只插入指定的订阅
-					IsFile:        true,              // 标识这是一个具体文件
-				},
-				{
-					Path:          "./configs",
-					InsertMarker:  "🌟 特定节点",
-					Subscriptions: []string{"示例订阅2"}, // 只插入示例订阅2的节点
+					IsFile:        true,
+					Subscriptions: []string{"示例订阅1"},
+					Proxies: []ProxyTarget{
+						{InsertMarker: "Proxy"},
+					},
 				},
 			},
 			ExcludeKeywords: []string{"故障转移", "流量"},
