@@ -544,41 +544,48 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 
 	log.Printf("找到 %d 个可用的detour标签", len(detourTags))
 
-	var errs []string
-	for _, target := range nm.config.Nodes.Targets {
-		// 扫描配置文件
-		scanner := nm.scanners[target.Path]
-		configFiles, err := scanner.ScanConfigFiles()
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err))
+	// 不再对配置文件进行写入，仅从缓存展开为内存数据并写出缓存文件
+	// 以 "relay:{subName}" 作为 key 存储展开结果
+	cloneMap := func(m map[string]any) map[string]any {
+		c := make(map[string]any, len(m))
+		for k, v := range m {
+			c[k] = v
+		}
+		return c
+	}
+
+	for _, relaySub := range relaySubs {
+		srcNodes, ok := nm.cache.nodes[relaySub]
+		if !ok || len(srcNodes) == 0 {
 			continue
 		}
 
-		for _, configFile := range configFiles {
-			// 展开relay节点：每个relay节点针对每个tag生成一个新节点并设置detour
-			updater := fileops.NewUpdater("")
-			generated, err := updater.ExpandRelayNodesByDetours(configFile, relaySubs, detourTags)
-			if err != nil {
-				errs = append(errs, fmt.Sprintf("展开 relay 节点失败 %s: %v", configFile, err))
+		var expanded []subscription.Node
+		for _, n := range srcNodes {
+			base, ok := any(n).(map[string]any)
+			if !ok {
 				continue
 			}
-
-			// 缓存展开后的节点
-			var cached []subscription.Node
-			for _, m := range generated {
-				cached = append(cached, subscription.Node(m))
-			}
-			nm.cache.relayExpanded[configFile] = cached
-
-			// 更新后立即写出缓存文件，方便检查
-			if err := nm.writeCacheFiles(); err != nil {
-				errs = append(errs, fmt.Sprintf("写出缓存文件失败 %s: %v", configFile, err))
+			baseTag, _ := base["tag"].(string)
+			for _, detour := range detourTags {
+				if detour == "" {
+					continue
+				}
+				nm2 := cloneMap(base)
+				nm2["detour"] = detour
+				if baseTag != "" {
+					nm2["tag"] = fmt.Sprintf("%s -> %s", baseTag, detour)
+				}
+				expanded = append(expanded, subscription.Node(nm2))
 			}
 		}
+
+		nm.cache.relayExpanded["relay:"+relaySub] = expanded
 	}
 
-	if len(errs) > 0 {
-		return errors.New(strings.Join(errs, "; "))
+	// 写出缓存文件
+	if err := nm.writeCacheFiles(); err != nil {
+		return err
 	}
 	return nil
 }
