@@ -31,7 +31,6 @@ type NodesConfig struct {
 	Subscriptions   []Subscription `json:"subscriptions"`
 	Targets         []Target       `json:"targets"`
 	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
-	IncludeRelay    []string       `json:"include_relay,omitempty"`
 }
 
 // Subscription represents a single subscription source configuration.
@@ -65,7 +64,6 @@ type ProxyTarget struct {
 	InsertMarker    string   `json:"insert_marker"`
 	IncludeKeywords []string `json:"include_keywords,omitempty"`
 	ExcludeKeywords []string `json:"exclude_keywords,omitempty"`
-	RelayNodes      []string `json:"relay_nodes,omitempty"`
 }
 
 // ModulesConfig represents the modules configuration section.

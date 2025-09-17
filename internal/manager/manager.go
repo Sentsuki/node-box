@@ -382,14 +382,8 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		for _, proxyRule := range target.Proxies {
 			updater := fileops.NewUpdater(proxyRule.InsertMarker)
 
-			// 获取 relay 节点标签
-			var relayNodeTags []string
-			if len(proxyRule.RelayNodes) > 0 {
-				relayNodeTags = nm.getRelayNodeTags(proxyRule.RelayNodes)
-			}
-
 			for _, configFile := range configFiles {
-				if err := updater.UpdateSelectorOnly(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords, relayNodeTags); err != nil {
+				if err := updater.UpdateSelectorOnly(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
 					errorMsg := fmt.Sprintf("更新selector失败 %s: %v", configFile, err)
 					log.Printf("%s", errorMsg)
 					updateErrors = append(updateErrors, errorMsg)
@@ -594,17 +588,8 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 			continue
 		}
 
-		// 根据 include_relay 过滤 relay 节点
-		filteredRelayNodes := subscription.FilterNodesByIncludeKeywords(relayNodes, nm.config.Nodes.IncludeRelay)
-		if len(filteredRelayNodes) == 0 {
-			log.Printf("relay订阅 %s 经过 include_relay 过滤后无节点，跳过", relaySub)
-			continue
-		}
-
-		log.Printf("relay订阅 %s: %d -> %d 个节点 (include_relay 过滤)", relaySub, len(relayNodes), len(filteredRelayNodes))
-
 		var expanded []subscription.Node
-		for _, n := range filteredRelayNodes {
+		for _, n := range relayNodes {
 			// subscription.Node 是 map[string]any 的命名类型，需显式转换而非类型断言
 			base := map[string]any(n)
 			for _, detour := range detourTags {
@@ -684,29 +669,6 @@ func (nm *NodeManager) fetchRelaySubscriptionNodes(subName string) ([]subscripti
 	prefixedNodes := subscription.AddSubscriptionPrefix(nodes, subConfig.Name)
 
 	return prefixedNodes, nil
-}
-
-// getRelayNodeTags 根据 relay_nodes 配置获取相应的 relay 节点标签
-func (nm *NodeManager) getRelayNodeTags(relayNodeKeywords []string) []string {
-	var relayNodeTags []string
-
-	// 遍历所有缓存的 relay 展开节点
-	for _, expandedNodes := range nm.cache.relayExpanded {
-		for _, node := range expandedNodes {
-			if tag, ok := node["tag"].(string); ok {
-				// 检查标签是否包含任何 relay_nodes 关键词
-				for _, keyword := range relayNodeKeywords {
-					if strings.Contains(strings.ToLower(tag), strings.ToLower(keyword)) {
-						relayNodeTags = append(relayNodeTags, tag)
-						break
-					}
-				}
-			}
-		}
-	}
-
-	log.Printf("找到 %d 个匹配的 relay 节点标签 (关键词: %v)", len(relayNodeTags), relayNodeKeywords)
-	return relayNodeTags
 }
 
 // writeCacheFiles 将缓存写入根目录 JSON 文件，便于人工检查。

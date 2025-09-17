@@ -246,7 +246,7 @@ func (u *Updater) InsertRealNodes(configPath string, nodes []map[string]any, sub
 
 // UpdateSelectorOnly updates only the selector outbounds list without inserting real nodes.
 // This method only handles updating the selector's outbounds array based on filtering rules.
-func (u *Updater) UpdateSelectorOnly(configPath string, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string, relayNodes []string) error {
+func (u *Updater) UpdateSelectorOnly(configPath string, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string) error {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -282,7 +282,7 @@ func (u *Updater) UpdateSelectorOnly(configPath string, nodes []map[string]any, 
 	}
 
 	// 根据proxies里指定的规则更新selector
-	if err := u.updateSelectorOutbounds(outboundsArray, nodes, subscriptionNames, includeKeywords, excludeKeywords, relayNodes); err != nil {
+	if err := u.updateSelectorOutbounds(outboundsArray, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
 		return err
 	}
 
@@ -304,8 +304,7 @@ func (u *Updater) UpdateSelectorOnly(configPath string, nodes []map[string]any, 
 //   - subscriptionNames: list of subscription names used to identify and clean old subscription nodes
 //   - includeKeywords: only affect selector tag insertion (if non-empty, only tags containing any will be added)
 //   - excludeKeywords: only affect selector tag insertion (tags containing any will be removed)
-//   - relayNodes: list of relay node tags to add to selector
-func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string, relayNodes []string) error {
+func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string) error {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -357,7 +356,7 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 
 	// 根据proxies里指定的规则更新selector
 	log.Printf("根据proxies规则更新selector '%s' (include=%v, exclude=%v)", u.insertMarker, includeKeywords, excludeKeywords)
-	if err := u.updateSelectorOutbounds(newOutbounds, nodes, subscriptionNames, includeKeywords, excludeKeywords, relayNodes); err != nil {
+	if err := u.updateSelectorOutbounds(newOutbounds, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
 		log.Printf("更新selector outbounds失败 %s: %v", configPath, err)
 		return err
 	}
@@ -429,7 +428,7 @@ func (u *Updater) removeOldSubscriptionNodes(outbounds []any, subscriptionNames 
 
 // updateSelectorOutbounds updates the outbounds list of the selector marker.
 // It removes old subscription node tags and adds new node tags to the selector's outbounds array.
-func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string, relayNodes []string) error {
+func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string) error {
 	// 收集新节点的标签
 	var nodeTags []string
 	for _, node := range nodes {
@@ -437,9 +436,6 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 			nodeTags = append(nodeTags, tag)
 		}
 	}
-
-	// 添加 relay 节点标签
-	nodeTags = append(nodeTags, relayNodes...)
 
 	// 对将要添加到 selector 的标签应用 include/exclude 过滤
 	toLower := func(arr []string) []string {
