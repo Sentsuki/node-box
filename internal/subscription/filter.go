@@ -52,6 +52,43 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 	return filteredNodes
 }
 
+// FilterNodesByIncludeKeywords filters nodes based on include keywords.
+// It keeps only nodes whose tags contain any of the provided keywords.
+// If no keywords are provided, all nodes are kept.
+func FilterNodesByIncludeKeywords(nodes []Node, includeKeywords []string) []Node {
+	if len(includeKeywords) == 0 {
+		return nodes
+	}
+
+	var filteredNodes []Node
+	includedCount := 0
+
+	for _, node := range nodes {
+		tag, ok := node["tag"].(string)
+		if !ok {
+			continue
+		}
+
+		shouldInclude := false
+		for _, keyword := range includeKeywords {
+			if strings.Contains(strings.ToLower(tag), strings.ToLower(keyword)) {
+				shouldInclude = true
+				includedCount++
+				break
+			}
+		}
+		if shouldInclude {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+
+	if len(includeKeywords) > 0 {
+		log.Printf("包含节点: %d 个 (基于 %d 个关键词)", includedCount, len(includeKeywords))
+	}
+
+	return filteredNodes
+}
+
 // AddSubscriptionPrefix adds subscription name prefix to node tags.
 // It modifies the tag field of each node to include the subscription name
 // in the format "[subscription_name] original_tag".
