@@ -151,7 +151,6 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 
 		// 处理订阅数据
 		var nodes []subscription.Node
-		var err error
 
 		if strings.ToLower(sub.Type) == "relay" {
 			// relay 类型需要特殊处理，暂时跳过，稍后处理
