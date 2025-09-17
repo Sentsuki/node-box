@@ -36,6 +36,121 @@ func NewUpdater(insertMarker string) *Updater {
 	}
 }
 
+// InsertRealNodes inserts real proxy nodes into the configuration file without updating selectors.
+// This method only handles the insertion of actual proxy nodes into the outbounds array.
+func (u *Updater) InsertRealNodes(configPath string, nodes []map[string]any, subscriptionNames []string) error {
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		log.Printf("%v %s: %v", ErrConfigFileRead, configPath, err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
+	}
+
+	// 解析JSON配置
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		log.Printf("%v %s: %v", ErrConfigFileParse, configPath, err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
+	}
+
+	// 检查outbounds字段
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		log.Printf("%v: %s", ErrMissingOutbounds, configPath)
+		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
+	}
+
+	outboundsArray, ok := outboundsRaw.([]any)
+	if !ok {
+		log.Printf("%v: %s", ErrInvalidOutboundsFormat, configPath)
+		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
+	}
+
+	// 清理旧的订阅节点
+	newOutbounds := u.removeOldSubscriptionNodes(outboundsArray, subscriptionNames)
+
+	// 将真实节点插入配置中
+	log.Printf("将 %d 个真实节点插入到 outbounds", len(nodes))
+	for _, node := range nodes {
+		newOutbounds = append(newOutbounds, node)
+	}
+
+	// 更新配置
+	config["outbounds"] = newOutbounds
+
+	// 写回文件
+	if err := u.writeConfigFile(configPath, config); err != nil {
+		log.Printf("写入配置文件失败 %s: %v", configPath, err)
+		return err
+	}
+
+	log.Printf("成功插入真实节点到配置文件: %s", configPath)
+	return nil
+}
+
+// UpdateSelectorOnly updates only the selector outbounds list without inserting real nodes.
+// This method only handles updating the selector's outbounds array based on filtering rules.
+func (u *Updater) UpdateSelectorOnly(configPath string, nodes []map[string]any, subscriptionNames []string, includeKeywords []string, excludeKeywords []string) error {
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		log.Printf("%v %s: %v", ErrConfigFileRead, configPath, err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
+	}
+
+	// 解析JSON配置
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		log.Printf("%v %s: %v", ErrConfigFileParse, configPath, err)
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
+	}
+
+	// 检查outbounds字段
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		log.Printf("%v: %s", ErrMissingOutbounds, configPath)
+		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
+	}
+
+	outboundsArray, ok := outboundsRaw.([]any)
+	if !ok {
+		log.Printf("%v: %s", ErrInvalidOutboundsFormat, configPath)
+		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
+	}
+
+	// 查找插入标记
+	_, markerOutbound, err := u.findInsertMarker(outboundsArray)
+	if err != nil {
+		log.Printf("查找插入标记失败 %s: %v", configPath, err)
+		return err
+	}
+
+	// 验证插入标记类型
+	if err := u.validateMarkerType(markerOutbound); err != nil {
+		log.Printf("插入标记验证失败 %s: %v", configPath, err)
+		return err
+	}
+
+	// 根据proxies里指定的规则更新selector
+	log.Printf("根据proxies规则更新selector '%s' (include=%v, exclude=%v)", u.insertMarker, includeKeywords, excludeKeywords)
+	if err := u.updateSelectorOutbounds(outboundsArray, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
+		log.Printf("更新selector outbounds失败 %s: %v", configPath, err)
+		return err
+	}
+
+	// 更新配置
+	config["outbounds"] = outboundsArray
+
+	// 写回文件
+	if err := u.writeConfigFile(configPath, config); err != nil {
+		log.Printf("写入配置文件失败 %s: %v", configPath, err)
+		return err
+	}
+
+	log.Printf("成功更新selector: %s", configPath)
+	return nil
+}
+
 // UpdateConfigFile updates the specified configuration file by inserting nodes at the marker position.
 // Parameters:
 //   - configPath: path to the configuration file to update

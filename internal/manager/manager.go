@@ -332,7 +332,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		filteredNodes := nm.filter.FilterNodes(allTargetNodes)
 		log.Printf("排除后剩余节点: %d 个（排除了 %d 个）", len(filteredNodes), len(allTargetNodes)-len(filteredNodes))
 
-		// 3. 将真实节点插入path指定的配置中
+		// 3. 将真实节点插入path指定的配置中（每个配置文件只插入一次）
 		log.Println("步骤 3/4: 将真实节点插入path指定的配置中...")
 
 		// 转换为map格式用于插入
@@ -341,34 +341,52 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			nodesMaps[i] = map[string]any(node)
 		}
 
-		// 针对每个 proxy 规则进行处理
-		for _, proxyRule := range target.Proxies {
-			log.Printf("处理插入规则 marker: %s", proxyRule.InsertMarker)
+		// 对每个配置文件只插入一次真实节点
+		pathSuccessCount := 0
+		for _, configFile := range configFiles {
+			log.Printf("插入真实节点到配置文件: %s (节点数: %d)", configFile, len(nodesMaps))
 
-			// 为该规则创建更新器
-			updater := fileops.NewUpdater(proxyRule.InsertMarker)
-
-			// 更新当前路径下的每个配置文件
-			pathSuccessCount := 0
-			for _, configFile := range configFiles {
-				log.Printf("插入真实节点到配置文件: %s (marker: %s, 节点数: %d)", configFile, proxyRule.InsertMarker, len(nodesMaps))
-
-				// 4. 根据proxies里指定的规则更新selector
-				log.Printf("步骤 4/4: 根据proxies规则更新selector (include: %v, exclude: %v)", proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords)
-
-				if err := updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
-					errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
+			// 使用通用updater来插入真实节点（只插入，不更新selector）
+			if len(target.Proxies) > 0 {
+				updater := fileops.NewUpdater("")
+				if err := updater.InsertRealNodes(configFile, nodesMaps, subscriptionNames); err != nil {
+					errorMsg := fmt.Sprintf("插入真实节点失败 %s: %v", configFile, err)
 					log.Printf("%s", errorMsg)
 					updateErrors = append(updateErrors, errorMsg)
 					continue
 				}
 				pathSuccessCount++
-				log.Printf("成功更新配置文件: %s", configFile)
+				log.Printf("成功插入真实节点到配置文件: %s", configFile)
+			}
+		}
+
+		// 4. 根据proxies里指定的规则更新selector
+		log.Println("步骤 4/4: 根据proxies规则更新selector...")
+
+		// 针对每个 proxy 规则分别更新selector
+		for _, proxyRule := range target.Proxies {
+			log.Printf("更新selector规则 marker: %s (include: %v, exclude: %v)", proxyRule.InsertMarker, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords)
+
+			// 为该规则创建更新器
+			updater := fileops.NewUpdater(proxyRule.InsertMarker)
+
+			// 更新当前路径下每个配置文件的selector
+			for _, configFile := range configFiles {
+				log.Printf("更新selector: %s (marker: %s)", configFile, proxyRule.InsertMarker)
+
+				if err := updater.UpdateSelectorOnly(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
+					errorMsg := fmt.Sprintf("更新selector失败 %s: %v", configFile, err)
+					log.Printf("%s", errorMsg)
+					updateErrors = append(updateErrors, errorMsg)
+					continue
+				}
+				log.Printf("成功更新selector: %s", configFile)
 			}
 
-			totalSuccessCount += pathSuccessCount
-			log.Printf("规则 %s 在路径 %s 处理完成: 成功 %d 个，失败 %d 个", proxyRule.InsertMarker, target.Path, pathSuccessCount, len(configFiles)-pathSuccessCount)
+			log.Printf("规则 %s 在路径 %s 处理完成", proxyRule.InsertMarker, target.Path)
 		}
+
+		totalSuccessCount += pathSuccessCount
 	}
 
 	// 汇总结果
