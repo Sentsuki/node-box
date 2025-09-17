@@ -562,10 +562,8 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 
 		var expanded []subscription.Node
 		for _, n := range srcNodes {
-			base, ok := any(n).(map[string]any)
-			if !ok {
-				continue
-			}
+			// subscription.Node 是 map[string]any 的命名类型，需显式转换而非类型断言
+			base := map[string]any(n)
 			baseTag, _ := base["tag"].(string)
 			for _, detour := range detourTags {
 				if detour == "" {
@@ -614,7 +612,7 @@ func (nm *NodeManager) writeCacheFiles() error {
 	// 写 cache_relay_expanded.json
 	relayOut := make(map[string][]map[string]any)
 	for cfgPath, list := range nm.cache.relayExpanded {
-		var arr []map[string]any
+		arr := make([]map[string]any, 0, len(list))
 		for _, n := range list {
 			arr = append(arr, map[string]any(n))
 		}
