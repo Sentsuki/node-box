@@ -218,6 +218,7 @@
     }
   ],
   "update_interval_hours": 24,
+  "log_level": "info",
   "proxy": {
     "type": "http",
     "host": "proxy.example.com",

@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"node-box/internal/config"
+	"node-box/internal/logger"
 	"node-box/internal/manager"
 )
 
@@ -128,66 +128,75 @@ func main() {
 		return
 
 	case "init":
-		log.Printf("正在生成示例配置文件: %s", configPath)
+		logger.Info("正在生成示例配置文件: %s", configPath)
 		if err := config.GenerateExample(configPath); err != nil {
-			log.Fatalf("生成示例配置失败: %v", err)
+			logger.Fatal("生成示例配置失败: %v", err)
 		}
-		log.Printf("示例配置文件已生成，请编辑 %s 后重新运行程序", configPath)
+		logger.Info("示例配置文件已生成，请编辑 %s 后重新运行程序", configPath)
 		return
 
 	case "run":
 		// 继续执行主程序逻辑
-		log.Printf("使用配置文件: %s", configPath)
+		logger.Info("使用配置文件: %s", configPath)
 
 	case "nodes":
 		// 仅更新节点配置
-		log.Printf("仅更新节点配置，使用配置文件: %s", configPath)
+		logger.Info("仅更新节点配置，使用配置文件: %s", configPath)
 
 	case "modules":
 		// 仅更新模块配置
-		log.Printf("仅更新模块配置，使用配置文件: %s", configPath)
+		logger.Info("仅更新模块配置，使用配置文件: %s", configPath)
 
 	default:
-		log.Fatalf("未知命令: %s", command)
+		logger.Fatal("未知命令: %s", command)
 	}
 
 	// 加载配置
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		logger.Fatal("加载配置失败: %v", err)
+	}
+
+	// 初始化日志系统
+	if cfg.LogLevel != "" {
+		logger.SetLevel(logger.ParseLevel(cfg.LogLevel))
+		logger.Debug("日志级别设置为: %s", cfg.LogLevel)
+	} else {
+		// 从环境变量初始化
+		logger.InitFromEnv()
 	}
 
 	// 验证配置
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("配置验证失败: %v", err)
+		logger.Fatal("配置验证失败: %v", err)
 	}
 
 	// 初始化节点管理器
 	nodeManager, err := manager.NewNodeManager(cfg)
 	if err != nil {
-		log.Fatalf("初始化节点管理器失败: %v", err)
+		logger.Fatal("初始化节点管理器失败: %v", err)
 	}
 
 	// 根据命令类型执行不同的操作
 	switch command {
 	case "nodes":
 		// 仅更新节点配置
-		log.Println("开始更新节点配置...")
+		logger.Info("开始更新节点配置...")
 		if err := nodeManager.UpdateAllConfigs(); err != nil {
-			log.Printf("节点配置更新失败: %v", err)
-			log.Println("程序将继续运行，部分配置可能未更新")
+			logger.Error("节点配置更新失败: %v", err)
+			logger.Warn("程序将继续运行，部分配置可能未更新")
 		} else {
-			log.Println("节点配置更新完成")
+			logger.Info("节点配置更新完成")
 		}
 
 	case "modules":
 		// 仅更新模块配置
-		log.Println("开始更新模块配置...")
+		logger.Info("开始更新模块配置...")
 		if err := nodeManager.UpdateModuleConfigs(); err != nil {
-			log.Printf("模块配置更新失败: %v", err)
-			log.Println("程序将继续运行，部分配置可能未更新")
+			logger.Error("模块配置更新失败: %v", err)
+			logger.Warn("程序将继续运行，部分配置可能未更新")
 		} else {
-			log.Println("模块配置更新完成")
+			logger.Info("模块配置更新完成")
 		}
 
 	case "run":
@@ -195,13 +204,13 @@ func main() {
 		updateInterval := time.Duration(cfg.UpdateInterval) * time.Hour
 		scheduler := manager.NewScheduler(nodeManager, updateInterval)
 
-		log.Printf("程序启动成功，更新间隔: %v", updateInterval)
-		log.Println("按 Ctrl+C 停止程序")
+		logger.Info("程序启动成功，更新间隔: %v", updateInterval)
+		logger.Info("按 Ctrl+C 停止程序")
 
 		// 启动调度器（这会阻塞直到程序结束）
 		if err := scheduler.Start(); err != nil {
-			log.Printf("调度器运行失败: %v", err)
-			log.Println("程序将退出")
+			logger.Error("调度器运行失败: %v", err)
+			logger.Info("程序将退出")
 		}
 	}
 }

@@ -23,6 +23,7 @@ type Config struct {
 	UpdateInterval int            `json:"update_interval_hours"`
 	Proxy          *ProxyConfig   `json:"proxy,omitempty"`
 	UserAgent      string         `json:"user_agent,omitempty"`
+	LogLevel       string         `json:"log_level,omitempty"` // 日志级别: silent, error, warn, info, debug
 }
 
 // NodesConfig represents the nodes configuration section.
