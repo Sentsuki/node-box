@@ -110,11 +110,11 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
     ],
     "targets": [
       {
-        "insert_path": "./configs",
+        "path": "./configs",
         "insert_marker": "🚀 节点选择"
       },
       {
-        "insert_path": "./configs/gaming.json",
+        "path": "./configs/gaming.json",
         "insert_marker": "🎮 游戏节点",
         "subscriptions": ["订阅A"],
         "is_file": true
@@ -143,7 +143,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 **目录模式（默认）**：
 ```json
 {
-  "insert_path": "./configs",
+  "path": "./configs",
   "insert_marker": "🚀 节点选择"
 }
 ```
@@ -151,7 +151,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 **文件模式（新增）**：
 ```json
 {
-  "insert_path": "./configs/specific.json",
+  "path": "./configs/specific.json",
   "insert_marker": "🌟 特定节点",
   "is_file": true
 }
@@ -163,7 +163,7 @@ GOOS=darwin GOARCH=amd64 go build -o bin/node-box-darwin ./cmd/node-box
 
 ```json
 {
-  "insert_path": "./configs/gaming.json",
+  "path": "./configs/gaming.json",
   "insert_marker": "🎮 游戏节点",
   "subscriptions": ["低延迟订阅", "游戏专用"],
   "is_file": true

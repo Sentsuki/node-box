@@ -69,8 +69,8 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	updaters := make(map[string]*fileops.Updater)
 
 	for _, target := range cfg.Nodes.Targets {
-		scanners[target.InsertPath] = fileops.NewScanner(target.InsertPath, target.IsFile)
-		updaters[target.InsertPath] = fileops.NewUpdater(target.InsertMarker)
+		scanners[target.Path] = fileops.NewScanner(target.Path, target.IsFile)
+		updaters[target.Path] = fileops.NewUpdater(target.InsertMarker)
 	}
 
 	// 创建节点过滤器
@@ -274,19 +274,19 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	totalFileCount := 0
 
 	for _, target := range nm.config.Nodes.Targets {
-		log.Printf("处理配置路径: %s (marker: %s)", target.InsertPath, target.InsertMarker)
+		log.Printf("处理配置路径: %s (marker: %s)", target.Path, target.InsertMarker)
 
 		// 3. 从缓存获取当前目标的节点（根据订阅过滤）
 		targetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
 		if err != nil {
-			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.InsertPath, err)
+			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.Path, err)
 			log.Printf("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}
 
 		if len(targetNodes) == 0 {
-			log.Printf("路径 %s 未获取到节点，跳过更新", target.InsertPath)
+			log.Printf("路径 %s 未获取到节点，跳过更新", target.Path)
 			continue
 		}
 
@@ -311,10 +311,10 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		}
 
 		// 6. 扫描当前路径下的配置文件
-		scanner := nm.scanners[target.InsertPath]
+		scanner := nm.scanners[target.Path]
 		configFiles, err := scanner.ScanConfigFiles()
 		if err != nil {
-			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.InsertPath, err)
+			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err)
 			log.Printf("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
@@ -322,18 +322,18 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 
 		if len(configFiles) == 0 {
 			if target.IsFile {
-				log.Printf("指定的配置文件不存在: %s", target.InsertPath)
+				log.Printf("指定的配置文件不存在: %s", target.Path)
 			} else {
-				log.Printf("路径 %s 下未找到配置文件", target.InsertPath)
+				log.Printf("路径 %s 下未找到配置文件", target.Path)
 			}
 			continue
 		}
 
-		log.Printf("在路径 %s 下找到 %d 个配置文件，节点数量: %d", target.InsertPath, len(configFiles), len(targetNodes))
+		log.Printf("在路径 %s 下找到 %d 个配置文件，节点数量: %d", target.Path, len(configFiles), len(targetNodes))
 		totalFileCount += len(configFiles)
 
 		// 7. 获取对应的更新器
-		updater := nm.updaters[target.InsertPath]
+		updater := nm.updaters[target.Path]
 
 		// 8. 更新当前路径下的每个配置文件
 		pathSuccessCount := 0
@@ -354,7 +354,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 
 		totalSuccessCount += pathSuccessCount
 		log.Printf("路径 %s 处理完成: 成功 %d 个，失败 %d 个",
-			target.InsertPath, pathSuccessCount, len(configFiles)-pathSuccessCount)
+			target.Path, pathSuccessCount, len(configFiles)-pathSuccessCount)
 	}
 
 	// 9. 汇总结果
@@ -406,7 +406,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 	successCount := 0
 
 	for _, configFile := range nm.config.Configs {
-		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.File)
+		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.Path)
 
 		if err := nm.configUpdater.UpdateConfigFile(configFile); err != nil {
 			errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile.Name, err)

@@ -49,7 +49,7 @@ func printUsage() {
     "nodes": {
       "targets": [
         {
-          "insert_path": "./configs/gaming.json",
+          "path": "./configs/gaming.json",
           "insert_marker": "🎮 游戏节点",
           "subscriptions": ["低延迟订阅"],
           "is_file": true

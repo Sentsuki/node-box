@@ -225,9 +225,9 @@ func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) er
 	var data []byte
 	var err error
 
-	if module.FromPath != "" {
+	if module.Path != "" {
 		// Fetch from local file (no retry needed for local files)
-		data, err = mm.fetchFromPath(module.FromPath)
+		data, err = mm.fetchFromPath(module.Path)
 		if err != nil {
 			return fmt.Errorf("%w %s: %v", ErrModuleFetchFailed, module.Name, err)
 		}

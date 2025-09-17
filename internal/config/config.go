@@ -48,10 +48,10 @@ type Subscription struct {
 // It defines where configuration files are located and which marker to use for updates.
 // It now supports both directory and file-level targeting, and subscription filtering.
 type ConfigPath struct {
-	InsertPath    string   `json:"insert_path"`
+	Path          string   `json:"path"`
 	InsertMarker  string   `json:"insert_marker"`
 	Subscriptions []string `json:"subscriptions,omitempty"` // 指定要插入的订阅名称，为空则插入所有启用的订阅
-	IsFile        bool     `json:"is_file,omitempty"`       // 标识 insert_path 是否为具体文件路径
+	IsFile        bool     `json:"is_file,omitempty"`       // 标识 path 是否为具体文件路径
 }
 
 // ModulesConfig represents the modules configuration section.
@@ -72,16 +72,16 @@ type ModulesConfig struct {
 // Module represents a single module configuration.
 // It defines how to fetch a module from a local path or remote URL.
 type Module struct {
-	Name     string `json:"name"`                // module name
-	FromPath string `json:"from_path,omitempty"` // local file path
-	FromURL  string `json:"from_url,omitempty"`  // remote URL
+	Name    string `json:"name"`               // module name
+	Path    string `json:"path,omitempty"`     // local file path
+	FromURL string `json:"from_url,omitempty"` // remote URL
 }
 
 // ConfigFile represents a configuration file that uses modules.
 // It defines which modules should be applied to which configuration file.
 type ConfigFile struct {
 	Name    string   `json:"name"`    // configuration name
-	File    string   `json:"file"`    // target configuration file path
+	Path    string   `json:"path"`    // target configuration file path
 	Modules []string `json:"modules"` // list of module names to apply
 }
 
@@ -189,8 +189,8 @@ func (c *Config) Validate() error {
 
 // validateConfigPath validates a single config path configuration
 func (c *Config) validateConfigPath(configPath ConfigPath, index int) error {
-	if configPath.InsertPath == "" {
-		return fmt.Errorf("targets[%d]: insert_path cannot be empty", index)
+	if configPath.Path == "" {
+		return fmt.Errorf("targets[%d]: path cannot be empty", index)
 	}
 
 	if configPath.InsertMarker == "" {
@@ -315,16 +315,16 @@ func (c *Config) validateModule(module Module, moduleType string, index int) err
 		return fmt.Errorf("modules.%s[%d]: name cannot be empty", moduleType, index)
 	}
 
-	// Either from_path or from_url must be provided, but not both
-	hasPath := module.FromPath != ""
+	// Either path or from_url must be provided, but not both
+	hasPath := module.Path != ""
 	hasURL := module.FromURL != ""
 
 	if !hasPath && !hasURL {
-		return fmt.Errorf("modules.%s[%d] (%s): either from_path or from_url must be provided", moduleType, index, module.Name)
+		return fmt.Errorf("modules.%s[%d] (%s): either path or from_url must be provided", moduleType, index, module.Name)
 	}
 
 	if hasPath && hasURL {
-		return fmt.Errorf("modules.%s[%d] (%s): cannot specify both from_path and from_url", moduleType, index, module.Name)
+		return fmt.Errorf("modules.%s[%d] (%s): cannot specify both path and from_url", moduleType, index, module.Name)
 	}
 
 	return nil
@@ -336,8 +336,8 @@ func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
 		return fmt.Errorf("configs[%d]: name cannot be empty", index)
 	}
 
-	if configFile.File == "" {
-		return fmt.Errorf("configs[%d] (%s): file cannot be empty", index, configFile.Name)
+	if configFile.Path == "" {
+		return fmt.Errorf("configs[%d] (%s): path cannot be empty", index, configFile.Name)
 	}
 
 	if len(configFile.Modules) == 0 {
