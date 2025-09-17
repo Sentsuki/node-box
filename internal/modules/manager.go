@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 
 	"node-box/internal/client"
 	"node-box/internal/config"
+	"node-box/internal/logger"
 )
 
 // ModuleManager package errors
@@ -53,7 +53,7 @@ func NewModuleManager(cfg *config.Config, fetcher *client.Fetcher) *ModuleManage
 func (mm *ModuleManager) InvalidateCache() {
 	mm.cache.valid = false
 	mm.cache.modules = make(map[string]map[string]any)
-	log.Println("模块缓存已失效")
+	logger.Debug("模块缓存已失效")
 }
 
 // FetchAllModules fetches all configured modules from their sources and caches them.
@@ -63,16 +63,16 @@ func (mm *ModuleManager) InvalidateCache() {
 func (mm *ModuleManager) FetchAllModules() error {
 	// 如果缓存有效，直接返回
 	if mm.cache.valid {
-		log.Printf("使用缓存的模块数据，共 %d 个模块", len(mm.cache.modules))
+		logger.Debug("使用缓存的模块数据，共 %d 个模块", len(mm.cache.modules))
 		return nil
 	}
 
 	if mm.config.Modules == nil {
-		log.Println("No modules configured, skipping module fetch")
+		logger.Debug("No modules configured, skipping module fetch")
 		return nil
 	}
 
-	log.Println("开始获取并缓存所有模块...")
+	logger.Info("开始获取并缓存所有模块...")
 
 	// 清空缓存
 	mm.cache.modules = make(map[string]map[string]any)
@@ -85,7 +85,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Log {
 		if err := mm.fetchModule(module, "log"); err != nil {
 			errorMsg := fmt.Sprintf("获取日志模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -96,7 +96,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.DNS {
 		if err := mm.fetchModule(module, "dns"); err != nil {
 			errorMsg := fmt.Sprintf("获取DNS模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -107,7 +107,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.NTP {
 		if err := mm.fetchModule(module, "ntp"); err != nil {
 			errorMsg := fmt.Sprintf("获取NTP模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -118,7 +118,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Certificate {
 		if err := mm.fetchModule(module, "certificate"); err != nil {
 			errorMsg := fmt.Sprintf("获取Certificate模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -129,7 +129,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Endpoints {
 		if err := mm.fetchModule(module, "endpoints"); err != nil {
 			errorMsg := fmt.Sprintf("获取Endpoints模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -140,7 +140,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Inbounds {
 		if err := mm.fetchModule(module, "inbounds"); err != nil {
 			errorMsg := fmt.Sprintf("获取Inbounds模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -151,7 +151,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Outbounds {
 		if err := mm.fetchModule(module, "outbounds"); err != nil {
 			errorMsg := fmt.Sprintf("获取Outbounds模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -162,7 +162,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Route {
 		if err := mm.fetchModule(module, "route"); err != nil {
 			errorMsg := fmt.Sprintf("获取Route模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -173,7 +173,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Services {
 		if err := mm.fetchModule(module, "services"); err != nil {
 			errorMsg := fmt.Sprintf("获取Services模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -184,7 +184,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 	for _, module := range mm.config.Modules.Experimental {
 		if err := mm.fetchModule(module, "experimental"); err != nil {
 			errorMsg := fmt.Sprintf("获取Experimental模块失败 %s: %v", module.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			fetchErrors = append(fetchErrors, errorMsg)
 			continue
 		}
@@ -194,25 +194,25 @@ func (mm *ModuleManager) FetchAllModules() error {
 	// 标记缓存为有效（即使有部分失败）
 	if successCount > 0 {
 		mm.cache.valid = true
-		log.Printf("模块缓存完成: 成功 %d 个，失败 %d 个", successCount, len(fetchErrors))
+		logger.Info("模块缓存完成: 成功 %d 个，失败 %d 个", successCount, len(fetchErrors))
 	}
 
 	if len(fetchErrors) > 0 {
-		log.Println("获取失败的模块:")
+		logger.Debug("获取失败的模块:")
 		for _, errMsg := range fetchErrors {
-			log.Printf("  - %s", errMsg)
+			logger.Debug("  - %s", errMsg)
 		}
 
 		if successCount == 0 {
-			log.Println("警告: 所有模块获取失败，但继续处理")
+			logger.Warn("所有模块获取失败，但继续处理")
 			return nil // 不返回错误，允许继续处理
 		}
 
-		log.Printf("部分模块获取失败，但继续处理成功的 %d 个模块", successCount)
+		logger.Warn("部分模块获取失败，但继续处理成功的 %d 个模块", successCount)
 		return nil // 不返回错误，允许继续处理
 	}
 
-	log.Printf("所有模块缓存成功，总计 %d 个模块", successCount)
+	logger.Info("所有模块缓存成功，总计 %d 个模块", successCount)
 	return nil
 }
 
@@ -226,14 +226,14 @@ func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) er
 
 	if module.Path != "" {
 		// Fetch from local file using client fetcher for consistency
-		log.Printf("获取本地模块: %s (%s) from %s", module.Name, moduleType, module.Path)
+		logger.Debug("获取本地模块: %s (%s) from %s", module.Name, moduleType, module.Path)
 		data, err = mm.fetcher.FetchModuleFromPath(module.Path)
 		if err != nil {
 			return fmt.Errorf("%w %s: %v", ErrModuleFetchFailed, module.Name, err)
 		}
 	} else if module.FromURL != "" {
 		// Fetch from remote URL with retry support (uses fetcher's built-in retry mechanism)
-		log.Printf("获取远程模块: %s (%s) from %s", module.Name, moduleType, module.FromURL)
+		logger.Debug("获取远程模块: %s (%s) from %s", module.Name, moduleType, module.FromURL)
 		data, err = mm.fetcher.FetchSubscription(module.FromURL)
 		if err != nil {
 			return fmt.Errorf("%w %s: %v", ErrModuleFetchFailed, module.Name, err)
@@ -250,7 +250,7 @@ func (mm *ModuleManager) fetchModule(module config.Module, moduleType string) er
 
 	// Store module data in cache
 	mm.cache.modules[module.Name] = moduleData
-	log.Printf("成功获取模块 %s (%s)", module.Name, moduleType)
+	logger.Debug("成功获取模块 %s (%s)", module.Name, moduleType)
 
 	return nil
 }
@@ -294,7 +294,7 @@ func (mm *ModuleManager) GetModulesByType(moduleType string) map[string]map[stri
 	case "experimental":
 		modules = mm.config.Modules.Experimental
 	default:
-		log.Printf("未知的模块类型: %s", moduleType)
+		logger.Warn("未知的模块类型: %s", moduleType)
 		return result
 	}
 

@@ -227,7 +227,7 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 	// 如果缓存无效，先获取所有订阅
 	if !nm.cache.valid {
 		if err := nm.FetchAndCacheAllSubscriptions(); err != nil {
-			log.Printf("获取订阅时出现问题: %v，但继续处理", err)
+			logger.Warn("获取订阅时出现问题: %v，但继续处理", err)
 		}
 	}
 
@@ -321,7 +321,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		allTargetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
 		if err != nil {
 			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.Path, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}
@@ -412,15 +412,15 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 // Uses cached module data if available.
 func (nm *NodeManager) UpdateModuleConfigs() error {
 	if nm.config.Modules == nil || len(nm.config.Configs) == 0 {
-		log.Println("没有配置模块或配置文件，跳过模块配置更新")
+		logger.Debug("没有配置模块或配置文件，跳过模块配置更新")
 		return nil
 	}
 
-	log.Println("开始更新模块配置...")
+	logger.Info("开始更新模块配置...")
 
 	// 1. 获取所有模块（使用缓存机制，只在需要时请求）
 	if err := nm.moduleManager.FetchAllModules(); err != nil {
-		log.Printf("获取模块时出现问题: %v，但继续处理", err)
+		logger.Warn("获取模块时出现问题: %v，但继续处理", err)
 	}
 
 	// 2. 更新每个配置文件
@@ -428,26 +428,26 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 	successCount := 0
 
 	for _, configFile := range nm.config.Configs {
-		log.Printf("更新配置文件: %s (%s)", configFile.Name, configFile.Path)
+		logger.Debug("更新配置文件: %s (%s)", configFile.Name, configFile.Path)
 
 		if err := nm.configUpdater.UpdateConfigFile(configFile); err != nil {
 			errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile.Name, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
 		}
 
 		successCount++
-		log.Printf("成功更新配置文件: %s", configFile.Name)
+		logger.Debug("成功更新配置文件: %s", configFile.Name)
 	}
 
 	// 3. 汇总结果
-	log.Printf("模块配置更新完成: 成功 %d 个，失败 %d 个", successCount, len(updateErrors))
+	logger.Info("模块配置更新完成: 成功 %d 个，失败 %d 个", successCount, len(updateErrors))
 
 	if len(updateErrors) > 0 {
-		log.Println("更新失败的配置文件:")
+		logger.Debug("更新失败的配置文件:")
 		for _, errMsg := range updateErrors {
-			log.Printf("  - %s", errMsg)
+			logger.Debug("  - %s", errMsg)
 		}
 
 		if successCount > 0 {
@@ -461,14 +461,14 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 		return fmt.Errorf("没有配置文件需要更新")
 	}
 
-	log.Println("所有模块配置更新成功")
+	logger.Info("所有模块配置更新成功")
 	return nil
 }
 
 // UpdateAllConfigurations updates all configurations in sequence.
 // Execution order: 1. 失效缓存 2. 节点配置 3. relay 订阅后处理 4. relay 节点写入配置 5. 模块配置
 func (nm *NodeManager) UpdateAllConfigurations() error {
-	log.Println("开始更新所有配置...")
+	logger.Debug("开始更新所有配置...")
 
 	var errors []string
 
@@ -488,7 +488,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		configFiles, err := scanner.ScanConfigFiles()
 		if err != nil {
 			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err)
-			log.Printf("%s", errorMsg)
+			logger.Error("%s", errorMsg)
 			errors = append(errors, errorMsg)
 			continue
 		}
@@ -496,62 +496,62 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 			updater := fileops.NewUpdater("")
 			if err := updater.CleanSubscriptionArtifacts(cfgPath, allSubNames); err != nil {
 				errorMsg := fmt.Sprintf("清理订阅残留失败 %s: %v", cfgPath, err)
-				log.Printf("%s", errorMsg)
+				logger.Error("%s", errorMsg)
 				errors = append(errors, errorMsg)
 			}
 		}
 	}
 
 	// 2. 更新节点配置
-	log.Println("步骤 1/3: 更新节点配置...")
+	logger.Debug("步骤 1/3: 更新节点配置...")
 	if err := nm.UpdateAllConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("节点配置更新失败: %v", err)
-		log.Printf("%s", errorMsg)
+		logger.Error("%s", errorMsg)
 		errors = append(errors, errorMsg)
 	} else {
-		log.Println("节点配置更新成功")
+		logger.Debug("节点配置更新成功")
 	}
 
 	// 3. relay 订阅后处理（为节点添加 detour）
-	log.Println("步骤 2/4: 处理 relay 订阅 detour...")
+	logger.Debug("步骤 2/4: 处理 relay 订阅 detour...")
 	if err := nm.updateRelayDetourForAllTargets(); err != nil {
 		errorMsg := fmt.Sprintf("relay 订阅后处理失败: %v", err)
-		log.Printf("%s", errorMsg)
+		logger.Error("%s", errorMsg)
 		errors = append(errors, errorMsg)
 	} else {
-		log.Println("relay 订阅后处理完成")
+		logger.Debug("relay 订阅后处理完成")
 	}
 
 	// 4. 将 relay 节点写入配置
-	log.Println("步骤 3/4: 将 relay 节点写入配置...")
+	logger.Debug("步骤 3/4: 将 relay 节点写入配置...")
 	if err := nm.writeRelayNodesToConfig(); err != nil {
 		errorMsg := fmt.Sprintf("relay 节点写入配置失败: %v", err)
-		log.Printf("%s", errorMsg)
+		logger.Error("%s", errorMsg)
 		errors = append(errors, errorMsg)
 	} else {
-		log.Println("relay 节点写入配置完成")
+		logger.Debug("relay 节点写入配置完成")
 	}
 
 	// 5. 更新模块配置
-	log.Println("步骤 4/4: 更新模块配置...")
+	logger.Debug("步骤 4/4: 更新模块配置...")
 	if err := nm.UpdateModuleConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("模块配置更新失败: %v", err)
-		log.Printf("%s", errorMsg)
+		logger.Error("%s", errorMsg)
 		errors = append(errors, errorMsg)
 	} else {
-		log.Println("模块配置更新成功")
+		logger.Debug("模块配置更新成功")
 	}
 
 	// 5. 汇总结果
 	if len(errors) > 0 {
-		log.Println("配置更新完成，但有错误:")
+		logger.Warn("配置更新完成，但有错误:")
 		for _, errMsg := range errors {
-			log.Printf("  - %s", errMsg)
+			logger.Debug("  - %s", errMsg)
 		}
 		return fmt.Errorf("配置更新完成，但有 %d 个错误", len(errors))
 	}
 
-	log.Println("所有配置更新成功")
+	logger.Info("所有配置更新成功")
 	return nil
 }
 
@@ -593,11 +593,11 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 	}
 
 	if len(detourTags) == 0 {
-		log.Println("未找到可用的detour标签，跳过relay处理")
+		logger.Debug("未找到可用的detour标签，跳过relay处理")
 		return nil
 	}
 
-	log.Printf("找到 %d 个可用的detour标签", len(detourTags))
+	logger.Debug("找到 %d 个可用的detour标签", len(detourTags))
 
 	// 重新获取relay订阅的原始节点作为模板（因为不再缓存到cache.nodes中）
 	cloneMap := func(m map[string]any) map[string]any {
@@ -612,7 +612,7 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 		// 重新获取relay订阅的原始节点
 		relayNodes, err := nm.fetchRelaySubscriptionNodes(relaySub)
 		if err != nil {
-			log.Printf("获取relay订阅 %s 的节点失败: %v", relaySub, err)
+			logger.Error("获取relay订阅 %s 的节点失败: %v", relaySub, err)
 			continue
 		}
 
@@ -710,23 +710,23 @@ func (nm *NodeManager) fetchRelaySubscriptionNodes(subName string) ([]subscripti
 // 1. 根据 include_relay 确定哪些节点作为真实节点写入配置文件
 // 2. 根据 relay_nodes 确定哪些节点的 tag 写入到 selector 中（不影响真实节点写入）
 func (nm *NodeManager) writeRelayNodesToConfig() error {
-	log.Println("开始将 relay 节点写入配置...")
+	logger.Debug("开始将 relay 节点写入配置...")
 
 	// 检查是否有 include_relay 配置
 	if len(nm.config.Nodes.IncludeRelay) == 0 {
-		log.Println("未配置 include_relay，跳过 relay 节点写入")
+		logger.Debug("未配置 include_relay，跳过 relay 节点写入")
 		return nil
 	}
 
 	// 遍历所有目标配置
 	for _, target := range nm.config.Nodes.Targets {
 		if err := nm.writeRelayNodesToTarget(target); err != nil {
-			log.Printf("为目标 %s 写入 relay 节点失败: %v", target.Path, err)
+			logger.Error("为目标 %s 写入 relay 节点失败: %v", target.Path, err)
 			return err
 		}
 	}
 
-	log.Println("relay 节点写入配置完成")
+	logger.Debug("relay 节点写入配置完成")
 	return nil
 }
 
@@ -735,7 +735,7 @@ func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
 	// 1. 根据 include_relay 和 target.Subscriptions 筛选需要写入的 relay 节点（真实节点）
 	relayNodesToWrite := nm.filterRelayNodesByIncludeAndSubscriptions(target.Subscriptions)
 	if len(relayNodesToWrite) == 0 {
-		log.Printf("目标 %s: 没有符合 include_relay 和 subscriptions 条件的 relay 节点", target.Path)
+		logger.Debug("目标 %s: 没有符合 include_relay 和 subscriptions 条件的 relay 节点", target.Path)
 		return nil
 	}
 
@@ -760,9 +760,9 @@ func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
 				if err := nm.updateSelectorForRelayNodes(configFile, proxy.InsertMarker, relayNodesToWrite, proxy.RelayNodes); err != nil {
 					return fmt.Errorf("更新 selector 失败 %s: %v", configFile, err)
 				}
-				log.Printf("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，并根据 relay_nodes 更新 selector", configFile, proxy.InsertMarker, len(relayNodesToWrite))
+				logger.Debug("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，并根据 relay_nodes 更新 selector", configFile, proxy.InsertMarker, len(relayNodesToWrite))
 			} else {
-				log.Printf("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，未配置 relay_nodes", configFile, proxy.InsertMarker, len(relayNodesToWrite))
+				logger.Debug("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，未配置 relay_nodes", configFile, proxy.InsertMarker, len(relayNodesToWrite))
 			}
 		}
 	}
@@ -839,9 +839,9 @@ func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscript
 	}
 
 	if len(targetSubscriptions) > 0 {
-		log.Printf("根据 subscriptions %v 和 include_relay 筛选出 %d 个节点", targetSubscriptions, len(result))
+		logger.Debug("根据 subscriptions %v 和 include_relay 筛选出 %d 个节点", targetSubscriptions, len(result))
 	} else {
-		log.Printf("根据 include_relay 筛选出 %d 个节点", len(result))
+		logger.Debug("根据 include_relay 筛选出 %d 个节点", len(result))
 	}
 	return result
 }

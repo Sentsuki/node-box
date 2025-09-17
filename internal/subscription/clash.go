@@ -3,8 +3,8 @@ package subscription
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
+	"node-box/internal/logger"
 	"node-box/internal/subscription/clash/convert"
 	"node-box/internal/subscription/clash/model"
 	"node-box/internal/subscription/clash/model/clash"
@@ -38,7 +38,7 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 	// 使用新的转换逻辑
 	singboxNodes, err := convert.Clash2sing(clashConfig, cp.version)
 	if err != nil {
-		log.Printf("Conversion warnings: %v", err)
+		logger.Warn("Conversion warnings: %v", err)
 		// 继续处理，因为可能只是部分节点转换失败
 	}
 
@@ -47,13 +47,13 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 		// 将SingBoxOut转换为Node (map[string]any)
 		nodeBytes, err := json.Marshal(singboxNode)
 		if err != nil {
-			log.Printf("Failed to marshal node %s: %v", singboxNode.Tag, err)
+			logger.Error("Failed to marshal node %s: %v", singboxNode.Tag, err)
 			continue
 		}
 
 		var node Node
 		if err := json.Unmarshal(nodeBytes, &node); err != nil {
-			log.Printf("Failed to unmarshal node %s: %v", singboxNode.Tag, err)
+			logger.Error("Failed to unmarshal node %s: %v", singboxNode.Tag, err)
 			continue
 		}
 

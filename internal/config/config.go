@@ -143,7 +143,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfigFormat, err)
 	}
 
-	// Log proxy configuration information
+	// Log proxy configuration information (using standard log for now since logger may not be initialized)
 	if config.Proxy != nil {
 		log.Printf("Proxy configuration: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
 		if config.Proxy.Username != "" {
