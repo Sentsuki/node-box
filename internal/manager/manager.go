@@ -62,6 +62,7 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	processors := make(map[string]subscription.Processor)
 	processors["clash"] = subscription.NewClashProcessor()
 	processors["singbox"] = subscription.NewSingBoxProcessor()
+	processors["relay"] = subscription.NewSingBoxProcessor()
 
 	// 为每个配置路径创建扫描器
 	scanners := make(map[string]*fileops.Scanner)
@@ -434,9 +435,8 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 	return nil
 }
 
-// UpdateAllConfigurations updates both node configurations and module configurations.
-// It coordinates the complete workflow of updating all types of configurations.
-// Execution order: 1. 失效缓存 2. 节点配置 3. 模块配置
+// UpdateAllConfigurations updates all configurations in sequence.
+// Execution order: 1. 失效缓存 2. 节点配置 3. relay 订阅后处理 4. 模块配置
 func (nm *NodeManager) UpdateAllConfigurations() error {
 	log.Println("开始更新所有配置...")
 
@@ -447,7 +447,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 	nm.moduleManager.InvalidateCache()
 
 	// 2. 更新节点配置
-	log.Println("步骤 1/2: 更新节点配置...")
+	log.Println("步骤 1/3: 更新节点配置...")
 	if err := nm.UpdateAllConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("节点配置更新失败: %v", err)
 		log.Printf("%s", errorMsg)
@@ -456,8 +456,18 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		log.Println("节点配置更新成功")
 	}
 
-	// 3. 更新模块配置
-	log.Println("步骤 2/2: 更新模块配置...")
+	// 3. relay 订阅后处理（为节点添加 detour）
+	log.Println("步骤 2/3: 处理 relay 订阅 detour...")
+	if err := nm.updateRelayDetourForAllTargets(); err != nil {
+		errorMsg := fmt.Sprintf("relay 订阅后处理失败: %v", err)
+		log.Printf("%s", errorMsg)
+		errors = append(errors, errorMsg)
+	} else {
+		log.Println("relay 订阅后处理完成")
+	}
+
+	// 4. 更新模块配置
+	log.Println("步骤 3/3: 更新模块配置...")
 	if err := nm.UpdateModuleConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("模块配置更新失败: %v", err)
 		log.Printf("%s", errorMsg)
@@ -466,7 +476,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		log.Println("模块配置更新成功")
 	}
 
-	// 4. 汇总结果
+	// 5. 汇总结果
 	if len(errors) > 0 {
 		log.Println("配置更新完成，但有错误:")
 		for _, errMsg := range errors {
@@ -476,5 +486,45 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 	}
 
 	log.Println("所有配置更新成功")
+	return nil
+}
+
+// updateRelayDetourForAllTargets 在更新节点配置后，为 relay 类型订阅的节点添加 detour 字段。
+func (nm *NodeManager) updateRelayDetourForAllTargets() error {
+	// 收集所有 relay 类型的订阅名称
+	var relaySubs []string
+	for _, sub := range nm.config.Nodes.Subscriptions {
+		if sub.Enable && strings.ToLower(sub.Type) == "relay" {
+			relaySubs = append(relaySubs, sub.Name)
+		}
+	}
+
+	if len(relaySubs) == 0 {
+		return nil
+	}
+
+	const detourValue = "[hi] usa-udp"
+
+	var errs []string
+	for _, target := range nm.config.Nodes.Targets {
+		// 扫描配置文件
+		scanner := nm.scanners[target.Path]
+		configFiles, err := scanner.ScanConfigFiles()
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err))
+			continue
+		}
+
+		for _, configFile := range configFiles {
+			updater := fileops.NewUpdater("")
+			if err := updater.AddDetourForSubscriptions(configFile, relaySubs, detourValue); err != nil {
+				errs = append(errs, fmt.Sprintf("添加 detour 失败 %s: %v", configFile, err))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
+	}
 	return nil
 }

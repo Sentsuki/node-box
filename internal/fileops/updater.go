@@ -36,6 +36,73 @@ func NewUpdater(insertMarker string) *Updater {
 	}
 }
 
+// AddDetourForSubscriptions sets detour field for all nodes that belong to given subscriptions.
+// A node is considered belonging to a subscription if its tag contains "[subName]" prefix.
+func (u *Updater) AddDetourForSubscriptions(configPath string, subscriptionNames []string, detourValue string) error {
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
+	}
+
+	// 解析JSON配置
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
+	}
+
+	// 检查outbounds字段
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
+	}
+
+	outboundsArray, ok := outboundsRaw.([]any)
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
+	}
+
+	// 遍历并为匹配的节点设置 detour
+	for i, outboundRaw := range outboundsArray {
+		outboundMap, ok := outboundRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		tag, ok := outboundMap["tag"].(string)
+		if !ok {
+			continue
+		}
+
+		// 判断是否属于任一订阅
+		isFromTargetSubscription := false
+		for _, subName := range subscriptionNames {
+			if strings.Contains(tag, fmt.Sprintf("[%s]", subName)) {
+				isFromTargetSubscription = true
+				break
+			}
+		}
+		if !isFromTargetSubscription {
+			continue
+		}
+
+		// 设置 detour
+		outboundMap["detour"] = detourValue
+		outboundsArray[i] = outboundMap
+	}
+
+	// 更新配置
+	config["outbounds"] = outboundsArray
+
+	// 写回文件
+	if err := u.writeConfigFile(configPath, config); err != nil {
+		return err
+	}
+
+	log.Printf("为 %s 添加 detour 到匹配的订阅节点", configPath)
+	return nil
+}
+
 // InsertRealNodes inserts real proxy nodes into the configuration file without updating selectors.
 // This method only handles the insertion of actual proxy nodes into the outbounds array.
 func (u *Updater) InsertRealNodes(configPath string, nodes []map[string]any, subscriptionNames []string) error {
