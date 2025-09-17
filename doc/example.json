@@ -32,18 +32,37 @@
         "name": "main_config_directory",
         "path": "/path/to/config/directory",
         "is_file": false,
-        "subscriptions": ["clash_subscription_1", "singbox_subscription_1"],
+        "subscriptions": [
+          "clash_subscription_1",
+          "singbox_subscription_1"
+        ],
         "proxies": [
           {
             "insert_marker": "# PROXY_NODES",
-            "include_keywords": ["香港", "新加坡", "美国"],
-            "exclude_keywords": ["过期", "测试"],
-            "relay_nodes": ["relay-hk-01", "relay-sg-01"]
+            "include_keywords": [
+              "香港",
+              "新加坡",
+              "美国"
+            ],
+            "exclude_keywords": [
+              "过期",
+              "测试"
+            ],
+            "relay_nodes": [
+              "relay-hk-01",
+              "relay-sg-01"
+            ]
           },
           {
             "insert_marker": "# STREAMING_NODES",
-            "include_keywords": ["Netflix", "Disney", "流媒体"],
-            "exclude_keywords": ["限速"]
+            "include_keywords": [
+              "Netflix",
+              "Disney",
+              "流媒体"
+            ],
+            "exclude_keywords": [
+              "限速"
+            ]
           }
         ]
       },
@@ -54,20 +73,33 @@
         "proxies": [
           {
             "insert_marker": "# ALL_NODES",
-            "relay_nodes": ["backup-relay"]
+            "relay_nodes": [
+              "backup-relay"
+            ]
           }
         ]
       }
     ],
-    "exclude_keywords": ["过期", "失效", "测试"],
+    "exclude_keywords": [
+      "过期",
+      "失效",
+      "测试"
+    ],
     "include_relay": [
       {
         "tag": "relay-premium",
-        "upstream": ["premium", "vip", "高级"]
+        "upstream": [
+          "premium",
+          "vip",
+          "高级"
+        ]
       },
       {
         "tag": "relay-backup",
-        "upstream": ["backup", "备用"]
+        "upstream": [
+          "backup",
+          "备用"
+        ]
       }
     ]
   },
@@ -157,12 +189,32 @@
     {
       "name": "main_config",
       "path": "/path/to/main/config.json",
-      "modules": ["default_log", "cloudflare_dns", "direct_outbound", "china_route"]
+      "modules": [
+        "default_log",
+        "cloudflare_dns",
+        "direct_outbound",
+        "china_route"
+      ],
+      "no_need": [
+        "测试",
+        "过期",
+        "失效"
+      ]
     },
     {
       "name": "streaming_config",
       "path": "/path/to/streaming/config.json",
-      "modules": ["remote_log", "local_dns", "http_inbound", "custom_route"]
+      "modules": [
+        "remote_log",
+        "local_dns",
+        "http_inbound",
+        "custom_route"
+      ],
+      "no_need": [
+        "广告",
+        "限速",
+        "临时"
+      ]
     }
   ],
   "update_interval_hours": 24,
