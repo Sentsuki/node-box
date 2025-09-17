@@ -397,39 +397,11 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			nodesMaps[i] = map[string]any(node)
 		}
 
-		// 分离 relay 节点和普通节点
-		var relayNodesMaps []map[string]any
-		var normalNodesMaps []map[string]any
-
-		for _, node := range nodesMaps {
-			if tag, ok := node["tag"].(string); ok {
-				// 检查是否是 relay 节点（包含 relay 订阅前缀）
-				isRelayNode := false
-				for _, sub := range nm.config.Nodes.Subscriptions {
-					if sub.Enable && strings.ToLower(sub.Type) == "relay" {
-						if strings.Contains(tag, fmt.Sprintf("[%s]", sub.Name)) {
-							isRelayNode = true
-							break
-						}
-					}
-				}
-
-				if isRelayNode {
-					relayNodesMaps = append(relayNodesMaps, node)
-				} else {
-					normalNodesMaps = append(normalNodesMaps, node)
-				}
-			} else {
-				normalNodesMaps = append(normalNodesMaps, node)
-			}
-		}
-
-		// 3. 将真实节点插入配置文件（包括 relay 节点）
+		// 3. 将真实节点插入配置文件（每个文件只插入一次）
 		pathSuccessCount := 0
 		for _, configFile := range configFiles {
 			if len(target.Proxies) > 0 {
 				updater := fileops.NewUpdater("")
-				// 插入所有节点（包括 relay 节点）
 				if err := updater.InsertRealNodes(configFile, nodesMaps, subscriptionNames); err != nil {
 					errorMsg := fmt.Sprintf("插入节点失败 %s: %v", configFile, err)
 					log.Printf("%s", errorMsg)
@@ -445,20 +417,10 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			updater := fileops.NewUpdater(proxyRule.InsertMarker)
 
 			for _, configFile := range configFiles {
-				// 更新普通节点的 selector
-				if err := updater.UpdateSelectorOnly(configFile, normalNodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
+				if err := updater.UpdateSelectorOnly(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
 					errorMsg := fmt.Sprintf("更新selector失败 %s: %v", configFile, err)
 					log.Printf("%s", errorMsg)
 					updateErrors = append(updateErrors, errorMsg)
-				}
-
-				// 如果配置了 relay_nodes，添加 relay 节点到 selector
-				if len(proxyRule.RelayNodes) > 0 && len(relayNodesMaps) > 0 {
-					if err := updater.UpdateSelectorWithRelayNodes(configFile, relayNodesMaps, proxyRule.RelayNodes); err != nil {
-						errorMsg := fmt.Sprintf("添加relay节点到selector失败 %s: %v", configFile, err)
-						log.Printf("%s", errorMsg)
-						updateErrors = append(updateErrors, errorMsg)
-					}
 				}
 			}
 		}
