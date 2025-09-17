@@ -4,5 +4,3 @@ config.json
 test1/
 .kiro/
 test2/
-cache_relay_expanded.json
-cache_nodes.json

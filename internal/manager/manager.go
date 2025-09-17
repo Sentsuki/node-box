@@ -3,11 +3,9 @@
 package manager
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	"node-box/internal/client"
@@ -206,11 +204,6 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 
 		log.Printf("部分订阅获取失败，但继续处理成功的 %d 个订阅", successCount)
 		return nil // 不返回错误，允许继续处理
-	}
-
-	// 写出缓存文件便于检查
-	if err := nm.writeCacheFiles(); err != nil {
-		log.Printf("写出缓存文件失败: %v", err)
 	}
 
 	log.Printf("订阅缓存完成: %d 个订阅", successCount)
@@ -650,10 +643,6 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 		nm.cache.relayExpanded["relay:"+relaySub] = expanded
 	}
 
-	// 写出缓存文件
-	if err := nm.writeCacheFiles(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -712,47 +701,6 @@ func (nm *NodeManager) fetchRelaySubscriptionNodes(subName string) ([]subscripti
 	prefixedNodes := subscription.AddSubscriptionPrefix(nodes, subConfig.Name)
 
 	return prefixedNodes, nil
-}
-
-// writeCacheFiles 将缓存写入根目录 JSON 文件，便于人工检查。
-// - cache_nodes.json: 原始订阅缓存（按订阅名分组）
-// - cache_relay_expanded.json: relay 展开后的节点（按配置文件路径分组）
-func (nm *NodeManager) writeCacheFiles() error {
-	// 写 cache_nodes.json
-	nodesOut := make(map[string][]map[string]any)
-	for subName, list := range nm.cache.nodes {
-		var arr []map[string]any
-		for _, n := range list {
-			arr = append(arr, map[string]any(n))
-		}
-		nodesOut[subName] = arr
-	}
-	b1, err := json.MarshalIndent(nodesOut, "", "  ")
-	if err != nil {
-		return fmt.Errorf("序列化 cache_nodes 失败: %v", err)
-	}
-	if err := os.WriteFile("cache_nodes.json", b1, 0644); err != nil {
-		return fmt.Errorf("写入 cache_nodes.json 失败: %v", err)
-	}
-
-	// 写 cache_relay_expanded.json
-	relayOut := make(map[string][]map[string]any)
-	for cfgPath, list := range nm.cache.relayExpanded {
-		arr := make([]map[string]any, 0, len(list))
-		for _, n := range list {
-			arr = append(arr, map[string]any(n))
-		}
-		relayOut[cfgPath] = arr
-	}
-	b2, err := json.MarshalIndent(relayOut, "", "  ")
-	if err != nil {
-		return fmt.Errorf("序列化 cache_relay_expanded 失败: %v", err)
-	}
-	if err := os.WriteFile("cache_relay_expanded.json", b2, 0644); err != nil {
-		return fmt.Errorf("写入 cache_relay_expanded.json 失败: %v", err)
-	}
-
-	return nil
 }
 
 // writeRelayNodesToConfig 将处理后存在缓存中的 relay 节点写入配置
