@@ -2,7 +2,7 @@ package client
 
 import (
 	"fmt"
-	"log"
+	"node-box/internal/logger"
 	"os"
 	"time"
 )
@@ -48,16 +48,16 @@ func (f *Fetcher) FetchSubscription(url string) ([]byte, error) {
 // This method handles logging, error wrapping, and automatic retry with exponential backoff.
 func (f *Fetcher) FetchSubscriptionWithUserAgent(url string, userAgent string) ([]byte, error) {
 	if userAgent != "" {
-		log.Printf("获取订阅: %s (User-Agent: %s)", url, userAgent)
+		logger.Debug("获取订阅: %s (User-Agent: %s)", url, userAgent)
 	} else {
-		log.Printf("获取订阅: %s", url)
+		logger.Debug("获取订阅: %s", url)
 	}
 
 	var lastErr error
 	for attempt := 0; attempt <= f.maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(attempt) * f.retryDelay
-			log.Printf("第 %d 次重试获取订阅 %s，等待 %v...", attempt, url, delay)
+			logger.Warn("第 %d 次重试获取订阅 %s，等待 %v...", attempt, url, delay)
 			time.Sleep(delay)
 		}
 
@@ -72,11 +72,11 @@ func (f *Fetcher) FetchSubscriptionWithUserAgent(url string, userAgent string) (
 
 		if err != nil {
 			lastErr = err
-			log.Printf("获取订阅失败 (尝试 %d/%d): %v", attempt+1, f.maxRetries+1, err)
+			logger.Debug("获取订阅失败 (尝试 %d/%d): %v", attempt+1, f.maxRetries+1, err)
 			continue
 		}
 
-		log.Printf("成功获取 %d 字节数据: %s", len(data), url)
+		logger.Debug("成功获取 %d 字节数据: %s", len(data), url)
 		return data, nil
 	}
 
@@ -87,13 +87,13 @@ func (f *Fetcher) FetchSubscriptionWithUserAgent(url string, userAgent string) (
 // It returns the raw subscription data as bytes or an error if the file cannot be read.
 // This method handles logging, error wrapping, and automatic retry for transient file access issues.
 func (f *Fetcher) FetchSubscriptionFromPath(path string) ([]byte, error) {
-	log.Printf("读取本地订阅文件: %s", path)
+	logger.Debug("读取本地订阅文件: %s", path)
 
 	var lastErr error
 	for attempt := 0; attempt <= f.maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(attempt) * f.retryDelay
-			log.Printf("第 %d 次重试读取文件 %s，等待 %v...", attempt, path, delay)
+			logger.Warn("第 %d 次重试读取文件 %s，等待 %v...", attempt, path, delay)
 			time.Sleep(delay)
 		}
 
@@ -105,11 +105,11 @@ func (f *Fetcher) FetchSubscriptionFromPath(path string) ([]byte, error) {
 			}
 
 			lastErr = err
-			log.Printf("读取订阅文件失败 (尝试 %d/%d): %s - %v", attempt+1, f.maxRetries+1, path, err)
+			logger.Debug("读取订阅文件失败 (尝试 %d/%d): %s - %v", attempt+1, f.maxRetries+1, path, err)
 			continue
 		}
 
-		log.Printf("成功读取 %d 字节数据: %s", len(data), path)
+		logger.Debug("成功读取 %d 字节数据: %s", len(data), path)
 		return data, nil
 	}
 
@@ -120,13 +120,13 @@ func (f *Fetcher) FetchSubscriptionFromPath(path string) ([]byte, error) {
 // It returns the raw module data as bytes or an error if the file cannot be read.
 // This method is specifically designed for module fetching with appropriate logging.
 func (f *Fetcher) FetchModuleFromPath(path string) ([]byte, error) {
-	log.Printf("读取本地模块文件: %s", path)
+	logger.Debug("读取本地模块文件: %s", path)
 
 	var lastErr error
 	for attempt := 0; attempt <= f.maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(attempt) * f.retryDelay
-			log.Printf("第 %d 次重试读取模块文件 %s，等待 %v...", attempt, path, delay)
+			logger.Warn("第 %d 次重试读取模块文件 %s，等待 %v...", attempt, path, delay)
 			time.Sleep(delay)
 		}
 
@@ -138,11 +138,11 @@ func (f *Fetcher) FetchModuleFromPath(path string) ([]byte, error) {
 			}
 
 			lastErr = err
-			log.Printf("读取模块文件失败 (尝试 %d/%d): %s - %v", attempt+1, f.maxRetries+1, path, err)
+			logger.Debug("读取模块文件失败 (尝试 %d/%d): %s - %v", attempt+1, f.maxRetries+1, path, err)
 			continue
 		}
 
-		log.Printf("成功读取模块文件 %d 字节数据: %s", len(data), path)
+		logger.Debug("成功读取模块文件 %d 字节数据: %s", len(data), path)
 		return data, nil
 	}
 

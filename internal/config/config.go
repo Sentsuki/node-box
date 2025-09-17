@@ -11,6 +11,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"node-box/internal/logger"
 )
 
 // Config represents the main application configuration structure.
@@ -23,6 +25,7 @@ type Config struct {
 	UpdateInterval int            `json:"update_interval_hours"`
 	Proxy          *ProxyConfig   `json:"proxy,omitempty"`
 	UserAgent      string         `json:"user_agent,omitempty"`
+	LogLevel       string         `json:"log_level,omitempty"` // 日志级别: silent, error, warn, info, debug
 }
 
 // NodesConfig represents the nodes configuration section.
@@ -101,9 +104,10 @@ type Module struct {
 // ConfigFile represents a configuration file that uses modules.
 // It defines which modules should be applied to which configuration file.
 type ConfigFile struct {
-	Name    string   `json:"name"`    // configuration name
-	Path    string   `json:"path"`    // target configuration file path
-	Modules []string `json:"modules"` // list of module names to apply
+	Name    string   `json:"name"`              // configuration name
+	Path    string   `json:"path"`              // target configuration file path
+	Modules []string `json:"modules"`           // list of module names to apply
+	NoNeed  []string `json:"no_need,omitempty"` // keywords to remove from outbounds and endpoints after processing
 }
 
 // ProxyConfig represents proxy server configuration.
@@ -141,14 +145,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfigFormat, err)
 	}
 
-	// Log proxy configuration information
+	// Log proxy configuration information (using standard log for now since logger may not be initialized)
 	if config.Proxy != nil {
-		log.Printf("Proxy configuration: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
+		logger.Info("Proxy configuration: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
 		if config.Proxy.Username != "" {
 			log.Printf("Proxy authentication: %s", config.Proxy.Username)
 		}
 	} else {
-		log.Println("No proxy configured, using direct connection")
+		logger.Info("No proxy configured, using direct connection")
 	}
 
 	return &config, nil

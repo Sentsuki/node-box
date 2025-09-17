@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
 	"node-box/internal/config"
+	"node-box/internal/logger"
 )
 
 // ConfigUpdater package errors
@@ -42,7 +42,7 @@ func NewConfigUpdater(moduleManager *ModuleManager) *ConfigUpdater {
 func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 	filePath := configFile.Path
 
-	log.Printf("开始更新配置文件: %s (%s)", configFile.Name, filePath)
+	logger.Debug("开始更新配置文件: %s (%s)", configFile.Name, filePath)
 
 	// Check if config file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -72,12 +72,19 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 		return fmt.Errorf("后处理配置失败 %s: %v", configFile.Name, err)
 	}
 
+	// 执行 no_need 过滤逻辑
+	if len(configFile.NoNeed) > 0 {
+		if err := cu.applyNoNeedFilter(updatedConfig, configFile.NoNeed); err != nil {
+			return fmt.Errorf("应用no_need过滤失败 %s: %v", configFile.Name, err)
+		}
+	}
+
 	// Write the updated configuration back to file
 	if err := cu.writeConfigFile(filePath, updatedConfig); err != nil {
 		return fmt.Errorf("写入配置文件失败 %s: %v", filePath, err)
 	}
 
-	log.Printf("成功更新配置文件: %s", filePath)
+	logger.Debug("成功更新配置文件: %s", filePath)
 	return nil
 }
 
@@ -111,13 +118,13 @@ func (cu *ConfigUpdater) applyModules(targetConfig map[string]any, moduleNames [
 // Since remote modules are standard JSON, we directly replace/insert without type detection.
 // This avoids element loss that could occur during complex parsing and mapping.
 func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleData map[string]any, moduleName string) error {
-	log.Printf("应用模块 %s", moduleName)
+	logger.Debug("应用模块 %s", moduleName)
 
 	// 直接替换整个模块数据到目标配置中
 	// 远程模块都是标准JSON，无需复杂解析，直接替换避免元素丢失
 	for key, value := range moduleData {
 		targetConfig[key] = value
-		log.Printf("已应用配置段: %s", key)
+		logger.Debug("已应用配置段: %s", key)
 	}
 
 	return nil
@@ -125,21 +132,21 @@ func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleDa
 
 // postProcessMergedConfig 在模块合并完成后执行后处理逻辑
 func (cu *ConfigUpdater) postProcessMergedConfig(config map[string]any) error {
-	log.Println("开始执行模块配置后处理...")
+	logger.Debug("开始执行模块配置后处理...")
 
 	// 1. 检查 endpoints 里是否有节点tag带有方括号[]，即来自订阅的节点，如果有，清除掉
 	if err := cu.cleanSubscriptionNodesFromEndpoints(config); err != nil {
-		log.Printf("清理endpoints中的订阅节点失败: %v", err)
+		logger.Error("清理endpoints中的订阅节点失败: %v", err)
 		return err
 	}
 
 	// 2. 检查 outbounds 的节点是否有 type: wireguard, tailscale，如果有，移动到 endpoints 里
 	if err := cu.moveSpecialOutboundsToEndpoints(config); err != nil {
-		log.Printf("移动特殊outbounds到endpoints失败: %v", err)
+		logger.Error("移动特殊outbounds到endpoints失败: %v", err)
 		return err
 	}
 
-	log.Println("模块配置后处理完成")
+	logger.Debug("模块配置后处理完成")
 	return nil
 }
 
@@ -170,7 +177,7 @@ func (cu *ConfigUpdater) cleanSubscriptionNodesFromEndpoints(config map[string]a
 			if tagStr, ok := tag.(string); ok {
 				// 如果tag包含方括号，说明是来自订阅的节点，需要清除
 				if cu.containsSquareBrackets(tagStr) {
-					log.Printf("清除endpoints中的订阅节点: %s", tagStr)
+					logger.Debug("清除endpoints中的订阅节点: %s", tagStr)
 					removedCount++
 					continue
 				}
@@ -182,7 +189,7 @@ func (cu *ConfigUpdater) cleanSubscriptionNodesFromEndpoints(config map[string]a
 
 	if removedCount > 0 {
 		config["endpoints"] = cleanedEndpoints
-		log.Printf("从endpoints中清除了 %d 个订阅节点", removedCount)
+		logger.Debug("从endpoints中清除了 %d 个订阅节点", removedCount)
 	}
 
 	return nil
@@ -218,7 +225,7 @@ func (cu *ConfigUpdater) moveSpecialOutboundsToEndpoints(config map[string]any) 
 				if typeStr == "wireguard" || typeStr == "tailscale" {
 					if tag, exists := outboundMap["tag"]; exists {
 						if tagStr, ok := tag.(string); ok {
-							log.Printf("移动 %s 类型的节点到endpoints: %s", typeStr, tagStr)
+							logger.Debug("移动 %s 类型的节点到endpoints: %s", typeStr, tagStr)
 						}
 					}
 					movedEndpoints = append(movedEndpoints, outbound)
@@ -246,7 +253,7 @@ func (cu *ConfigUpdater) moveSpecialOutboundsToEndpoints(config map[string]any) 
 			config["endpoints"] = movedEndpoints
 		}
 
-		log.Printf("移动了 %d 个特殊类型节点从outbounds到endpoints", movedCount)
+		logger.Debug("移动了 %d 个特殊类型节点从outbounds到endpoints", movedCount)
 	}
 
 	return nil
@@ -255,6 +262,83 @@ func (cu *ConfigUpdater) moveSpecialOutboundsToEndpoints(config map[string]any) 
 // containsSquareBrackets 检查字符串是否包含方括号
 func (cu *ConfigUpdater) containsSquareBrackets(s string) bool {
 	return strings.Contains(s, "[") && strings.Contains(s, "]")
+}
+
+// applyNoNeedFilter 根据 no_need 配置过滤 outbounds 和 endpoints 中包含关键词的节点
+func (cu *ConfigUpdater) applyNoNeedFilter(config map[string]any, noNeedKeywords []string) error {
+	if len(noNeedKeywords) == 0 {
+		return nil
+	}
+
+	logger.Debug("开始应用no_need过滤，关键词: %v", noNeedKeywords)
+
+	// 过滤 outbounds
+	if err := cu.filterNodesFromSection(config, "outbounds", noNeedKeywords); err != nil {
+		return fmt.Errorf("过滤outbounds失败: %v", err)
+	}
+
+	// 过滤 endpoints
+	if err := cu.filterNodesFromSection(config, "endpoints", noNeedKeywords); err != nil {
+		return fmt.Errorf("过滤endpoints失败: %v", err)
+	}
+
+	logger.Debug("no_need过滤完成")
+	return nil
+}
+
+// filterNodesFromSection 从指定的配置段中过滤包含关键词的节点
+func (cu *ConfigUpdater) filterNodesFromSection(config map[string]any, sectionName string, keywords []string) error {
+	section, exists := config[sectionName]
+	if !exists {
+		logger.Debug("配置中不存在 %s 段，跳过过滤", sectionName)
+		return nil
+	}
+
+	sectionSlice, ok := section.([]any)
+	if !ok {
+		logger.Debug("%s 段不是数组格式，跳过过滤", sectionName)
+		return nil
+	}
+
+	var filteredNodes []any
+	removedCount := 0
+
+	for _, node := range sectionSlice {
+		nodeMap, ok := node.(map[string]any)
+		if !ok {
+			// 保留非map格式的节点
+			filteredNodes = append(filteredNodes, node)
+			continue
+		}
+
+		// 检查节点的tag是否包含任何关键词
+		shouldRemove := false
+		if tag, exists := nodeMap["tag"]; exists {
+			if tagStr, ok := tag.(string); ok {
+				for _, keyword := range keywords {
+					if keyword != "" && strings.Contains(tagStr, keyword) {
+						logger.Debug("从%s中移除包含关键词'%s'的节点: %s", sectionName, keyword, tagStr)
+						shouldRemove = true
+						removedCount++
+						break
+					}
+				}
+			}
+		}
+
+		if !shouldRemove {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+
+	if removedCount > 0 {
+		config[sectionName] = filteredNodes
+		logger.Debug("从%s中移除了 %d 个包含no_need关键词的节点", sectionName, removedCount)
+	} else {
+		logger.Debug("%s中没有找到包含no_need关键词的节点", sectionName)
+	}
+
+	return nil
 }
 
 // writeConfigFile writes the updated configuration to a file as JSON.

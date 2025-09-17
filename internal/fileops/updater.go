@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"node-box/internal/logger"
 	"os"
 	"strings"
 )
@@ -116,7 +116,7 @@ func (u *Updater) CleanSubscriptionArtifacts(configPath string, subscriptionName
 		return err
 	}
 
-	log.Printf("清理订阅残留: %s", configPath)
+	logger.Debug("清理订阅残留: %s", configPath)
 	return nil
 }
 
@@ -192,7 +192,7 @@ func (u *Updater) AddDetourForSubscriptions(configPath string, subscriptionNames
 		return err
 	}
 
-	log.Printf("为 %s 添加 detour 到匹配的订阅节点", configPath)
+	logger.Debug("为 %s 添加 detour 到匹配的订阅节点", configPath)
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (u *Updater) ExpandRelayNodesByDetours(configPath string, subscriptionNames
 		return nil, err
 	}
 
-	log.Printf("在 %s 为 %d 个订阅节点按 %d 个 detour 展开", configPath, len(generated), len(detourTags))
+	logger.Debug("在 %s 为 %d 个订阅节点按 %d 个 detour 展开", configPath, len(generated), len(detourTags))
 	return generated, nil
 }
 
@@ -324,7 +324,7 @@ func (u *Updater) InsertRealNodes(configPath string, nodes []map[string]any, sub
 		return err
 	}
 
-	log.Printf("插入节点: %s (%d个)", configPath, len(nodes))
+	logger.Debug("插入节点: %s (%d个)", configPath, len(nodes))
 	return nil
 }
 
@@ -392,40 +392,40 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Printf("%v %s: %v", ErrConfigFileRead, configPath, err)
+		logger.Error("%v %s: %v", ErrConfigFileRead, configPath, err)
 		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
 	}
 
 	// 解析JSON配置
 	var config map[string]any
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Printf("%v %s: %v", ErrConfigFileParse, configPath, err)
+		logger.Error("%v %s: %v", ErrConfigFileParse, configPath, err)
 		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
 	}
 
 	// 检查outbounds字段
 	outboundsRaw, ok := config["outbounds"]
 	if !ok {
-		log.Printf("%v: %s", ErrMissingOutbounds, configPath)
+		logger.Error("%v: %s", ErrMissingOutbounds, configPath)
 		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
 	}
 
 	outboundsArray, ok := outboundsRaw.([]any)
 	if !ok {
-		log.Printf("%v: %s", ErrInvalidOutboundsFormat, configPath)
+		logger.Error("%v: %s", ErrInvalidOutboundsFormat, configPath)
 		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
 	}
 
 	// 查找插入标记
 	_, markerOutbound, err := u.findInsertMarker(outboundsArray)
 	if err != nil {
-		log.Printf("查找插入标记失败 %s: %v", configPath, err)
+		logger.Error("查找插入标记失败 %s: %v", configPath, err)
 		return err
 	}
 
 	// 验证插入标记类型
 	if err := u.validateMarkerType(markerOutbound); err != nil {
-		log.Printf("插入标记验证失败 %s: %v", configPath, err)
+		logger.Error("插入标记验证失败 %s: %v", configPath, err)
 		return err
 	}
 
@@ -433,15 +433,15 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 	newOutbounds := u.removeOldSubscriptionNodes(outboundsArray, subscriptionNames)
 
 	// 将真实节点插入配置中
-	log.Printf("将 %d 个真实节点插入到 outbounds", len(nodes))
+	logger.Debug("将 %d 个真实节点插入到 outbounds", len(nodes))
 	for _, node := range nodes {
 		newOutbounds = append(newOutbounds, node)
 	}
 
 	// 根据proxies里指定的规则更新selector
-	log.Printf("根据proxies规则更新selector '%s' (include=%v, exclude=%v)", u.insertMarker, includeKeywords, excludeKeywords)
+	logger.Debug("根据proxies规则更新selector '%s' (include=%v, exclude=%v)", u.insertMarker, includeKeywords, excludeKeywords)
 	if err := u.updateSelectorOutbounds(newOutbounds, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
-		log.Printf("更新selector outbounds失败 %s: %v", configPath, err)
+		logger.Error("更新selector outbounds失败 %s: %v", configPath, err)
 		return err
 	}
 
@@ -450,11 +450,11 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 
 	// 写回文件
 	if err := u.writeConfigFile(configPath, config); err != nil {
-		log.Printf("写入配置文件失败 %s: %v", configPath, err)
+		logger.Error("写入配置文件失败 %s: %v", configPath, err)
 		return err
 	}
 
-	log.Printf("成功更新配置文件: %s", configPath)
+	logger.Debug("成功更新配置文件: %s", configPath)
 	return nil
 }
 
@@ -627,7 +627,7 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 					newOutboundList = append(newOutboundList, otherSubTags...)
 
 					outboundMap["outbounds"] = newOutboundList
-					log.Printf("更新selector %s: %d -> %d 标签", u.insertMarker, beforeFilterCount, len(nodeTags))
+					logger.Debug("更新selector %s: %d -> %d 标签", u.insertMarker, beforeFilterCount, len(nodeTags))
 				} else {
 					// 如果outbounds字段不存在，直接设置为节点标签数组
 					var newOutboundList []any
@@ -635,7 +635,7 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 						newOutboundList = append(newOutboundList, tag)
 					}
 					outboundMap["outbounds"] = newOutboundList
-					log.Printf("创建selector %s: %d 标签", u.insertMarker, len(nodeTags))
+					logger.Debug("创建selector %s: %d 标签", u.insertMarker, len(nodeTags))
 				}
 				outbounds[i] = outboundMap
 				break

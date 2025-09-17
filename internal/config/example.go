@@ -143,6 +143,7 @@ func GenerateExample(configPath string) error {
 			},
 		},
 		UpdateInterval: 6,
+		LogLevel:       "info", // 日志级别: silent, error, warn, info, debug
 		Proxy: &ProxyConfig{
 			Type:     "http",
 			Host:     "127.0.0.1",

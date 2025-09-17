@@ -2,7 +2,7 @@ package manager
 
 import (
 	"context"
-	"log"
+	"node-box/internal/logger"
 	"time"
 )
 
@@ -35,12 +35,12 @@ func NewScheduler(manager *NodeManager, interval time.Duration) *Scheduler {
 // It performs an initial update immediately, then continues with regular
 // updates at the specified interval until Stop is called or context is cancelled.
 func (s *Scheduler) Start() error {
-	log.Printf("启动定时调度器，更新间隔: %v", s.interval)
+	logger.Info("启动定时调度器，更新间隔: %v", s.interval)
 
 	// 立即执行一次更新
-	log.Println("执行初始配置更新...")
+	logger.Info("执行初始配置更新...")
 	if err := s.manager.UpdateAllConfigurations(); err != nil {
-		log.Printf("初始配置更新失败: %v", err)
+		logger.Error("初始配置更新失败: %v", err)
 		// 不因为初始更新失败而停止调度器
 	}
 
@@ -48,22 +48,22 @@ func (s *Scheduler) Start() error {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
-	log.Println("定时调度器已启动，等待下次更新...")
+	logger.Info("定时调度器已启动，等待下次更新...")
 
 	for {
 		select {
 		case <-s.ctx.Done():
-			log.Println("定时调度器已停止")
+			logger.Info("定时调度器已停止")
 			return s.ctx.Err()
 
 		case <-ticker.C:
-			log.Println("开始定时配置更新...")
+			logger.Info("开始定时配置更新...")
 
 			if err := s.manager.UpdateAllConfigurations(); err != nil {
-				log.Printf("定时配置更新失败: %v", err)
+				logger.Error("定时配置更新失败: %v", err)
 				// 继续运行，不因为单次更新失败而停止调度器
 			} else {
-				log.Println("定时配置更新完成")
+				logger.Info("定时配置更新完成")
 			}
 		}
 	}
@@ -72,7 +72,7 @@ func (s *Scheduler) Start() error {
 // Stop gracefully stops the scheduler by cancelling its context.
 // This causes the Start method to exit and stops all scheduled operations.
 func (s *Scheduler) Stop() {
-	log.Println("正在停止定时调度器...")
+	logger.Info("正在停止定时调度器...")
 	s.cancel()
 }
 

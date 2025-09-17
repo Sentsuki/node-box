@@ -2,7 +2,7 @@ package subscription
 
 import (
 	"fmt"
-	"log"
+	"node-box/internal/logger"
 	"strings"
 )
 
@@ -46,7 +46,7 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 	}
 
 	if excludedCount > 0 {
-		log.Printf("排除节点: %d 个", excludedCount)
+		logger.Debug("排除节点: %d 个", excludedCount)
 	}
 
 	return filteredNodes
