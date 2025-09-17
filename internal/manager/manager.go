@@ -748,10 +748,10 @@ func (nm *NodeManager) writeRelayNodesToConfig() error {
 
 // writeRelayNodesToTarget 为单个目标写入 relay 节点
 func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
-	// 1. 根据 include_relay 筛选需要写入的 relay 节点（真实节点）
-	relayNodesToWrite := nm.filterRelayNodesByInclude()
+	// 1. 根据 include_relay 和 target.Subscriptions 筛选需要写入的 relay 节点（真实节点）
+	relayNodesToWrite := nm.filterRelayNodesByIncludeAndSubscriptions(target.Subscriptions)
 	if len(relayNodesToWrite) == 0 {
-		log.Printf("目标 %s: 没有符合 include_relay 条件的 relay 节点", target.Path)
+		log.Printf("目标 %s: 没有符合 include_relay 和 subscriptions 条件的 relay 节点", target.Path)
 		return nil
 	}
 
@@ -788,7 +788,21 @@ func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
 
 // filterRelayNodesByInclude 根据 include_relay 配置筛选 relay 节点
 func (nm *NodeManager) filterRelayNodesByInclude() []subscription.Node {
+	return nm.filterRelayNodesByIncludeAndSubscriptions(nil)
+}
+
+// filterRelayNodesByIncludeAndSubscriptions 根据 include_relay 和 subscriptions 配置筛选 relay 节点
+func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscriptions []string) []subscription.Node {
 	var result []subscription.Node
+
+	// 创建订阅名称映射，用于快速查找
+	var targetSubscriptionsMap map[string]bool
+	if len(targetSubscriptions) > 0 {
+		targetSubscriptionsMap = make(map[string]bool)
+		for _, name := range targetSubscriptions {
+			targetSubscriptionsMap[name] = true
+		}
+	}
 
 	// 遍历所有缓存的 relay 展开节点
 	for _, nodes := range nm.cache.relayExpanded {
@@ -799,7 +813,21 @@ func (nm *NodeManager) filterRelayNodesByInclude() []subscription.Node {
 				continue
 			}
 
-			// 检查是否匹配 include_relay 中的任何关键词
+			// 1. 首先检查节点是否来自指定的订阅（如果有指定的话）
+			if targetSubscriptionsMap != nil {
+				isFromTargetSubscription := false
+				for subName := range targetSubscriptionsMap {
+					if strings.Contains(tag, fmt.Sprintf("[%s]", subName)) {
+						isFromTargetSubscription = true
+						break
+					}
+				}
+				if !isFromTargetSubscription {
+					continue
+				}
+			}
+
+			// 2. 然后检查是否匹配 include_relay 中的任何关键词
 			shouldInclude := false
 			for _, keyword := range nm.config.Nodes.IncludeRelay {
 				if strings.Contains(tag, keyword) {
@@ -814,7 +842,11 @@ func (nm *NodeManager) filterRelayNodesByInclude() []subscription.Node {
 		}
 	}
 
-	log.Printf("根据 include_relay 筛选出 %d 个节点", len(result))
+	if len(targetSubscriptions) > 0 {
+		log.Printf("根据 subscriptions %v 和 include_relay 筛选出 %d 个节点", targetSubscriptions, len(result))
+	} else {
+		log.Printf("根据 include_relay 筛选出 %d 个节点", len(result))
+	}
 	return result
 }
 
