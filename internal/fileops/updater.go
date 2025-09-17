@@ -87,14 +87,14 @@ func (u *Updater) UpdateConfigFile(configPath string, nodes []map[string]any, su
 	// 清理旧的订阅节点
 	newOutbounds := u.removeOldSubscriptionNodes(outboundsArray, subscriptionNames)
 
-	// 添加新节点
-	log.Printf("插入真实节点 %d 个到 outbounds", len(nodes))
+	// 将真实节点插入配置中
+	log.Printf("将 %d 个真实节点插入到 outbounds", len(nodes))
 	for _, node := range nodes {
 		newOutbounds = append(newOutbounds, node)
 	}
 
-	// 更新selector的outbounds列表（仅针对selector标签应用include/exclude关键词过滤）
-	log.Printf("更新 selector 标签 '%s' 的 outbounds（按规则筛选标签 include=%v, exclude=%v）", u.insertMarker, includeKeywords, excludeKeywords)
+	// 根据proxies里指定的规则更新selector
+	log.Printf("根据proxies规则更新selector '%s' (include=%v, exclude=%v)", u.insertMarker, includeKeywords, excludeKeywords)
 	if err := u.updateSelectorOutbounds(newOutbounds, nodes, subscriptionNames, includeKeywords, excludeKeywords); err != nil {
 		log.Printf("更新selector outbounds失败 %s: %v", configPath, err)
 		return err
@@ -231,7 +231,9 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 		return result
 	}
 
+	beforeFilterCount := len(nodeTags)
 	nodeTags = filterForSelector(nodeTags)
+	log.Printf("selector规则过滤: 原始标签 %d 个，过滤后 %d 个", beforeFilterCount, len(nodeTags))
 
 	// 找到并更新插入标记的outbounds列表
 	for i, outboundRaw := range outbounds {
@@ -241,12 +243,14 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 				if outboundList, ok := outboundMap["outbounds"].([]any); ok {
 					// 移除旧的订阅节点标签
 					var newOutboundList []any
+					oldSubscriptionCount := 0
 					for _, tag := range outboundList {
 						if tagStr, ok := tag.(string); ok {
 							isSubscriptionTag := false
 							for _, subName := range subscriptionNames {
 								if strings.Contains(tagStr, fmt.Sprintf("[%s]", subName)) {
 									isSubscriptionTag = true
+									oldSubscriptionCount++
 									break
 								}
 							}
@@ -257,10 +261,13 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 							newOutboundList = append(newOutboundList, tag)
 						}
 					}
+					log.Printf("清理旧订阅标签: 移除 %d 个，保留 %d 个非订阅标签", oldSubscriptionCount, len(newOutboundList))
+
 					// 添加新的节点标签（已按规则过滤）
 					for _, tag := range nodeTags {
 						newOutboundList = append(newOutboundList, tag)
 					}
+					log.Printf("添加新标签到selector: %d 个", len(nodeTags))
 					outboundMap["outbounds"] = newOutboundList
 				} else {
 					// 如果outbounds字段不存在，直接设置为节点标签数组
@@ -268,6 +275,7 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 					for _, tag := range nodeTags {
 						newOutboundList = append(newOutboundList, tag)
 					}
+					log.Printf("创建新的selector outbounds列表: %d 个标签", len(nodeTags))
 					outboundMap["outbounds"] = newOutboundList
 				}
 				outbounds[i] = outboundMap
