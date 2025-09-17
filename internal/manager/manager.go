@@ -723,8 +723,8 @@ func (nm *NodeManager) writeCacheFiles() error {
 }
 
 // writeRelayNodesToConfig 将处理后存在缓存中的 relay 节点写入配置
-// 1. 根据 include_relay 确定哪些节点作为真实节点写入
-// 2. 根据 relay_nodes 确定更新哪些 tag 到 selector
+// 1. 根据 include_relay 确定哪些节点作为真实节点写入配置文件
+// 2. 根据 relay_nodes 确定哪些节点的 tag 写入到 selector 中（不影响真实节点写入）
 func (nm *NodeManager) writeRelayNodesToConfig() error {
 	log.Println("开始将 relay 节点写入配置...")
 
@@ -748,7 +748,7 @@ func (nm *NodeManager) writeRelayNodesToConfig() error {
 
 // writeRelayNodesToTarget 为单个目标写入 relay 节点
 func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
-	// 1. 根据 include_relay 筛选需要写入的 relay 节点
+	// 1. 根据 include_relay 筛选需要写入的 relay 节点（真实节点）
 	relayNodesToWrite := nm.filterRelayNodesByInclude()
 	if len(relayNodesToWrite) == 0 {
 		log.Printf("目标 %s: 没有符合 include_relay 条件的 relay 节点", target.Path)
@@ -764,32 +764,22 @@ func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
 
 	// 3. 处理每个 proxy 配置
 	for _, proxy := range target.Proxies {
-		// 如果 relay_nodes 为空，则跳过 relay 节点写入
-		if len(proxy.RelayNodes) == 0 {
-			log.Printf("目标 %s, 选择器 %s: relay_nodes 为空，跳过 relay 节点写入", target.Path, proxy.InsertMarker)
-			continue
-		}
-
-		// 根据 relay_nodes 筛选要更新的节点
-		nodesToUpdate := nm.filterNodesByRelayNodes(relayNodesToWrite, proxy.RelayNodes)
-		if len(nodesToUpdate) == 0 {
-			log.Printf("目标 %s, 选择器 %s: 没有符合 relay_nodes 条件的节点", target.Path, proxy.InsertMarker)
-			continue
-		}
-
 		// 为每个配置文件写入节点
 		for _, configFile := range configFiles {
-			// 写入节点到配置文件
-			if err := nm.writeNodesToConfigFile(configFile, proxy.InsertMarker, nodesToUpdate); err != nil {
+			// 写入所有符合 include_relay 条件的真实节点到配置文件
+			if err := nm.writeNodesToConfigFile(configFile, proxy.InsertMarker, relayNodesToWrite); err != nil {
 				return fmt.Errorf("写入节点到配置文件失败 %s: %v", configFile, err)
 			}
 
-			// 更新 selector 的 outbounds 列表
-			if err := nm.updateSelectorForRelayNodes(configFile, proxy.InsertMarker, nodesToUpdate, proxy.RelayNodes); err != nil {
-				return fmt.Errorf("更新 selector 失败 %s: %v", configFile, err)
+			// 如果配置了 relay_nodes，则更新 selector 的 outbounds 列表
+			if len(proxy.RelayNodes) > 0 {
+				if err := nm.updateSelectorForRelayNodes(configFile, proxy.InsertMarker, relayNodesToWrite, proxy.RelayNodes); err != nil {
+					return fmt.Errorf("更新 selector 失败 %s: %v", configFile, err)
+				}
+				log.Printf("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，并根据 relay_nodes 更新 selector", configFile, proxy.InsertMarker, len(relayNodesToWrite))
+			} else {
+				log.Printf("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，未配置 relay_nodes", configFile, proxy.InsertMarker, len(relayNodesToWrite))
 			}
-
-			log.Printf("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点", configFile, proxy.InsertMarker, len(nodesToUpdate))
 		}
 	}
 
@@ -828,37 +818,6 @@ func (nm *NodeManager) filterRelayNodesByInclude() []subscription.Node {
 	return result
 }
 
-// filterNodesByRelayNodes 根据 relay_nodes 配置筛选节点
-func (nm *NodeManager) filterNodesByRelayNodes(nodes []subscription.Node, relayNodes []string) []subscription.Node {
-	if len(relayNodes) == 0 {
-		return nodes
-	}
-
-	var result []subscription.Node
-	for _, node := range nodes {
-		// 获取节点的 tag
-		tag, ok := node["tag"].(string)
-		if !ok || tag == "" {
-			continue
-		}
-
-		// 检查是否匹配 relay_nodes 中的任何关键词
-		shouldInclude := false
-		for _, keyword := range relayNodes {
-			if strings.Contains(tag, keyword) {
-				shouldInclude = true
-				break
-			}
-		}
-
-		if shouldInclude {
-			result = append(result, node)
-		}
-	}
-
-	return result
-}
-
 // writeNodesToConfigFile 将节点写入指定的配置文件
 func (nm *NodeManager) writeNodesToConfigFile(configPath, insertMarker string, nodes []subscription.Node) error {
 	// 转换节点格式为 map[string]any
@@ -882,7 +841,8 @@ func (nm *NodeManager) writeNodesToConfigFile(configPath, insertMarker string, n
 	return updater.InsertRealNodes(configPath, nodesMaps, relaySubNames)
 }
 
-// updateSelectorForRelayNodes 更新 selector 的 outbounds 列表，只包含 relay 节点的 tag
+// updateSelectorForRelayNodes 根据 relay_nodes 配置更新 selector 的 outbounds 列表
+// 注意：这个方法只影响 selector 中的 tag 列表，不影响真实节点的写入
 func (nm *NodeManager) updateSelectorForRelayNodes(configPath, insertMarker string, nodes []subscription.Node, relayNodes []string) error {
 	// 转换节点格式为 map[string]any
 	nodesMaps := make([]map[string]any, len(nodes))
@@ -901,6 +861,7 @@ func (nm *NodeManager) updateSelectorForRelayNodes(configPath, insertMarker stri
 		}
 	}
 
-	// 使用 relay_nodes 作为 include 关键词来过滤要添加到 selector 的节点
+	// 使用 relay_nodes 作为 include 关键词来过滤要添加到 selector 的节点 tag
+	// 这里传入所有真实节点，但 UpdateSelectorOnly 会根据 relay_nodes 筛选要添加到 selector 的 tag
 	return updater.UpdateSelectorOnly(configPath, nodesMaps, relaySubNames, relayNodes, nil)
 }
