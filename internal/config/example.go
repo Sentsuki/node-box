@@ -15,16 +15,28 @@ func GenerateExample(configPath string) error {
 		Nodes: &NodesConfig{
 			Subscriptions: []Subscription{
 				{
-					Name:   "示例订阅1",
+					Name:   "示例订阅1-远程",
 					URL:    "https://example.com/clash-subscription",
 					Type:   "clash",
 					Enable: true,
 				},
 				{
-					Name:   "示例订阅2",
+					Name:   "示例订阅2-远程",
 					URL:    "https://example.com/singbox-subscription",
 					Type:   "singbox",
 					Enable: true,
+				},
+				{
+					Name:   "示例订阅3-本地",
+					Path:   "./subscriptions/local-clash.yaml",
+					Type:   "clash",
+					Enable: true,
+				},
+				{
+					Name:   "示例订阅4-本地",
+					Path:   "./subscriptions/local-singbox.json",
+					Type:   "singbox",
+					Enable: false,
 				},
 			},
 			Targets: []Target{

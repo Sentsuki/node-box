@@ -34,12 +34,13 @@ type NodesConfig struct {
 }
 
 // Subscription represents a single subscription source configuration.
-// It defines the properties of a subscription including its URL, type,
+// It defines the properties of a subscription including its URL or local path, type,
 // and whether it's enabled for processing.
 type Subscription struct {
 	Name      string `json:"name"`
-	URL       string `json:"url"`
-	Type      string `json:"type"` // "clash" or "singbox"
+	URL       string `json:"url,omitempty"`  // 远程订阅URL，与Path二选一
+	Path      string `json:"path,omitempty"` // 本地文件路径，与URL二选一
+	Type      string `json:"type"`           // "clash" or "singbox"
 	Enable    bool   `json:"enable"`
 	UserAgent string `json:"user_agent,omitempty"` // 自定义User-Agent，可选
 }
@@ -239,8 +240,16 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 		return fmt.Errorf("subscription %d: name cannot be empty", index)
 	}
 
-	if sub.URL == "" {
-		return fmt.Errorf("subscription %d (%s): URL cannot be empty", index, sub.Name)
+	// URL和Path必须有且仅有一个
+	hasURL := sub.URL != ""
+	hasPath := sub.Path != ""
+
+	if !hasURL && !hasPath {
+		return fmt.Errorf("subscription %d (%s): either URL or Path must be provided", index, sub.Name)
+	}
+
+	if hasURL && hasPath {
+		return fmt.Errorf("subscription %d (%s): cannot specify both URL and Path", index, sub.Name)
 	}
 
 	validTypes := []string{"clash", "singbox"}

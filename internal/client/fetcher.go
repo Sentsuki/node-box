@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 )
 
@@ -80,4 +81,18 @@ func (f *Fetcher) FetchSubscriptionWithUserAgent(url string, userAgent string) (
 	}
 
 	return nil, fmt.Errorf("获取订阅失败，已重试 %d 次: %v", f.maxRetries, lastErr)
+}
+
+// FetchSubscriptionFromPath reads subscription data from a local file path.
+// It returns the raw subscription data as bytes or an error if the file cannot be read.
+func (f *Fetcher) FetchSubscriptionFromPath(path string) ([]byte, error) {
+	log.Printf("读取本地订阅文件: %s", path)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("读取本地订阅文件失败: %v", err)
+	}
+
+	log.Printf("成功读取 %d 字节数据: %s", len(data), path)
+	return data, nil
 }

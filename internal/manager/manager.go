@@ -127,8 +127,20 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 
 		log.Printf("获取订阅: %s", sub.Name)
 
-		// 获取订阅数据（带重试和自定义User-Agent）
-		data, err := nm.fetcher.FetchSubscriptionWithUserAgent(sub.URL, userAgent)
+		// 根据配置选择获取方式
+		var data []byte
+		var err error
+
+		if sub.URL != "" {
+			// 从URL获取订阅数据（带重试和自定义User-Agent）
+			data, err = nm.fetcher.FetchSubscriptionWithUserAgent(sub.URL, userAgent)
+		} else if sub.Path != "" {
+			// 从本地路径读取订阅数据
+			data, err = nm.fetcher.FetchSubscriptionFromPath(sub.Path)
+		} else {
+			err = fmt.Errorf("订阅 %s 既没有配置URL也没有配置Path", sub.Name)
+		}
+
 		if err != nil {
 			errorMsg := fmt.Sprintf("获取订阅失败 %s: %v", sub.Name, err)
 			log.Printf("%s", errorMsg)
