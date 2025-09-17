@@ -72,6 +72,13 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 		return fmt.Errorf("后处理配置失败 %s: %v", configFile.Name, err)
 	}
 
+	// 执行 no_need 过滤逻辑
+	if len(configFile.NoNeed) > 0 {
+		if err := cu.applyNoNeedFilter(updatedConfig, configFile.NoNeed); err != nil {
+			return fmt.Errorf("应用no_need过滤失败 %s: %v", configFile.Name, err)
+		}
+	}
+
 	// Write the updated configuration back to file
 	if err := cu.writeConfigFile(filePath, updatedConfig); err != nil {
 		return fmt.Errorf("写入配置文件失败 %s: %v", filePath, err)
@@ -255,6 +262,83 @@ func (cu *ConfigUpdater) moveSpecialOutboundsToEndpoints(config map[string]any) 
 // containsSquareBrackets 检查字符串是否包含方括号
 func (cu *ConfigUpdater) containsSquareBrackets(s string) bool {
 	return strings.Contains(s, "[") && strings.Contains(s, "]")
+}
+
+// applyNoNeedFilter 根据 no_need 配置过滤 outbounds 和 endpoints 中包含关键词的节点
+func (cu *ConfigUpdater) applyNoNeedFilter(config map[string]any, noNeedKeywords []string) error {
+	if len(noNeedKeywords) == 0 {
+		return nil
+	}
+
+	log.Printf("开始应用no_need过滤，关键词: %v", noNeedKeywords)
+
+	// 过滤 outbounds
+	if err := cu.filterNodesFromSection(config, "outbounds", noNeedKeywords); err != nil {
+		return fmt.Errorf("过滤outbounds失败: %v", err)
+	}
+
+	// 过滤 endpoints
+	if err := cu.filterNodesFromSection(config, "endpoints", noNeedKeywords); err != nil {
+		return fmt.Errorf("过滤endpoints失败: %v", err)
+	}
+
+	log.Println("no_need过滤完成")
+	return nil
+}
+
+// filterNodesFromSection 从指定的配置段中过滤包含关键词的节点
+func (cu *ConfigUpdater) filterNodesFromSection(config map[string]any, sectionName string, keywords []string) error {
+	section, exists := config[sectionName]
+	if !exists {
+		log.Printf("配置中不存在 %s 段，跳过过滤", sectionName)
+		return nil
+	}
+
+	sectionSlice, ok := section.([]any)
+	if !ok {
+		log.Printf("%s 段不是数组格式，跳过过滤", sectionName)
+		return nil
+	}
+
+	var filteredNodes []any
+	removedCount := 0
+
+	for _, node := range sectionSlice {
+		nodeMap, ok := node.(map[string]any)
+		if !ok {
+			// 保留非map格式的节点
+			filteredNodes = append(filteredNodes, node)
+			continue
+		}
+
+		// 检查节点的tag是否包含任何关键词
+		shouldRemove := false
+		if tag, exists := nodeMap["tag"]; exists {
+			if tagStr, ok := tag.(string); ok {
+				for _, keyword := range keywords {
+					if keyword != "" && strings.Contains(tagStr, keyword) {
+						log.Printf("从%s中移除包含关键词'%s'的节点: %s", sectionName, keyword, tagStr)
+						shouldRemove = true
+						removedCount++
+						break
+					}
+				}
+			}
+		}
+
+		if !shouldRemove {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+
+	if removedCount > 0 {
+		config[sectionName] = filteredNodes
+		log.Printf("从%s中移除了 %d 个包含no_need关键词的节点", sectionName, removedCount)
+	} else {
+		log.Printf("%s中没有找到包含no_need关键词的节点", sectionName)
+	}
+
+	return nil
 }
 
 // writeConfigFile writes the updated configuration to a file as JSON.

@@ -101,9 +101,10 @@ type Module struct {
 // ConfigFile represents a configuration file that uses modules.
 // It defines which modules should be applied to which configuration file.
 type ConfigFile struct {
-	Name    string   `json:"name"`    // configuration name
-	Path    string   `json:"path"`    // target configuration file path
-	Modules []string `json:"modules"` // list of module names to apply
+	Name    string   `json:"name"`              // configuration name
+	Path    string   `json:"path"`              // target configuration file path
+	Modules []string `json:"modules"`           // list of module names to apply
+	NoNeed  []string `json:"no_need,omitempty"` // keywords to remove from outbounds and endpoints after processing
 }
 
 // ProxyConfig represents proxy server configuration.
