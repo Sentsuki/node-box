@@ -11,6 +11,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"node-box/internal/logger"
 )
 
 // Config represents the main application configuration structure.
@@ -145,12 +147,12 @@ func Load(path string) (*Config, error) {
 
 	// Log proxy configuration information (using standard log for now since logger may not be initialized)
 	if config.Proxy != nil {
-		log.Printf("Proxy configuration: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
+		logger.Info("Proxy configuration: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
 		if config.Proxy.Username != "" {
 			log.Printf("Proxy authentication: %s", config.Proxy.Username)
 		}
 	} else {
-		log.Println("No proxy configured, using direct connection")
+		logger.Info("No proxy configured, using direct connection")
 	}
 
 	return &config, nil
