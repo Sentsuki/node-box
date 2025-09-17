@@ -602,14 +602,21 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 		for _, n := range relayNodes {
 			// subscription.Node 是 map[string]any 的命名类型，需显式转换而非类型断言
 			base := map[string]any(n)
+			baseTag, _ := base["tag"].(string)
+			// 提取原始tag中订阅前缀后的部分，例如从 "[normal] US" 提取 "US"
+			originalNodeName := baseTag
+			if strings.HasPrefix(baseTag, fmt.Sprintf("[%s] ", relaySub)) {
+				originalNodeName = strings.TrimPrefix(baseTag, fmt.Sprintf("[%s] ", relaySub))
+			}
+
 			for _, detour := range detourTags {
 				if detour == "" {
 					continue
 				}
 				nm2 := cloneMap(base)
 				nm2["detour"] = detour
-				// 使用 配置中的订阅 name 作为前缀: [name] detourTag
-				nm2["tag"] = fmt.Sprintf("[%s] %s", relaySub, detour)
+				// 组合格式: [relaySub] originalNodeName detourTag
+				nm2["tag"] = fmt.Sprintf("[%s] %s %s", relaySub, originalNodeName, detour)
 				expanded = append(expanded, subscription.Node(nm2))
 			}
 		}
