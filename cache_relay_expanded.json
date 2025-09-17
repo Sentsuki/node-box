@@ -1,0 +1,194 @@
+{
+  "test\\test.json": [
+    {
+      "detour": "direct",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e direct",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "BWG-v6",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e BWG-v6",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 中国 泉州 回国专线 |PV",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 中国 泉州 回国专线 |PV",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 俄罗斯 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 俄罗斯 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 印度 专线 2费 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 印度 专线 2费 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 台湾 专线 |PV",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 台湾 专线 |PV",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 德国 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 德国 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 新加坡1 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 新加坡1 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 新加坡2 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 新加坡2 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 日本1 BGP专线 |PV",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 日本1 BGP专线 |PV",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 日本2 BGP专线 |PV",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 日本2 BGP专线 |PV",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 澳大利亚 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 澳大利亚 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 美国 专线 |PV",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 美国 专线 |PV",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 英国 专线 |PV",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 英国 专线 |PV",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 越南 专线 |PV 可BT\t",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 越南 专线 |PV 可BT\t",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 阿联酋 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 阿联酋 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 韩国 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 韩国 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 香港 专线 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 香港 专线 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    },
+    {
+      "detour": "[vc] 马来西亚 专线 2费 |PV 可BT",
+      "method": "2022-blake3-chacha20-poly1305",
+      "password": "OR4Z7utDjAhRR7/gDnj5w+mHqvlEMaVh/cdryXJfqHY=",
+      "server": "143.14.221.69",
+      "server_port": 23488,
+      "tag": "[normal] US-udp -\u003e [vc] 马来西亚 专线 2费 |PV 可BT",
+      "tcp_multi_path": true,
+      "type": "shadowsocks"
+    }
+  ]
+}

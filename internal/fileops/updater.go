@@ -36,6 +36,15 @@ func NewUpdater(insertMarker string) *Updater {
 	}
 }
 
+// cloneMap creates a shallow copy of a map[string]any
+func cloneMap(m map[string]any) map[string]any {
+	c := make(map[string]any, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
+}
+
 // AddDetourForSubscriptions sets detour field for all nodes that belong to given subscriptions.
 // A node is considered belonging to a subscription if its tag contains "[subName]" prefix.
 func (u *Updater) AddDetourForSubscriptions(configPath string, subscriptionNames []string, detourValue string) error {
@@ -101,6 +110,92 @@ func (u *Updater) AddDetourForSubscriptions(configPath string, subscriptionNames
 
 	log.Printf("为 %s 添加 detour 到匹配的订阅节点", configPath)
 	return nil
+}
+
+// ExpandRelayNodesByDetours finds nodes that belong to given subscriptions and
+// replaces each such node with multiple copies, one per detour tag provided.
+// For each generated node, the "detour" field is set to the detour tag, and
+// the tag is made unique by appending " -> {detourTag}".
+// Returns the list of generated nodes for caching.
+func (u *Updater) ExpandRelayNodesByDetours(configPath string, subscriptionNames []string, detourTags []string) ([]map[string]any, error) {
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
+	}
+
+	// 解析JSON配置
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
+	}
+
+	// 检查outbounds字段
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		return nil, fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
+	}
+
+	outboundsArray, ok := outboundsRaw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
+	}
+
+	// 预处理订阅匹配函数
+	belongsToTargetSubs := func(tag string) bool {
+		for _, subName := range subscriptionNames {
+			if strings.Contains(tag, fmt.Sprintf("[%s]", subName)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	var newOutbounds []any
+	var generated []map[string]any
+
+	for _, outboundRaw := range outboundsArray {
+		outboundMap, ok := outboundRaw.(map[string]any)
+		if !ok {
+			// 保留非对象类型
+			newOutbounds = append(newOutbounds, outboundRaw)
+			continue
+		}
+
+		tag, _ := outboundMap["tag"].(string)
+		if tag == "" || !belongsToTargetSubs(tag) {
+			// 非目标订阅，原样保留
+			newOutbounds = append(newOutbounds, outboundMap)
+			continue
+		}
+
+		// 目标订阅节点：为每个 detour tag 生成一个新节点
+		for _, detour := range detourTags {
+			if detour == "" {
+				continue
+			}
+			nm := cloneMap(outboundMap)
+			nm["detour"] = detour
+			// 生成唯一标签，避免与现有重复
+			if baseTag, ok := nm["tag"].(string); ok && baseTag != "" {
+				nm["tag"] = fmt.Sprintf("%s -> %s", baseTag, detour)
+			}
+			newOutbounds = append(newOutbounds, nm)
+			generated = append(generated, nm)
+		}
+		// 原始目标订阅节点不再保留（已被展开替代）
+	}
+
+	// 更新配置
+	config["outbounds"] = newOutbounds
+
+	// 写回文件
+	if err := u.writeConfigFile(configPath, config); err != nil {
+		return nil, err
+	}
+
+	log.Printf("在 %s 为 %d 个订阅节点按 %d 个 detour 展开", configPath, len(generated), len(detourTags))
+	return generated, nil
 }
 
 // InsertRealNodes inserts real proxy nodes into the configuration file without updating selectors.

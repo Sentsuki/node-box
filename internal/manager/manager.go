@@ -3,9 +3,11 @@
 package manager
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"node-box/internal/client"
@@ -29,6 +31,8 @@ var (
 type SubscriptionCache struct {
 	nodes map[string][]subscription.Node // 订阅名称 -> 节点列表
 	valid bool                           // 缓存是否有效
+	// 保存relay展开后的节点，key为配置文件路径
+	relayExpanded map[string][]subscription.Node
 }
 
 // NodeManager coordinates all components to implement core business logic.
@@ -89,8 +93,9 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 		moduleManager: moduleManager,
 		configUpdater: configUpdater,
 		cache: &SubscriptionCache{
-			nodes: make(map[string][]subscription.Node),
-			valid: false,
+			nodes:         make(map[string][]subscription.Node),
+			valid:         false,
+			relayExpanded: make(map[string][]subscription.Node),
 		},
 	}, nil
 }
@@ -99,6 +104,7 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 func (nm *NodeManager) InvalidateCache() {
 	nm.cache.valid = false
 	nm.cache.nodes = make(map[string][]subscription.Node)
+	nm.cache.relayExpanded = make(map[string][]subscription.Node)
 	log.Println("订阅缓存已失效")
 }
 
@@ -195,6 +201,11 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 
 		log.Printf("部分订阅获取失败，但继续处理成功的 %d 个订阅", successCount)
 		return nil // 不返回错误，允许继续处理
+	}
+
+	// 写出缓存文件便于检查
+	if err := nm.writeCacheFiles(); err != nil {
+		log.Printf("写出缓存文件失败: %v", err)
 	}
 
 	log.Printf("订阅缓存完成: %d 个订阅", successCount)
@@ -503,7 +514,35 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 		return nil
 	}
 
-	const detourValue = "[hi] usa-udp"
+	// 从订阅缓存中收集所有非relay节点的tag作为detour候选
+	var detourTags []string
+	for subName, nodes := range nm.cache.nodes {
+		// 跳过relay订阅
+		isRelaySub := false
+		for _, relaySub := range relaySubs {
+			if subName == relaySub {
+				isRelaySub = true
+				break
+			}
+		}
+		if isRelaySub {
+			continue
+		}
+
+		// 收集该订阅的节点tag
+		for _, node := range nodes {
+			if tag, ok := node["tag"].(string); ok && tag != "" {
+				detourTags = append(detourTags, tag)
+			}
+		}
+	}
+
+	if len(detourTags) == 0 {
+		log.Println("未找到可用的detour标签，跳过relay处理")
+		return nil
+	}
+
+	log.Printf("找到 %d 个可用的detour标签", len(detourTags))
 
 	var errs []string
 	for _, target := range nm.config.Nodes.Targets {
@@ -516,9 +555,24 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 		}
 
 		for _, configFile := range configFiles {
+			// 展开relay节点：每个relay节点针对每个tag生成一个新节点并设置detour
 			updater := fileops.NewUpdater("")
-			if err := updater.AddDetourForSubscriptions(configFile, relaySubs, detourValue); err != nil {
-				errs = append(errs, fmt.Sprintf("添加 detour 失败 %s: %v", configFile, err))
+			generated, err := updater.ExpandRelayNodesByDetours(configFile, relaySubs, detourTags)
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("展开 relay 节点失败 %s: %v", configFile, err))
+				continue
+			}
+
+			// 缓存展开后的节点
+			var cached []subscription.Node
+			for _, m := range generated {
+				cached = append(cached, subscription.Node(m))
+			}
+			nm.cache.relayExpanded[configFile] = cached
+
+			// 更新后立即写出缓存文件，方便检查
+			if err := nm.writeCacheFiles(); err != nil {
+				errs = append(errs, fmt.Sprintf("写出缓存文件失败 %s: %v", configFile, err))
 			}
 		}
 	}
@@ -526,5 +580,46 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 	if len(errs) > 0 {
 		return errors.New(strings.Join(errs, "; "))
 	}
+	return nil
+}
+
+// writeCacheFiles 将缓存写入根目录 JSON 文件，便于人工检查。
+// - cache_nodes.json: 原始订阅缓存（按订阅名分组）
+// - cache_relay_expanded.json: relay 展开后的节点（按配置文件路径分组）
+func (nm *NodeManager) writeCacheFiles() error {
+	// 写 cache_nodes.json
+	nodesOut := make(map[string][]map[string]any)
+	for subName, list := range nm.cache.nodes {
+		var arr []map[string]any
+		for _, n := range list {
+			arr = append(arr, map[string]any(n))
+		}
+		nodesOut[subName] = arr
+	}
+	b1, err := json.MarshalIndent(nodesOut, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化 cache_nodes 失败: %v", err)
+	}
+	if err := os.WriteFile("cache_nodes.json", b1, 0644); err != nil {
+		return fmt.Errorf("写入 cache_nodes.json 失败: %v", err)
+	}
+
+	// 写 cache_relay_expanded.json
+	relayOut := make(map[string][]map[string]any)
+	for cfgPath, list := range nm.cache.relayExpanded {
+		var arr []map[string]any
+		for _, n := range list {
+			arr = append(arr, map[string]any(n))
+		}
+		relayOut[cfgPath] = arr
+	}
+	b2, err := json.MarshalIndent(relayOut, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化 cache_relay_expanded 失败: %v", err)
+	}
+	if err := os.WriteFile("cache_relay_expanded.json", b2, 0644); err != nil {
+		return fmt.Errorf("写入 cache_relay_expanded.json 失败: %v", err)
+	}
+
 	return nil
 }
