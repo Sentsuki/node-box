@@ -204,10 +204,12 @@ func (mm *ModuleManager) FetchAllModules() error {
 		}
 
 		if successCount == 0 {
-			return fmt.Errorf("所有模块获取失败: %v", fetchErrors)
+			log.Println("警告: 所有模块获取失败，但继续处理")
+			return nil // 不返回错误，允许继续处理
 		}
 
-		return fmt.Errorf("部分模块获取失败: %d 成功, %d 失败", successCount, len(fetchErrors))
+		log.Printf("部分模块获取失败，但继续处理成功的 %d 个模块", successCount)
+		return nil // 不返回错误，允许继续处理
 	}
 
 	log.Printf("所有模块缓存成功，总计 %d 个模块", successCount)

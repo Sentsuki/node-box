@@ -174,17 +174,21 @@ func main() {
 		// 仅更新节点配置
 		log.Println("开始更新节点配置...")
 		if err := nodeManager.UpdateAllConfigs(); err != nil {
-			log.Fatalf("节点配置更新失败: %v", err)
+			log.Printf("节点配置更新失败: %v", err)
+			log.Println("程序将继续运行，部分配置可能未更新")
+		} else {
+			log.Println("节点配置更新完成")
 		}
-		log.Println("节点配置更新完成")
 
 	case "modules":
 		// 仅更新模块配置
 		log.Println("开始更新模块配置...")
 		if err := nodeManager.UpdateModuleConfigs(); err != nil {
-			log.Fatalf("模块配置更新失败: %v", err)
+			log.Printf("模块配置更新失败: %v", err)
+			log.Println("程序将继续运行，部分配置可能未更新")
+		} else {
+			log.Println("模块配置更新完成")
 		}
-		log.Println("模块配置更新完成")
 
 	case "run":
 		// 创建并启动调度器
@@ -196,7 +200,8 @@ func main() {
 
 		// 启动调度器（这会阻塞直到程序结束）
 		if err := scheduler.Start(); err != nil {
-			log.Fatalf("调度器运行失败: %v", err)
+			log.Printf("调度器运行失败: %v", err)
+			log.Println("程序将退出")
 		}
 	}
 }

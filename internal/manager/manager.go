@@ -181,10 +181,19 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 	}
 
 	if len(fetchErrors) > 0 {
-		if successCount == 0 {
-			return fmt.Errorf("所有订阅获取失败: %v", fetchErrors)
+		log.Printf("订阅获取完成: 成功 %d 个，失败 %d 个", successCount, len(fetchErrors))
+		log.Println("获取失败的订阅:")
+		for _, errMsg := range fetchErrors {
+			log.Printf("  - %s", errMsg)
 		}
-		return fmt.Errorf("部分订阅获取失败: %d 成功, %d 失败", successCount, len(fetchErrors))
+
+		if successCount == 0 {
+			log.Println("警告: 所有订阅获取失败，但继续处理")
+			return nil // 不返回错误，允许继续处理
+		}
+
+		log.Printf("部分订阅获取失败，但继续处理成功的 %d 个订阅", successCount)
+		return nil // 不返回错误，允许继续处理
 	}
 
 	log.Printf("订阅缓存完成: %d 个订阅", successCount)
@@ -205,7 +214,7 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 	// 如果缓存无效，先获取所有订阅
 	if !nm.cache.valid {
 		if err := nm.FetchAndCacheAllSubscriptions(); err != nil {
-			return nil, fmt.Errorf("获取订阅失败: %v", err)
+			log.Printf("获取订阅时出现问题: %v，但继续处理", err)
 		}
 	}
 
@@ -255,7 +264,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	// 1. 获取所有节点
 	if !nm.cache.valid {
 		if err := nm.FetchAndCacheAllSubscriptions(); err != nil {
-			return fmt.Errorf("获取订阅数据失败: %v", err)
+			log.Printf("获取订阅数据时出现问题: %v，但继续处理", err)
 		}
 	}
 
@@ -380,7 +389,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 
 	// 1. 获取所有模块（使用缓存机制，只在需要时请求）
 	if err := nm.moduleManager.FetchAllModules(); err != nil {
-		return fmt.Errorf("获取模块失败: %v", err)
+		log.Printf("获取模块时出现问题: %v，但继续处理", err)
 	}
 
 	// 2. 更新每个配置文件
