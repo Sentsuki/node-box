@@ -36,6 +36,90 @@ func NewUpdater(insertMarker string) *Updater {
 	}
 }
 
+// CleanSubscriptionArtifacts removes any nodes (outbounds) and selector tags
+// that contain any of the given subscription names (identified by "[name]").
+// This is used at the beginning of an update cycle to ensure previously added
+// but now excluded content is fully cleaned up.
+func (u *Updater) CleanSubscriptionArtifacts(configPath string, subscriptionNames []string) error {
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, configPath, err)
+	}
+
+	// 解析JSON配置
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, configPath, err)
+	}
+
+	// 检查outbounds字段
+	outboundsRaw, ok := config["outbounds"]
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrMissingOutbounds, configPath)
+	}
+
+	outboundsArray, ok := outboundsRaw.([]any)
+	if !ok {
+		return fmt.Errorf("%w in file %s", ErrInvalidOutboundsFormat, configPath)
+	}
+
+	containsSub := func(s string) bool {
+		for _, subName := range subscriptionNames {
+			if strings.Contains(s, fmt.Sprintf("[%s]", subName)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	var newOutbounds []any
+	for _, outboundRaw := range outboundsArray {
+		outboundMap, ok := outboundRaw.(map[string]any)
+		if !ok {
+			// 非对象，直接保留
+			newOutbounds = append(newOutbounds, outboundRaw)
+			continue
+		}
+
+		// 如果是带有 tag 的节点并且包含任一订阅名，整条节点删除
+		if tag, ok := outboundMap["tag"].(string); ok && tag != "" {
+			if containsSub(tag) {
+				continue
+			}
+		}
+
+		// 如果是 selector，清理其 outbounds 列表里包含订阅名的 tag
+		if t, ok := outboundMap["type"].(string); ok && t == "selector" {
+			if obList, ok := outboundMap["outbounds"].([]any); ok {
+				var filtered []any
+				for _, ob := range obList {
+					if s, ok := ob.(string); ok {
+						if containsSub(s) {
+							continue
+						}
+					}
+					filtered = append(filtered, ob)
+				}
+				outboundMap["outbounds"] = filtered
+			}
+		}
+
+		newOutbounds = append(newOutbounds, outboundMap)
+	}
+
+	// 更新配置
+	config["outbounds"] = newOutbounds
+
+	// 写回文件
+	if err := u.writeConfigFile(configPath, config); err != nil {
+		return err
+	}
+
+	log.Printf("清理订阅残留: %s", configPath)
+	return nil
+}
+
 // cloneMap creates a shallow copy of a map[string]any
 func cloneMap(m map[string]any) map[string]any {
 	c := make(map[string]any, len(m))

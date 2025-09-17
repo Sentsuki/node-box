@@ -480,6 +480,32 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 	nm.InvalidateCache()
 	nm.moduleManager.InvalidateCache()
 
+	// 1.5 在每次更新开始时，清理所有目标配置中包含订阅名前缀的节点与 selector 标签
+	// 这样可以移除因为 enable 状态变化或 targets.subscriptions 调整而被排除的历史内容
+	var allSubNames []string
+	for _, sub := range nm.config.Nodes.Subscriptions {
+		// 不论是否启用，都需要作为清理依据
+		allSubNames = append(allSubNames, sub.Name)
+	}
+	for _, target := range nm.config.Nodes.Targets {
+		scanner := nm.scanners[target.Path]
+		configFiles, err := scanner.ScanConfigFiles()
+		if err != nil {
+			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err)
+			log.Printf("%s", errorMsg)
+			errors = append(errors, errorMsg)
+			continue
+		}
+		for _, cfgPath := range configFiles {
+			updater := fileops.NewUpdater("")
+			if err := updater.CleanSubscriptionArtifacts(cfgPath, allSubNames); err != nil {
+				errorMsg := fmt.Sprintf("清理订阅残留失败 %s: %v", cfgPath, err)
+				log.Printf("%s", errorMsg)
+				errors = append(errors, errorMsg)
+			}
+		}
+	}
+
 	// 2. 更新节点配置
 	log.Println("步骤 1/3: 更新节点配置...")
 	if err := nm.UpdateAllConfigs(); err != nil {
@@ -793,10 +819,8 @@ func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
 	return nil
 }
 
-// filterRelayNodesByInclude 根据 include_relay 配置筛选 relay 节点
-func (nm *NodeManager) filterRelayNodesByInclude() []subscription.Node {
-	return nm.filterRelayNodesByIncludeAndSubscriptions(nil)
-}
+// (removed) filterRelayNodesByInclude: previously a thin wrapper around
+// filterRelayNodesByIncludeAndSubscriptions(nil). Use the latter directly.
 
 // filterRelayNodesByIncludeAndSubscriptions 根据 include_relay 和 subscriptions 配置筛选 relay 节点
 func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscriptions []string) []subscription.Node {
