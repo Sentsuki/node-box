@@ -515,10 +515,46 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 			continue
 		}
 
+		// 计算当前 target 适用的 relay 订阅集合
+		var applicableRelaySubs []string
+		if len(target.Subscriptions) > 0 {
+			// 与 target.Subscriptions 求交集
+			subSet := make(map[string]bool)
+			for _, n := range target.Subscriptions {
+				subSet[n] = true
+			}
+			for _, n := range relaySubs {
+				if subSet[n] {
+					applicableRelaySubs = append(applicableRelaySubs, n)
+				}
+			}
+		} else {
+			applicableRelaySubs = append(applicableRelaySubs, relaySubs...)
+		}
+
+		// 从缓存收集这些订阅的节点，并附加 detour 字段
+		var relayNodesMaps []map[string]any
+		for _, subName := range applicableRelaySubs {
+			if nodes, ok := nm.cache.nodes[subName]; ok {
+				for _, node := range nodes {
+					m := map[string]any(node)
+					m["detour"] = detourValue
+					relayNodesMaps = append(relayNodesMaps, m)
+				}
+			}
+		}
+
 		for _, configFile := range configFiles {
 			updater := fileops.NewUpdater("")
 			if err := updater.AddDetourForSubscriptions(configFile, relaySubs, detourValue); err != nil {
 				errs = append(errs, fmt.Sprintf("添加 detour 失败 %s: %v", configFile, err))
+			}
+
+			// 将处理后的 relay 节点作为真实节点写入配置（仅替换这些订阅的旧节点）
+			if len(relayNodesMaps) > 0 {
+				if err := updater.InsertRealNodes(configFile, relayNodesMaps, applicableRelaySubs); err != nil {
+					errs = append(errs, fmt.Sprintf("插入 relay 真实节点失败 %s: %v", configFile, err))
+				}
 			}
 		}
 	}
