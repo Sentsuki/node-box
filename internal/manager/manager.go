@@ -250,70 +250,8 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 	return allNodes, nil
 }
 
-// filterNodesByKeywords filters nodes by include and exclude keyword lists.
-// - If includeKeywords is non-empty: keep nodes whose tag contains ANY include keyword
-// - If includeKeywords is empty: keep all nodes (before exclude filtering)
-// - Then remove nodes whose tag contains ANY exclude keyword
-func (nm *NodeManager) filterNodesByKeywords(nodes []subscription.Node, includeKeywords []string, excludeKeywords []string) []subscription.Node {
-	var included []subscription.Node
-
-	// Normalize keywords to lower for case-insensitive matching
-	normalize := func(arr []string) []string {
-		var out []string
-		for _, s := range arr {
-			out = append(out, strings.ToLower(s))
-		}
-		return out
-	}
-
-	inc := normalize(includeKeywords)
-	exc := normalize(excludeKeywords)
-
-	// Include filter
-	if len(inc) > 0 {
-		for _, n := range nodes {
-			tag, _ := n["tag"].(string)
-			tagLower := strings.ToLower(tag)
-			for _, kw := range inc {
-				if kw == "" {
-					continue
-				}
-				if strings.Contains(tagLower, kw) {
-					included = append(included, n)
-					break
-				}
-			}
-		}
-	} else {
-		included = append(included, nodes...)
-	}
-
-	if len(exc) == 0 {
-		return included
-	}
-
-	// Exclude filter
-	var result []subscription.Node
-	for _, n := range included {
-		tag, _ := n["tag"].(string)
-		tagLower := strings.ToLower(tag)
-		shouldExclude := false
-		for _, kw := range exc {
-			if kw == "" {
-				continue
-			}
-			if strings.Contains(tagLower, kw) {
-				shouldExclude = true
-				break
-			}
-		}
-		if !shouldExclude {
-			result = append(result, n)
-		}
-	}
-
-	return result
-}
+// 注意: per-proxy include/exclude 仅在写入 selector 标签时应用，
+// 不在此处对真实节点集合进行过滤。
 
 // UpdateAllConfigs updates all configuration files with new proxy nodes.
 // It coordinates the complete workflow of file scanning, node fetching,
@@ -384,19 +322,13 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			continue
 		}
 
-		// 6. 针对每个 proxy 规则分别过滤并更新
+		// 6. 针对每个 proxy 规则，仅用于 selector 标签过滤，不影响真实节点集合
 		for _, proxyRule := range target.Proxies {
 			log.Printf("处理插入规则 marker: %s", proxyRule.InsertMarker)
 
-			filtered := nm.filterNodesByKeywords(allTargetNodes, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords)
-			if len(filtered) == 0 {
-				log.Printf("规则 %s 无匹配节点，跳过", proxyRule.InsertMarker)
-				continue
-			}
-
-			// 转换为 updater 期望的格式
-			nodesMaps := make([]map[string]any, len(filtered))
-			for i, node := range filtered {
+			// 转换（不按规则过滤真实节点，只按全局外部 exclude 过滤已在缓存阶段完成）
+			nodesMaps := make([]map[string]any, len(allTargetNodes))
+			for i, node := range allTargetNodes {
 				nodesMaps[i] = map[string]any(node)
 			}
 
@@ -407,7 +339,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			pathSuccessCount := 0
 			for _, configFile := range configFiles {
 				log.Printf("更新配置文件: %s (marker: %s, 节点: %d)", configFile, proxyRule.InsertMarker, len(nodesMaps))
-				if err := updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames); err != nil {
+				if err := updater.UpdateConfigFile(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
 					errorMsg := fmt.Sprintf("更新配置文件失败 %s: %v", configFile, err)
 					log.Printf("%s", errorMsg)
 					updateErrors = append(updateErrors, errorMsg)
