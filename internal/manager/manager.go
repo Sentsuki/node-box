@@ -470,7 +470,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 }
 
 // UpdateAllConfigurations updates all configurations in sequence.
-// Execution order: 1. 失效缓存 2. 节点配置 3. relay 订阅后处理 4. 模块配置
+// Execution order: 1. 失效缓存 2. 节点配置 3. relay 订阅后处理 4. relay 节点写入配置 5. 模块配置
 func (nm *NodeManager) UpdateAllConfigurations() error {
 	log.Println("开始更新所有配置...")
 
@@ -491,7 +491,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 	}
 
 	// 3. relay 订阅后处理（为节点添加 detour）
-	log.Println("步骤 2/3: 处理 relay 订阅 detour...")
+	log.Println("步骤 2/4: 处理 relay 订阅 detour...")
 	if err := nm.updateRelayDetourForAllTargets(); err != nil {
 		errorMsg := fmt.Sprintf("relay 订阅后处理失败: %v", err)
 		log.Printf("%s", errorMsg)
@@ -500,8 +500,18 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		log.Println("relay 订阅后处理完成")
 	}
 
-	// 4. 更新模块配置
-	log.Println("步骤 3/3: 更新模块配置...")
+	// 4. 将 relay 节点写入配置
+	log.Println("步骤 3/4: 将 relay 节点写入配置...")
+	if err := nm.writeRelayNodesToConfig(); err != nil {
+		errorMsg := fmt.Sprintf("relay 节点写入配置失败: %v", err)
+		log.Printf("%s", errorMsg)
+		errors = append(errors, errorMsg)
+	} else {
+		log.Println("relay 节点写入配置完成")
+	}
+
+	// 5. 更新模块配置
+	log.Println("步骤 4/4: 更新模块配置...")
 	if err := nm.UpdateModuleConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("模块配置更新失败: %v", err)
 		log.Printf("%s", errorMsg)
@@ -710,4 +720,175 @@ func (nm *NodeManager) writeCacheFiles() error {
 	}
 
 	return nil
+}
+
+// writeRelayNodesToConfig 将处理后存在缓存中的 relay 节点写入配置
+// 1. 根据 include_relay 确定哪些节点作为真实节点写入
+// 2. 根据 relay_nodes 确定更新哪些 tag 到 selector
+func (nm *NodeManager) writeRelayNodesToConfig() error {
+	log.Println("开始将 relay 节点写入配置...")
+
+	// 检查是否有 include_relay 配置
+	if len(nm.config.Nodes.IncludeRelay) == 0 {
+		log.Println("未配置 include_relay，跳过 relay 节点写入")
+		return nil
+	}
+
+	// 遍历所有目标配置
+	for _, target := range nm.config.Nodes.Targets {
+		if err := nm.writeRelayNodesToTarget(target); err != nil {
+			log.Printf("为目标 %s 写入 relay 节点失败: %v", target.Path, err)
+			return err
+		}
+	}
+
+	log.Println("relay 节点写入配置完成")
+	return nil
+}
+
+// writeRelayNodesToTarget 为单个目标写入 relay 节点
+func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
+	// 1. 根据 include_relay 筛选需要写入的 relay 节点
+	relayNodesToWrite := nm.filterRelayNodesByInclude()
+	if len(relayNodesToWrite) == 0 {
+		log.Printf("目标 %s: 没有符合 include_relay 条件的 relay 节点", target.Path)
+		return nil
+	}
+
+	// 2. 处理每个 proxy 配置
+	for _, proxy := range target.Proxies {
+		if len(proxy.RelayNodes) == 0 {
+			continue
+		}
+
+		// 根据 relay_nodes 筛选要更新的节点
+		nodesToUpdate := nm.filterNodesByRelayNodes(relayNodesToWrite, proxy.RelayNodes)
+		if len(nodesToUpdate) == 0 {
+			log.Printf("目标 %s, 选择器 %s: 没有符合 relay_nodes 条件的节点", target.Path, proxy.InsertMarker)
+			continue
+		}
+
+		// 写入节点到配置文件
+		if err := nm.writeNodesToConfigFile(target.Path, proxy.InsertMarker, nodesToUpdate); err != nil {
+			return fmt.Errorf("写入节点到配置文件失败: %v", err)
+		}
+
+		// 更新 selector 的 outbounds 列表
+		if err := nm.updateSelectorForRelayNodes(target.Path, proxy.InsertMarker, nodesToUpdate, proxy.RelayNodes); err != nil {
+			return fmt.Errorf("更新 selector 失败: %v", err)
+		}
+
+		log.Printf("目标 %s, 选择器 %s: 成功写入 %d 个 relay 节点", target.Path, proxy.InsertMarker, len(nodesToUpdate))
+	}
+
+	return nil
+}
+
+// filterRelayNodesByInclude 根据 include_relay 配置筛选 relay 节点
+func (nm *NodeManager) filterRelayNodesByInclude() []subscription.Node {
+	var result []subscription.Node
+
+	// 遍历所有缓存的 relay 展开节点
+	for _, nodes := range nm.cache.relayExpanded {
+		for _, node := range nodes {
+			// 获取节点的 tag
+			tag, ok := node["tag"].(string)
+			if !ok || tag == "" {
+				continue
+			}
+
+			// 检查是否匹配 include_relay 中的任何关键词
+			shouldInclude := false
+			for _, keyword := range nm.config.Nodes.IncludeRelay {
+				if strings.Contains(tag, keyword) {
+					shouldInclude = true
+					break
+				}
+			}
+
+			if shouldInclude {
+				result = append(result, node)
+			}
+		}
+	}
+
+	log.Printf("根据 include_relay 筛选出 %d 个节点", len(result))
+	return result
+}
+
+// filterNodesByRelayNodes 根据 relay_nodes 配置筛选节点
+func (nm *NodeManager) filterNodesByRelayNodes(nodes []subscription.Node, relayNodes []string) []subscription.Node {
+	if len(relayNodes) == 0 {
+		return nodes
+	}
+
+	var result []subscription.Node
+	for _, node := range nodes {
+		// 获取节点的 tag
+		tag, ok := node["tag"].(string)
+		if !ok || tag == "" {
+			continue
+		}
+
+		// 检查是否匹配 relay_nodes 中的任何关键词
+		shouldInclude := false
+		for _, keyword := range relayNodes {
+			if strings.Contains(tag, keyword) {
+				shouldInclude = true
+				break
+			}
+		}
+
+		if shouldInclude {
+			result = append(result, node)
+		}
+	}
+
+	return result
+}
+
+// writeNodesToConfigFile 将节点写入指定的配置文件
+func (nm *NodeManager) writeNodesToConfigFile(configPath, insertMarker string, nodes []subscription.Node) error {
+	// 转换节点格式为 map[string]any
+	nodesMaps := make([]map[string]any, len(nodes))
+	for i, node := range nodes {
+		nodesMaps[i] = map[string]any(node)
+	}
+
+	// 创建 updater 来更新配置文件
+	updater := fileops.NewUpdater(insertMarker)
+
+	// 获取所有 relay 订阅名称
+	var relaySubNames []string
+	for _, sub := range nm.config.Nodes.Subscriptions {
+		if sub.Enable && strings.ToLower(sub.Type) == "relay" {
+			relaySubNames = append(relaySubNames, sub.Name)
+		}
+	}
+
+	// 调用 updater 的方法来插入节点
+	return updater.InsertRealNodes(configPath, nodesMaps, relaySubNames)
+}
+
+// updateSelectorForRelayNodes 更新 selector 的 outbounds 列表，只包含 relay 节点的 tag
+func (nm *NodeManager) updateSelectorForRelayNodes(configPath, insertMarker string, nodes []subscription.Node, relayNodes []string) error {
+	// 转换节点格式为 map[string]any
+	nodesMaps := make([]map[string]any, len(nodes))
+	for i, node := range nodes {
+		nodesMaps[i] = map[string]any(node)
+	}
+
+	// 创建一个临时的 updater 来更新 selector
+	updater := fileops.NewUpdater(insertMarker)
+
+	// 获取所有 relay 订阅名称
+	var relaySubNames []string
+	for _, sub := range nm.config.Nodes.Subscriptions {
+		if sub.Enable && strings.ToLower(sub.Type) == "relay" {
+			relaySubNames = append(relaySubNames, sub.Name)
+		}
+	}
+
+	// 使用 relay_nodes 作为 include 关键词来过滤要添加到 selector 的节点
+	return updater.UpdateSelectorOnly(configPath, nodesMaps, relaySubNames, relayNodes, nil)
 }
