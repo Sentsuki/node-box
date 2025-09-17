@@ -755,9 +755,18 @@ func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
 		return nil
 	}
 
-	// 2. 处理每个 proxy 配置
+	// 2. 获取目标路径下的所有配置文件
+	scanner := nm.scanners[target.Path]
+	configFiles, err := scanner.ScanConfigFiles()
+	if err != nil {
+		return fmt.Errorf("扫描配置文件失败 %s: %v", target.Path, err)
+	}
+
+	// 3. 处理每个 proxy 配置
 	for _, proxy := range target.Proxies {
+		// 如果 relay_nodes 为空，则跳过 relay 节点写入
 		if len(proxy.RelayNodes) == 0 {
+			log.Printf("目标 %s, 选择器 %s: relay_nodes 为空，跳过 relay 节点写入", target.Path, proxy.InsertMarker)
 			continue
 		}
 
@@ -768,17 +777,20 @@ func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
 			continue
 		}
 
-		// 写入节点到配置文件
-		if err := nm.writeNodesToConfigFile(target.Path, proxy.InsertMarker, nodesToUpdate); err != nil {
-			return fmt.Errorf("写入节点到配置文件失败: %v", err)
-		}
+		// 为每个配置文件写入节点
+		for _, configFile := range configFiles {
+			// 写入节点到配置文件
+			if err := nm.writeNodesToConfigFile(configFile, proxy.InsertMarker, nodesToUpdate); err != nil {
+				return fmt.Errorf("写入节点到配置文件失败 %s: %v", configFile, err)
+			}
 
-		// 更新 selector 的 outbounds 列表
-		if err := nm.updateSelectorForRelayNodes(target.Path, proxy.InsertMarker, nodesToUpdate, proxy.RelayNodes); err != nil {
-			return fmt.Errorf("更新 selector 失败: %v", err)
-		}
+			// 更新 selector 的 outbounds 列表
+			if err := nm.updateSelectorForRelayNodes(configFile, proxy.InsertMarker, nodesToUpdate, proxy.RelayNodes); err != nil {
+				return fmt.Errorf("更新 selector 失败 %s: %v", configFile, err)
+			}
 
-		log.Printf("目标 %s, 选择器 %s: 成功写入 %d 个 relay 节点", target.Path, proxy.InsertMarker, len(nodesToUpdate))
+			log.Printf("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点", configFile, proxy.InsertMarker, len(nodesToUpdate))
+		}
 	}
 
 	return nil
