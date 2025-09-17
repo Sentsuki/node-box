@@ -585,29 +585,47 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 			if tag, ok := outboundMap["tag"].(string); ok && tag == u.insertMarker {
 				// 更新selector的outbounds列表
 				if outboundList, ok := outboundMap["outbounds"].([]any); ok {
-					// 移除旧的订阅节点标签
-					var newOutboundList []any
-					for _, tag := range outboundList {
-						if tagStr, ok := tag.(string); ok {
-							isSubscriptionTag := false
+					// 先移除当前订阅（subscriptionNames）对应的旧标签；
+					// 同时将保留项分成两类：
+					// 1) baseTags：非订阅类（如固定项 direct/urltest、自定义固定字符串、非字符串等）
+					// 2) otherSubTags：其它订阅来源的标签（包含形如 "[xxx]" 的字符串）
+					var baseTags []any
+					var otherSubTags []any
+					for _, ob := range outboundList {
+						s, isString := ob.(string)
+						if isString {
+							// 跳过需要被清理的旧订阅标签
+							shouldRemove := false
 							for _, subName := range subscriptionNames {
-								if strings.Contains(tagStr, fmt.Sprintf("[%s]", subName)) {
-									isSubscriptionTag = true
+								if strings.Contains(s, fmt.Sprintf("[%s]", subName)) {
+									shouldRemove = true
 									break
 								}
 							}
-							if !isSubscriptionTag {
-								newOutboundList = append(newOutboundList, tag)
+							if shouldRemove {
+								continue
+							}
+
+							// 粗略判断是否为订阅标签：包含方括号视为订阅来源
+							if strings.Contains(s, "[") && strings.Contains(s, "]") {
+								otherSubTags = append(otherSubTags, s)
+							} else {
+								baseTags = append(baseTags, s)
 							}
 						} else {
-							newOutboundList = append(newOutboundList, tag)
+							// 保留非字符串项到基类
+							baseTags = append(baseTags, ob)
 						}
 					}
 
-					// 添加新的节点标签（已按规则过滤）
-					for _, tag := range nodeTags {
-						newOutboundList = append(newOutboundList, tag)
+					// 期望的顺序：基类固定项 -> 本次新增（nodeTags）-> 其它订阅标签
+					var newOutboundList []any
+					newOutboundList = append(newOutboundList, baseTags...)
+					for _, t := range nodeTags {
+						newOutboundList = append(newOutboundList, t)
 					}
+					newOutboundList = append(newOutboundList, otherSubTags...)
+
 					outboundMap["outbounds"] = newOutboundList
 					log.Printf("更新selector %s: %d -> %d 标签", u.insertMarker, beforeFilterCount, len(nodeTags))
 				} else {
