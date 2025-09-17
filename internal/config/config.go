@@ -252,7 +252,7 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 		return fmt.Errorf("subscription %d (%s): cannot specify both URL and Path", index, sub.Name)
 	}
 
-	validTypes := []string{"clash", "singbox"}
+	validTypes := []string{"clash", "singbox", "relay"}
 	subType := strings.ToLower(sub.Type)
 	if !slices.Contains(validTypes, subType) {
 		return fmt.Errorf("subscription %d (%s): invalid type '%s', must be one of: %v",
