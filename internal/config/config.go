@@ -147,9 +147,9 @@ func Load(path string) (*Config, error) {
 
 	// Log proxy configuration information (using standard log for now since logger may not be initialized)
 	if config.Proxy != nil {
-		logger.Info("Proxy configuration: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
+		logger.Debug("Proxy configuration: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
 		if config.Proxy.Username != "" {
-			log.Printf("Proxy authentication: %s", config.Proxy.Username)
+			logger.Info("Proxy authentication: %s", config.Proxy.Username)
 		}
 	} else {
 		logger.Info("No proxy configured, using direct connection")

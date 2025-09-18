@@ -107,6 +107,28 @@ func (nm *NodeManager) InvalidateCache() {
 	logger.Debug("订阅缓存已失效")
 }
 
+// ClearCache completely clears all cached data and resets cache state.
+// This method should be called after completing all update processes to free memory.
+func (nm *NodeManager) ClearCache() {
+	nm.cache.valid = false
+	nm.cache.nodes = nil
+	nm.cache.relayExpanded = nil
+	nm.cache = &SubscriptionCache{
+		nodes:         make(map[string][]subscription.Node),
+		valid:         false,
+		relayExpanded: make(map[string][]subscription.Node),
+	}
+	logger.Debug("订阅缓存已清除")
+}
+
+// ClearAllCaches completely clears both subscription and module caches.
+// This method should be called after completing all processes to free memory.
+func (nm *NodeManager) ClearAllCaches() {
+	nm.ClearCache()
+	nm.moduleManager.ClearCache()
+	logger.Debug("所有缓存已清除")
+}
+
 // FetchAndCacheAllSubscriptions fetches all enabled subscriptions and caches the results.
 // This method should be called once per update cycle to populate the cache.
 // 缓存原始节点（未经全局过滤），过滤将在使用时进行
@@ -542,17 +564,24 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		logger.Debug("模块配置更新成功")
 	}
 
-	// 5. 汇总结果
+	// 6. 汇总结果
+	var finalErr error
 	if len(errors) > 0 {
 		logger.Warn("配置更新完成，但有错误:")
 		for _, errMsg := range errors {
 			logger.Debug("  - %s", errMsg)
 		}
-		return fmt.Errorf("配置更新完成，但有 %d 个错误", len(errors))
+		finalErr = fmt.Errorf("配置更新完成，但有 %d 个错误", len(errors))
+	} else {
+		logger.Info("所有配置更新成功")
 	}
 
-	logger.Info("所有配置更新成功")
-	return nil
+	// 7. 清除所有缓存释放内存
+	logger.Debug("清除所有缓存...")
+	nm.ClearAllCaches()
+	logger.Info("所有流程完成，缓存已清除")
+
+	return finalErr
 }
 
 // updateRelayDetourForAllTargets 在更新节点配置后，为 relay 类型订阅的节点添加 detour 字段。
