@@ -56,6 +56,18 @@ func (mm *ModuleManager) InvalidateCache() {
 	logger.Debug("模块缓存已失效")
 }
 
+// ClearCache completely clears all cached module data and resets cache state.
+// This method should be called after completing all module operations to free memory.
+func (mm *ModuleManager) ClearCache() {
+	mm.cache.valid = false
+	mm.cache.modules = nil
+	mm.cache = &ModuleCache{
+		modules: make(map[string]map[string]any),
+		valid:   false,
+	}
+	logger.Debug("所有模块缓存已清除")
+}
+
 // FetchAllModules fetches all configured modules from their sources and caches them.
 // It processes both local file modules and remote URL modules,
 // returning any errors encountered during the process.

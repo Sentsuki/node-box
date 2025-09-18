@@ -189,6 +189,10 @@ func main() {
 			logger.Info("节点配置更新完成")
 		}
 
+		// 清除缓存释放内存
+		nodeManager.ClearAllCaches()
+		logger.Info("节点配置流程完成，缓存已清除")
+
 	case "modules":
 		// 仅更新模块配置
 		logger.Info("开始更新模块配置...")
@@ -198,6 +202,10 @@ func main() {
 		} else {
 			logger.Info("模块配置更新完成")
 		}
+
+		// 清除缓存释放内存
+		nodeManager.ClearAllCaches()
+		logger.Info("模块配置流程完成，缓存已清除")
 
 	case "run":
 		// 创建并启动调度器
