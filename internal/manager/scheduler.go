@@ -57,7 +57,7 @@ func (s *Scheduler) Start() error {
 			return s.ctx.Err()
 
 		case <-ticker.C:
-			logger.Info("开始定时配置更新...")
+			logger.Info("*****开始定时配置更新*****")
 
 			if err := s.manager.UpdateAllConfigurations(); err != nil {
 				logger.Error("定时配置更新失败: %v", err)
