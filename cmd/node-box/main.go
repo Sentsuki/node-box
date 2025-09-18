@@ -25,6 +25,7 @@ func printUsage() {
   %s init [配置文件路径]      生成示例配置文件
   %s nodes [配置文件路径]     仅更新节点配置
   %s modules [配置文件路径]   仅更新模块配置
+  %s update [配置文件路径]    立即执行一次完整更新
   %s -h, --help             显示此帮助信息
   %s -v, --version          显示版本信息
 
@@ -35,12 +36,14 @@ func printUsage() {
   - 支持文件级别的精确配置更新 (is_file: true)
   - 支持选择性订阅节点插入 (subscriptions: [...])
   - 灵活的目标配置管理
+  - 立即更新命令，无需等待定时任务
 
 示例:
   %s                        使用默认配置文件运行（更新所有配置）
   %s config.json            使用指定配置文件运行
   %s nodes                  仅更新节点配置
   %s modules                仅更新模块配置
+  %s update                 立即执行一次完整更新
   %s init                   生成默认配置文件
   %s init my-config.json    生成指定路径的配置文件
 
@@ -58,7 +61,7 @@ func printUsage() {
     }
   }
 
-`, appName, version, appName, appName, appName, appName, appName, appName, defaultConfigPath, appName, appName, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, defaultConfigPath, appName, appName, appName, appName, appName, appName, appName)
 }
 
 // printVersion 显示版本信息
@@ -110,6 +113,14 @@ func parseArgs() (command string, configPath string) {
 		return "modules", configPath
 	}
 
+	// 处理update命令
+	if firstArg == "update" {
+		if len(os.Args) > 2 {
+			configPath = os.Args[2]
+		}
+		return "update", configPath
+	}
+
 	// 其他情况视为配置文件路径
 	return "run", firstArg
 }
@@ -146,6 +157,10 @@ func main() {
 	case "modules":
 		// 仅更新模块配置
 		logger.Info("仅更新模块配置，使用配置文件: %s", configPath)
+
+	case "update":
+		// 立即执行一次完整更新
+		logger.Info("立即执行完整更新，使用配置文件: %s", configPath)
 
 	default:
 		logger.Fatal("未知命令: %s", command)
@@ -206,6 +221,20 @@ func main() {
 		// 清除缓存释放内存
 		nodeManager.ClearAllCaches()
 		logger.Info("模块配置流程完成，缓存已清除")
+
+	case "update":
+		// 立即执行一次完整更新
+		logger.Info("开始执行完整更新流程...")
+		if err := nodeManager.UpdateAllConfigurations(); err != nil {
+			logger.Error("完整更新失败: %v", err)
+			logger.Warn("程序将退出，部分配置可能未更新")
+		} else {
+			logger.Info("完整更新成功")
+		}
+
+		// 清除缓存释放内存
+		nodeManager.ClearAllCaches()
+		logger.Info("完整更新流程完成，缓存已清除")
 
 	case "run":
 		// 创建并启动调度器
