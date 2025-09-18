@@ -27,14 +27,24 @@ var (
 // It can merge module configurations into target configuration files
 // and supports JSON format.
 type ConfigUpdater struct {
-	moduleManager *ModuleManager
+	moduleManager  *ModuleManager
+	processedCount int // 记录已处理的配置文件数量
+	totalCount     int // 记录总配置文件数量
 }
 
 // NewConfigUpdater creates a new ConfigUpdater instance.
 func NewConfigUpdater(moduleManager *ModuleManager) *ConfigUpdater {
 	return &ConfigUpdater{
-		moduleManager: moduleManager,
+		moduleManager:  moduleManager,
+		processedCount: 0,
+		totalCount:     0,
 	}
+}
+
+// SetTotalCount sets the total number of configuration files to be processed.
+func (cu *ConfigUpdater) SetTotalCount(total int) {
+	cu.totalCount = total
+	cu.processedCount = 0
 }
 
 // UpdateConfigFile updates a configuration file with the specified modules.
@@ -153,14 +163,24 @@ func (cu *ConfigUpdater) postProcessMergedConfig(config map[string]any) error {
 		successCount++
 	}
 
-	// 如果有失败的操作，返回错误并显示计数
+	// 增加已处理的配置文件计数
+	cu.processedCount++
+
+	// 只在处理完所有配置文件后输出一次日志
+	if cu.processedCount >= cu.totalCount {
+		if failureCount > 0 {
+			logger.Info("模块处理完成: 成功 %d 个，失败 %d 个", successCount, failureCount)
+			return fmt.Errorf("后处理过程中有 %d 个操作失败", failureCount)
+		}
+		// 全部成功时只输出一次
+		logger.Info("模块处理完成")
+	}
+
+	// 如果有失败但不是最后一个配置文件，仍然返回错误但不输出日志
 	if failureCount > 0 {
-		logger.Info("模块处理完成: 成功 %d 个，失败 %d 个", successCount, failureCount)
 		return fmt.Errorf("后处理过程中有 %d 个操作失败", failureCount)
 	}
 
-	// 全部成功时不显示计数
-	logger.Info("模块处理完成")
 	return nil
 }
 

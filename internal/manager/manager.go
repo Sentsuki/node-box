@@ -448,7 +448,10 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 		logger.Warn("获取模块时出现问题: %v，但继续处理", err)
 	}
 
-	// 2. 更新每个配置文件
+	// 2. 设置总配置文件数量
+	nm.configUpdater.SetTotalCount(len(nm.config.Configs))
+
+	// 3. 更新每个配置文件
 	var updateErrors []string
 	successCount := 0
 
