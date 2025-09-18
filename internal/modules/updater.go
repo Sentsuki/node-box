@@ -134,18 +134,32 @@ func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleDa
 func (cu *ConfigUpdater) postProcessMergedConfig(config map[string]any) error {
 	logger.Debug("开始执行模块配置后处理...")
 
+	successCount := 0
+	failureCount := 0
+
 	// 1. 检查 endpoints 里是否有节点tag带有方括号[]，即来自订阅的节点，如果有，清除掉
 	if err := cu.cleanSubscriptionNodesFromEndpoints(config); err != nil {
 		logger.Error("清理endpoints中的订阅节点失败: %v", err)
-		return err
+		failureCount++
+	} else {
+		successCount++
 	}
 
 	// 2. 检查 outbounds 的节点是否有 type: wireguard, tailscale，如果有，移动到 endpoints 里
 	if err := cu.moveSpecialOutboundsToEndpoints(config); err != nil {
 		logger.Error("移动特殊outbounds到endpoints失败: %v", err)
-		return err
+		failureCount++
+	} else {
+		successCount++
 	}
 
+	// 如果有失败的操作，返回错误并显示计数
+	if failureCount > 0 {
+		logger.Info("模块处理完成: 成功 %d 个，失败 %d 个", successCount, failureCount)
+		return fmt.Errorf("后处理过程中有 %d 个操作失败", failureCount)
+	}
+
+	// 全部成功时不显示计数
 	logger.Info("模块处理完成")
 	return nil
 }
