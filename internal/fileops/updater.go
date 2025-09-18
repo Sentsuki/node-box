@@ -522,27 +522,15 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 	}
 
 	// 对将要添加到 selector 的标签应用 include/exclude 过滤
-	toLower := func(arr []string) []string {
-		var out []string
-		for _, s := range arr {
-			out = append(out, strings.ToLower(s))
-		}
-		return out
-	}
-
-	inc := toLower(includeKeywords)
-	exc := toLower(excludeKeywords)
-
 	filterForSelector := func(tags []string) []string {
 		var included []string
-		if len(inc) > 0 {
+		if len(includeKeywords) > 0 {
 			for _, t := range tags {
-				tl := strings.ToLower(t)
-				for _, kw := range inc {
+				for _, kw := range includeKeywords {
 					if kw == "" {
 						continue
 					}
-					if strings.Contains(tl, kw) {
+					if strings.Contains(t, kw) {
 						included = append(included, t)
 						break
 					}
@@ -552,19 +540,18 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 			included = append(included, tags...)
 		}
 
-		if len(exc) == 0 {
+		if len(excludeKeywords) == 0 {
 			return included
 		}
 
 		var result []string
 		for _, t := range included {
-			tl := strings.ToLower(t)
 			skip := false
-			for _, kw := range exc {
+			for _, kw := range excludeKeywords {
 				if kw == "" {
 					continue
 				}
-				if strings.Contains(tl, kw) {
+				if strings.Contains(t, kw) {
 					skip = true
 					break
 				}

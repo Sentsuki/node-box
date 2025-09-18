@@ -34,7 +34,7 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 
 		shouldExclude := false
 		for _, keyword := range f.excludeKeywords {
-			if strings.Contains(strings.ToLower(tag), strings.ToLower(keyword)) {
+			if strings.Contains(tag, keyword) {
 				shouldExclude = true
 				excludedCount++
 				break
