@@ -210,12 +210,12 @@ func main() {
 
 	case "modules":
 		// 仅更新模块配置
-		logger.Info("开始更新模块配置...")
+		logger.Debug("开始更新模块配置...")
 		if err := nodeManager.UpdateModuleConfigs(); err != nil {
 			logger.Error("模块配置更新失败: %v", err)
 			logger.Warn("程序将继续运行，部分配置可能未更新")
 		} else {
-			logger.Info("模块配置更新完成")
+			logger.Info("模块更新完成")
 		}
 
 		// 清除缓存释放内存
@@ -241,8 +241,8 @@ func main() {
 		updateInterval := time.Duration(cfg.UpdateInterval) * time.Hour
 		scheduler := manager.NewScheduler(nodeManager, updateInterval)
 
-		logger.Info("程序启动成功，更新间隔: %v", updateInterval)
-		logger.Info("按 Ctrl+C 停止程序")
+		logger.Info("*****程序启动成功*****")
+		logger.Debug("按 Ctrl+C 停止程序")
 
 		// 启动调度器（这会阻塞直到程序结束）
 		if err := scheduler.Start(); err != nil {

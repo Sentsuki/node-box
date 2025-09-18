@@ -84,7 +84,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 		return nil
 	}
 
-	logger.Info("开始获取并缓存所有模块...")
+	logger.Debug("开始获取并缓存所有模块...")
 
 	// 清空缓存
 	mm.cache.modules = make(map[string]map[string]any)
@@ -224,7 +224,7 @@ func (mm *ModuleManager) FetchAllModules() error {
 		return nil // 不返回错误，允许继续处理
 	}
 
-	logger.Info("所有模块缓存成功，总计 %d 个模块", successCount)
+	logger.Debug("所有模块缓存成功，总计 %d 个模块", successCount)
 	return nil
 }
 

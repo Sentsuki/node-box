@@ -38,7 +38,7 @@ func (s *Scheduler) Start() error {
 	logger.Info("启动定时调度器，更新间隔: %v", s.interval)
 
 	// 立即执行一次更新
-	logger.Info("执行初始配置更新...")
+	logger.Debug("执行初始配置更新...")
 	if err := s.manager.UpdateAllConfigurations(); err != nil {
 		logger.Error("初始配置更新失败: %v", err)
 		// 不因为初始更新失败而停止调度器

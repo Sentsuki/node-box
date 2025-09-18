@@ -146,7 +146,7 @@ func (cu *ConfigUpdater) postProcessMergedConfig(config map[string]any) error {
 		return err
 	}
 
-	logger.Debug("模块配置后处理完成")
+	logger.Info("模块处理完成")
 	return nil
 }
 
