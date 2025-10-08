@@ -316,6 +316,14 @@ func (cu *ConfigUpdater) applyNoNeedFilter(config map[string]any, noNeedKeywords
 		return fmt.Errorf("过滤endpoints失败: %v", err)
 	}
 
+	// 检查 endpoints 是否为空，如果为空则移除该字段
+	if endpoints, exists := config["endpoints"]; exists {
+		if endpointsSlice, ok := endpoints.([]any); ok && len(endpointsSlice) == 0 {
+			delete(config, "endpoints")
+			logger.Debug("endpoints字段已为空，已移除该字段")
+		}
+	}
+
 	logger.Debug("no_need过滤完成")
 	return nil
 }
