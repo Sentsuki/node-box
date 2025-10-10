@@ -185,7 +185,7 @@ func (s *Scheduler) hasConfigChanged() bool {
 func (s *Scheduler) reloadConfigAndUpdate() error {
 	// 检查配置文件是否发生变化
 	if !s.hasConfigChanged() {
-		logger.Debug("配置文件未变化，直接执行更新...")
+		logger.Info("配置文件未变化，直接执行更新...")
 		// 配置未变化，直接使用现有的 NodeManager 执行更新
 		return s.manager.UpdateAllConfigurations()
 	}
