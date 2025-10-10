@@ -83,6 +83,26 @@ func (s *Scheduler) Stop() {
 	s.cancel()
 }
 
+// Cleanup performs complete cleanup of the scheduler and its resources.
+// This method should be called when the scheduler is no longer needed.
+func (s *Scheduler) Cleanup() {
+	logger.Debug("开始清理调度器资源...")
+
+	// 停止调度器
+	s.Stop()
+
+	// 清理节点管理器
+	if s.manager != nil {
+		s.manager.Cleanup()
+		s.manager = nil
+	}
+
+	// 清理其他引用
+	s.configPath = ""
+
+	logger.Debug("调度器资源清理完成")
+}
+
 // IsRunning checks whether the scheduler is currently running.
 // It returns true if the scheduler is active, false if it has been stopped.
 func (s *Scheduler) IsRunning() bool {
@@ -116,6 +136,12 @@ func (s *Scheduler) reloadConfigAndUpdate() error {
 		logger.Info("检测到更新间隔变化: %v -> %v", s.interval, newInterval)
 		s.interval = newInterval
 		logger.Info("更新间隔已更新，将在下次定时器重置时生效")
+	}
+
+	// 清理旧的节点管理器，避免内存泄漏
+	if s.manager != nil {
+		logger.Debug("清理旧的节点管理器...")
+		s.manager.Cleanup()
 	}
 
 	// 创建新的节点管理器

@@ -129,6 +129,31 @@ func (nm *NodeManager) ClearAllCaches() {
 	logger.Debug("所有缓存已清除")
 }
 
+// Cleanup performs complete cleanup of the NodeManager, releasing all resources.
+// This method should be called when the NodeManager is no longer needed to prevent memory leaks.
+func (nm *NodeManager) Cleanup() {
+	if nm == nil {
+		return
+	}
+
+	logger.Debug("开始清理 NodeManager 资源...")
+
+	// 清理所有缓存
+	nm.ClearAllCaches()
+
+	// 清理引用，帮助 GC
+	nm.config = nil
+	nm.fetcher = nil
+	nm.processors = nil
+	nm.scanners = nil
+	nm.filter = nil
+	nm.moduleManager = nil
+	nm.configUpdater = nil
+	nm.cache = nil
+
+	logger.Debug("NodeManager 资源清理完成")
+}
+
 // FetchAndCacheAllSubscriptions fetches all enabled subscriptions and caches the results.
 // This method should be called once per update cycle to populate the cache.
 // 缓存原始节点（未经全局过滤），过滤将在使用时进行
