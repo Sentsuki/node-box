@@ -2,7 +2,10 @@ package manager
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"node-box/internal/config"
@@ -13,11 +16,13 @@ import (
 // It manages the timing and execution of regular configuration update operations
 // with proper context handling for graceful shutdown.
 type Scheduler struct {
-	manager    *NodeManager
-	interval   time.Duration
-	ctx        context.Context
-	cancel     context.CancelFunc
-	configPath string // 配置文件路径，用于重新加载
+	manager        *NodeManager
+	interval       time.Duration
+	ctx            context.Context
+	cancel         context.CancelFunc
+	configPath     string    // 配置文件路径，用于重新加载
+	lastConfigHash string    // 上次配置文件的哈希值，用于检测变化
+	lastModTime    time.Time // 上次配置文件的修改时间
 }
 
 // NewScheduler creates a new scheduler instance with the specified manager and interval.
@@ -28,13 +33,18 @@ type Scheduler struct {
 func NewScheduler(manager *NodeManager, interval time.Duration, configPath string) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &Scheduler{
+	scheduler := &Scheduler{
 		manager:    manager,
 		interval:   interval,
 		ctx:        ctx,
 		cancel:     cancel,
 		configPath: configPath,
 	}
+
+	// 初始化配置文件状态
+	scheduler.updateConfigFileState()
+
+	return scheduler
 }
 
 // Start begins the periodic scheduling of configuration update tasks.
@@ -114,10 +124,73 @@ func (s *Scheduler) IsRunning() bool {
 	}
 }
 
-// reloadConfigAndUpdate reloads the configuration file and updates all configurations.
-// This ensures that each scheduled update uses the latest configuration.
+// updateConfigFileState 更新配置文件的状态信息（哈希值和修改时间）
+func (s *Scheduler) updateConfigFileState() {
+	hash, modTime, err := s.getConfigFileState()
+	if err != nil {
+		logger.Debug("获取配置文件状态失败: %v", err)
+		return
+	}
+	s.lastConfigHash = hash
+	s.lastModTime = modTime
+}
+
+// getConfigFileState 获取配置文件的哈希值和修改时间
+func (s *Scheduler) getConfigFileState() (string, time.Time, error) {
+	file, err := os.Open(s.configPath)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	defer file.Close()
+
+	// 获取文件信息
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	// 计算文件哈希值
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", time.Time{}, err
+	}
+
+	hashString := fmt.Sprintf("%x", hash.Sum(nil))
+	return hashString, fileInfo.ModTime(), nil
+}
+
+// hasConfigChanged 检查配置文件是否发生变化
+func (s *Scheduler) hasConfigChanged() bool {
+	currentHash, currentModTime, err := s.getConfigFileState()
+	if err != nil {
+		logger.Debug("检查配置文件变化时出错: %v", err)
+		return true // 出错时假设配置已变化，确保更新
+	}
+
+	// 比较哈希值和修改时间
+	changed := currentHash != s.lastConfigHash || !currentModTime.Equal(s.lastModTime)
+
+	if changed {
+		logger.Debug("检测到配置文件变化 (哈希: %s -> %s, 修改时间: %v -> %v)",
+			s.lastConfigHash[:8], currentHash[:8], s.lastModTime, currentModTime)
+	} else {
+		logger.Debug("配置文件未发生变化，使用现有配置")
+	}
+
+	return changed
+}
+
+// reloadConfigAndUpdate 检查配置文件变化，只有在变化时才重新加载配置。
+// 这样可以避免不必要的资源消耗。
 func (s *Scheduler) reloadConfigAndUpdate() error {
-	logger.Debug("重新加载配置文件: %s", s.configPath)
+	// 检查配置文件是否发生变化
+	if !s.hasConfigChanged() {
+		logger.Debug("配置文件未变化，直接执行更新...")
+		// 配置未变化，直接使用现有的 NodeManager 执行更新
+		return s.manager.UpdateAllConfigurations()
+	}
+
+	logger.Info("检测到配置文件变化，重新加载配置: %s", s.configPath)
 
 	// 重新加载配置
 	cfg, err := config.Load(s.configPath)
@@ -153,7 +226,10 @@ func (s *Scheduler) reloadConfigAndUpdate() error {
 	// 更新管理器引用
 	s.manager = newManager
 
-	logger.Debug("配置重新加载完成，开始执行更新...")
+	// 更新配置文件状态
+	s.updateConfigFileState()
+
+	logger.Info("配置重新加载完成，开始执行更新...")
 
 	// 执行配置更新
 	return s.manager.UpdateAllConfigurations()
