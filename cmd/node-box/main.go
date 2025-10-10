@@ -237,9 +237,9 @@ func main() {
 		logger.Info("完整更新流程完成，缓存已清除")
 
 	case "run":
-		// 创建并启动调度器
+		// 创建并启动调度器，传入配置文件路径以便重新加载
 		updateInterval := time.Duration(cfg.UpdateInterval) * time.Hour
-		scheduler := manager.NewScheduler(nodeManager, updateInterval)
+		scheduler := manager.NewScheduler(nodeManager, updateInterval, configPath)
 
 		logger.Info("*****程序启动成功*****")
 		logger.Debug("按 Ctrl+C 停止程序")
