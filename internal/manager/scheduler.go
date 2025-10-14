@@ -29,7 +29,7 @@ type Scheduler struct {
 // Parameters:
 //   - manager: NodeManager instance to execute update operations
 //   - interval: time duration between update operations
-//   - configPath: path to configuration file for reloading
+//   - configPath: path to configuration file for reloading (will be resolved with environment variables)
 func NewScheduler(manager *NodeManager, interval time.Duration, configPath string) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -137,7 +137,10 @@ func (s *Scheduler) updateConfigFileState() {
 
 // getConfigFileState 获取配置文件的哈希值和修改时间
 func (s *Scheduler) getConfigFileState() (string, time.Time, error) {
-	file, err := os.Open(s.configPath)
+	// 获取实际的配置文件路径（考虑环境变量）
+	actualConfigPath := config.GetConfigPath(s.configPath, "config.json")
+
+	file, err := os.Open(actualConfigPath)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -183,6 +186,9 @@ func (s *Scheduler) hasConfigChanged() bool {
 // reloadConfigAndUpdate 检查配置文件变化，只有在变化时才重新加载配置。
 // 这样可以避免不必要的资源消耗。
 func (s *Scheduler) reloadConfigAndUpdate() error {
+	// 获取当前实际的配置文件路径（考虑环境变量）
+	actualConfigPath := config.GetConfigPath(s.configPath, "config.json")
+
 	// 检查配置文件是否发生变化
 	if !s.hasConfigChanged() {
 		logger.Info("配置文件未变化，直接执行更新...")
@@ -190,10 +196,10 @@ func (s *Scheduler) reloadConfigAndUpdate() error {
 		return s.manager.UpdateAllConfigurations()
 	}
 
-	logger.Info("检测到配置文件变化，重新加载配置: %s", s.configPath)
+	logger.Info("检测到配置文件变化，重新加载配置: %s", actualConfigPath)
 
 	// 重新加载配置
-	cfg, err := config.Load(s.configPath)
+	cfg, err := config.Load(actualConfigPath)
 	if err != nil {
 		return fmt.Errorf("重新加载配置失败: %v", err)
 	}

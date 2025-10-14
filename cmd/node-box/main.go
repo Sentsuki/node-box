@@ -32,6 +32,14 @@ func printUsage() {
 参数:
   配置文件路径                配置文件的路径，默认为 %s
 
+环境变量:
+  %s                配置文件路径，优先级低于命令行参数
+
+配置文件路径优先级:
+  1. 命令行参数（最高优先级）
+  2. 环境变量 %s
+  3. 默认路径 %s（最低优先级）
+
 🆕 增强功能:
   - 支持文件级别的精确配置更新 (is_file: true)
   - 支持选择性订阅节点插入 (subscriptions: [...])
@@ -61,7 +69,7 @@ func printUsage() {
     }
   }
 
-`, appName, version, appName, appName, appName, appName, appName, appName, appName, defaultConfigPath, appName, appName, appName, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, defaultConfigPath, config.ConfigPathEnvVar, config.ConfigPathEnvVar, defaultConfigPath, appName, appName, appName, appName, appName, appName, appName)
 }
 
 // printVersion 显示版本信息
@@ -69,12 +77,10 @@ func printVersion() {
 	fmt.Printf("%s v%s\n", appName, version)
 }
 
-// parseArgs 解析命令行参数，返回命令类型和配置文件路径
-func parseArgs() (command string, configPath string) {
-	configPath = defaultConfigPath
-
+// parseArgs 解析命令行参数，返回命令类型和提供的配置文件路径
+func parseArgs() (command string, providedConfigPath string) {
 	if len(os.Args) < 2 {
-		return "run", configPath
+		return "run", ""
 	}
 
 	firstArg := os.Args[1]
@@ -92,33 +98,33 @@ func parseArgs() (command string, configPath string) {
 	// 处理init命令
 	if firstArg == "init" {
 		if len(os.Args) > 2 {
-			configPath = os.Args[2]
+			providedConfigPath = os.Args[2]
 		}
-		return "init", configPath
+		return "init", providedConfigPath
 	}
 
 	// 处理nodes命令
 	if firstArg == "nodes" {
 		if len(os.Args) > 2 {
-			configPath = os.Args[2]
+			providedConfigPath = os.Args[2]
 		}
-		return "nodes", configPath
+		return "nodes", providedConfigPath
 	}
 
 	// 处理modules命令
 	if firstArg == "modules" {
 		if len(os.Args) > 2 {
-			configPath = os.Args[2]
+			providedConfigPath = os.Args[2]
 		}
-		return "modules", configPath
+		return "modules", providedConfigPath
 	}
 
 	// 处理update命令
 	if firstArg == "update" {
 		if len(os.Args) > 2 {
-			configPath = os.Args[2]
+			providedConfigPath = os.Args[2]
 		}
-		return "update", configPath
+		return "update", providedConfigPath
 	}
 
 	// 其他情况视为配置文件路径
@@ -127,7 +133,7 @@ func parseArgs() (command string, configPath string) {
 
 func main() {
 	// 解析命令行参数
-	command, configPath := parseArgs()
+	command, providedConfigPath := parseArgs()
 
 	switch command {
 	case "help":
@@ -139,28 +145,41 @@ func main() {
 		return
 
 	case "init":
+		// 对于 init 命令，如果没有提供路径，使用默认路径
+		configPath := config.GetConfigPath(providedConfigPath, defaultConfigPath)
 		logger.Info("正在生成示例配置文件: %s", configPath)
 		if err := config.GenerateExample(configPath); err != nil {
 			logger.Fatal("生成示例配置失败: %v", err)
 		}
 		logger.Info("示例配置文件已生成，请编辑 %s 后重新运行程序", configPath)
 		return
+	}
 
+	// 获取最终的配置文件路径（优先级：命令行参数 > 环境变量 > 默认路径）
+	configPath := config.GetConfigPath(providedConfigPath, defaultConfigPath)
+
+	// 显示正在使用的配置文件路径和来源
+	var pathSource string
+	if providedConfigPath != "" && providedConfigPath != defaultConfigPath {
+		pathSource = "命令行参数"
+	} else if os.Getenv(config.ConfigPathEnvVar) != "" {
+		pathSource = fmt.Sprintf("环境变量 %s", config.ConfigPathEnvVar)
+	} else {
+		pathSource = "默认路径"
+	}
+
+	switch command {
 	case "run":
-		// 继续执行主程序逻辑
-		logger.Info("使用配置文件: %s", configPath)
+		logger.Info("使用配置文件: %s (%s)", configPath, pathSource)
 
 	case "nodes":
-		// 仅更新节点配置
-		logger.Info("仅更新节点配置，使用配置文件: %s", configPath)
+		logger.Info("仅更新节点配置，使用配置文件: %s (%s)", configPath, pathSource)
 
 	case "modules":
-		// 仅更新模块配置
-		logger.Info("仅更新模块配置，使用配置文件: %s", configPath)
+		logger.Info("仅更新模块配置，使用配置文件: %s (%s)", configPath, pathSource)
 
 	case "update":
-		// 立即执行一次完整更新
-		logger.Info("立即执行完整更新，使用配置文件: %s", configPath)
+		logger.Info("立即执行完整更新，使用配置文件: %s (%s)", configPath, pathSource)
 
 	default:
 		logger.Fatal("未知命令: %s", command)
