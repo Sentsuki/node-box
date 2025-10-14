@@ -128,6 +128,34 @@ var (
 	ErrInvalidUpdateInterval = errors.New("update interval must be greater than 0")
 )
 
+// Environment variable name for config file path
+const ConfigPathEnvVar = "NODE_BOX_CONFIG"
+
+// GetConfigPath returns the configuration file path.
+// It first checks if a path is explicitly provided, then checks the environment variable,
+// and finally falls back to the default path.
+func GetConfigPath(providedPath, defaultPath string) string {
+	// 如果明确提供了路径，使用提供的路径
+	if providedPath != "" && providedPath != defaultPath {
+		return providedPath
+	}
+
+	// 检查环境变量
+	if envPath := os.Getenv(ConfigPathEnvVar); envPath != "" {
+		return envPath
+	}
+
+	// 使用默认路径
+	return defaultPath
+}
+
+// LoadFromPath reads and parses a configuration file from the specified path.
+// It returns a Config struct populated with the configuration data,
+// or an error if the file cannot be read or parsed.
+func LoadFromPath(path string) (*Config, error) {
+	return Load(path)
+}
+
 // Load reads and parses a configuration file from the specified path.
 // It returns a Config struct populated with the configuration data,
 // or an error if the file cannot be read or parsed.
