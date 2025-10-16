@@ -271,19 +271,11 @@ func (s *Scheduler) reloadConfigAndUpdate() error {
 	}
 
 	// 检查调度配置是否发生变化
-	var newScheduleType string
+	newScheduleType := cfg.UpdateSchedule.Type
 	var newInterval time.Duration
 
-	if cfg.UpdateSchedule != nil {
-		// 使用新的调度配置
-		newScheduleType = cfg.UpdateSchedule.Type
-		if newScheduleType == "interval" {
-			newInterval = time.Duration(cfg.UpdateSchedule.Interval) * time.Hour
-		}
-	} else {
-		// 向后兼容：使用旧的配置方式
-		newScheduleType = "interval"
-		newInterval = time.Duration(cfg.UpdateInterval) * time.Hour
+	if newScheduleType == "interval" {
+		newInterval = time.Duration(cfg.UpdateSchedule.Interval) * time.Hour
 	}
 
 	if newScheduleType != s.scheduleType {

@@ -22,8 +22,7 @@ type Config struct {
 	Nodes          *NodesConfig    `json:"nodes"`
 	Modules        *ModulesConfig  `json:"modules,omitempty"`
 	Configs        []ConfigFile    `json:"configs,omitempty"`
-	UpdateInterval int             `json:"update_interval_hours,omitempty"` // 已弃用，保留用于向后兼容
-	UpdateSchedule *ScheduleConfig `json:"update_schedule,omitempty"`       // 调度配置
+	UpdateSchedule *ScheduleConfig `json:"update_schedule"` // 调度配置
 	Proxy          *ProxyConfig    `json:"proxy,omitempty"`
 	UserAgent      string          `json:"user_agent,omitempty"`
 	LogLevel       string          `json:"log_level,omitempty"` // 日志级别: silent, error, warn, info, debug
@@ -215,9 +214,9 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// 验证更新间隔配置（向后兼容性检查）
-	if c.UpdateSchedule == nil && c.UpdateInterval <= 0 {
-		return ErrInvalidUpdateInterval
+	// 验证调度配置
+	if c.UpdateSchedule == nil {
+		return fmt.Errorf("update_schedule configuration is required")
 	}
 
 	// Validate subscriptions
@@ -248,11 +247,9 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Validate schedule configuration if present
-	if c.UpdateSchedule != nil {
-		if err := c.validateScheduleConfig(c.UpdateSchedule); err != nil {
-			return err
-		}
+	// Validate schedule configuration
+	if err := c.validateScheduleConfig(c.UpdateSchedule); err != nil {
+		return err
 	}
 
 	return nil
