@@ -142,8 +142,11 @@ func GenerateExample(configPath string) error {
 				Modules: []string{"log2", "dns2", "endpoints1", "inbounds1", "outbounds1", "route1", "services1", "experimental1"},
 			},
 		},
-		UpdateInterval: 6,
-		LogLevel:       "info", // 日志级别: silent, error, warn, info, debug
+		UpdateSchedule: &ScheduleConfig{
+			Type:     "interval",
+			Interval: 6,
+		},
+		LogLevel: "info", // 日志级别: silent, error, warn, info, debug
 		Proxy: &ProxyConfig{
 			Type:     "http",
 			Host:     "127.0.0.1",
