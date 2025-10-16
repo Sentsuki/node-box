@@ -59,17 +59,9 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 		return fmt.Errorf("%w: %s", ErrConfigFileNotFound, filePath)
 	}
 
-	// Read the target configuration file
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, filePath, err)
-	}
-
-	// Parse the configuration file as JSON
-	var targetConfig map[string]any
-	if err := json.Unmarshal(data, &targetConfig); err != nil {
-		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, filePath, err)
-	}
+	// 创建一个空的目标配置，不读取现有文件内容
+	// 这样可以确保完全清空原有内容，只保留模块数据
+	var targetConfig map[string]any = make(map[string]any)
 
 	// Apply modules to the configuration
 	updatedConfig, err := cu.applyModules(targetConfig, configFile.Modules)
@@ -316,13 +308,8 @@ func (cu *ConfigUpdater) applyNoNeedFilter(config map[string]any, noNeedKeywords
 		return fmt.Errorf("过滤endpoints失败: %v", err)
 	}
 
-	// 检查 endpoints 是否为空，如果为空则移除该字段
-	if endpoints, exists := config["endpoints"]; exists {
-		if endpointsSlice, ok := endpoints.([]any); ok && len(endpointsSlice) == 0 {
-			delete(config, "endpoints")
-			logger.Debug("endpoints字段已为空，已移除该字段")
-		}
-	}
+	// 检查所有模块字段是否为空，如果为空则移除该字段
+	cu.removeEmptyModuleFields(config)
 
 	logger.Debug("no_need过滤完成")
 	return nil
@@ -381,6 +368,49 @@ func (cu *ConfigUpdater) filterNodesFromSection(config map[string]any, sectionNa
 	}
 
 	return nil
+}
+
+// removeEmptyModuleFields 检查并移除所有空的模块字段
+func (cu *ConfigUpdater) removeEmptyModuleFields(config map[string]any) {
+	// 定义所有需要检查的模块字段
+	moduleFields := []string{
+		"log", "dns", "ntp", "certificate", "endpoints",
+		"inbounds", "outbounds", "route", "services", "experimental",
+	}
+
+	removedFields := []string{}
+
+	for _, fieldName := range moduleFields {
+		if field, exists := config[fieldName]; exists {
+			shouldRemove := false
+
+			// 检查不同类型的空值
+			switch v := field.(type) {
+			case []any:
+				// 数组类型：检查是否为空数组
+				if len(v) == 0 {
+					shouldRemove = true
+				}
+			case map[string]any:
+				// 对象类型：检查是否为空对象
+				if len(v) == 0 {
+					shouldRemove = true
+				}
+			case nil:
+				// null 值
+				shouldRemove = true
+			}
+
+			if shouldRemove {
+				delete(config, fieldName)
+				removedFields = append(removedFields, fieldName)
+			}
+		}
+	}
+
+	if len(removedFields) > 0 {
+		logger.Debug("移除了空的模块字段: %v", removedFields)
+	}
 }
 
 // writeConfigFile writes the updated configuration to a file as JSON.

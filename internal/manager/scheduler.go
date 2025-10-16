@@ -18,6 +18,7 @@ import (
 type Scheduler struct {
 	manager        *NodeManager
 	interval       time.Duration
+	scheduleType   string // 调度类型: "interval" 或 "hourly"
 	ctx            context.Context
 	cancel         context.CancelFunc
 	configPath     string    // 配置文件路径，用于重新加载
@@ -25,20 +26,27 @@ type Scheduler struct {
 	lastModTime    time.Time // 上次配置文件的修改时间
 }
 
-// NewScheduler creates a new scheduler instance with the specified manager and interval.
+// NewScheduler creates a new scheduler instance with the specified manager and configuration.
 // Parameters:
 //   - manager: NodeManager instance to execute update operations
-//   - interval: time duration between update operations
+//   - interval: time duration between update operations (used when scheduleType is "interval")
+//   - scheduleType: scheduling type ("interval" or "hourly")
 //   - configPath: path to configuration file for reloading (will be resolved with environment variables)
-func NewScheduler(manager *NodeManager, interval time.Duration, configPath string) *Scheduler {
+func NewScheduler(manager *NodeManager, interval time.Duration, scheduleType string, configPath string) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// 如果没有指定调度类型，默认使用间隔模式
+	if scheduleType == "" {
+		scheduleType = "interval"
+	}
+
 	scheduler := &Scheduler{
-		manager:    manager,
-		interval:   interval,
-		ctx:        ctx,
-		cancel:     cancel,
-		configPath: configPath,
+		manager:      manager,
+		interval:     interval,
+		scheduleType: scheduleType,
+		ctx:          ctx,
+		cancel:       cancel,
+		configPath:   configPath,
 	}
 
 	// 初始化配置文件状态
@@ -49,10 +57,19 @@ func NewScheduler(manager *NodeManager, interval time.Duration, configPath strin
 
 // Start begins the periodic scheduling of configuration update tasks.
 // It performs an initial update immediately, then continues with regular
-// updates at the specified interval until Stop is called or context is cancelled.
+// updates based on the configured schedule type until Stop is called or context is cancelled.
 func (s *Scheduler) Start() error {
-	logger.Info("启动定时调度器，更新间隔: %v", s.interval)
+	if s.scheduleType == "hourly" {
+		logger.Info("启动定时调度器，调度模式: 每整点更新")
+		return s.startHourlySchedule()
+	} else {
+		logger.Info("启动定时调度器，调度模式: 间隔更新，更新间隔: %v", s.interval)
+		return s.startIntervalSchedule()
+	}
+}
 
+// startIntervalSchedule starts interval-based scheduling
+func (s *Scheduler) startIntervalSchedule() error {
 	// 立即执行一次更新
 	logger.Debug("执行初始配置更新...")
 	if err := s.manager.UpdateAllConfigurations(); err != nil {
@@ -83,6 +100,50 @@ func (s *Scheduler) Start() error {
 				logger.Info("定时配置更新完成")
 			}
 		}
+	}
+}
+
+// startHourlySchedule starts hourly scheduling (updates at the top of each hour)
+func (s *Scheduler) startHourlySchedule() error {
+	// 立即执行一次更新
+	logger.Debug("执行初始配置更新...")
+	if err := s.manager.UpdateAllConfigurations(); err != nil {
+		logger.Error("初始配置更新失败: %v", err)
+		// 不因为初始更新失败而停止调度器
+	}
+
+	logger.Info("定时调度器已启动，将在每个整点执行更新...")
+
+	for {
+		// 计算到下一个整点的时间
+		now := time.Now()
+		nextHour := now.Truncate(time.Hour).Add(time.Hour)
+		waitDuration := nextHour.Sub(now)
+
+		logger.Info("下次更新时间: %s (等待 %v)", nextHour.Format("2006-01-02 15:04:05"), waitDuration)
+
+		// 创建一个定时器，等待到下一个整点
+		timer := time.NewTimer(waitDuration)
+
+		select {
+		case <-s.ctx.Done():
+			timer.Stop()
+			logger.Info("定时调度器已停止")
+			return s.ctx.Err()
+
+		case <-timer.C:
+			logger.Info("*****开始整点配置更新*****")
+
+			// 重新加载配置文件
+			if err := s.reloadConfigAndUpdate(); err != nil {
+				logger.Error("整点配置更新失败: %v", err)
+				// 继续运行，不因为单次更新失败而停止调度器
+			} else {
+				logger.Info("整点配置更新完成")
+			}
+		}
+
+		timer.Stop()
 	}
 }
 
@@ -209,8 +270,20 @@ func (s *Scheduler) reloadConfigAndUpdate() error {
 		return fmt.Errorf("配置验证失败: %v", err)
 	}
 
-	// 检查更新间隔是否发生变化
+	// 检查调度配置是否发生变化
+	newScheduleType := "interval" // 默认值
+	if cfg.UpdateSchedule != nil {
+		newScheduleType = cfg.UpdateSchedule.Type
+	}
+
 	newInterval := time.Duration(cfg.UpdateInterval) * time.Hour
+
+	if newScheduleType != s.scheduleType {
+		logger.Info("检测到调度类型变化: %s -> %s", s.scheduleType, newScheduleType)
+		s.scheduleType = newScheduleType
+		logger.Info("调度类型已更新，将在下次调度器重启时生效")
+	}
+
 	if newInterval != s.interval {
 		logger.Info("检测到更新间隔变化: %v -> %v", s.interval, newInterval)
 		s.interval = newInterval

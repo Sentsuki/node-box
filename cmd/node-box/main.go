@@ -258,7 +258,14 @@ func main() {
 	case "run":
 		// 创建并启动调度器，传入配置文件路径以便重新加载
 		updateInterval := time.Duration(cfg.UpdateInterval) * time.Hour
-		scheduler := manager.NewScheduler(nodeManager, updateInterval, configPath)
+
+		// 确定调度类型
+		scheduleType := "interval" // 默认值
+		if cfg.UpdateSchedule != nil {
+			scheduleType = cfg.UpdateSchedule.Type
+		}
+
+		scheduler := manager.NewScheduler(nodeManager, updateInterval, scheduleType, configPath)
 
 		logger.Info("*****程序启动成功*****")
 		logger.Debug("按 Ctrl+C 停止程序")
