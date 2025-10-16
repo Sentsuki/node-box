@@ -22,8 +22,7 @@ type Config struct {
 	Nodes          *NodesConfig    `json:"nodes"`
 	Modules        *ModulesConfig  `json:"modules,omitempty"`
 	Configs        []ConfigFile    `json:"configs,omitempty"`
-	UpdateInterval int             `json:"update_interval_hours"`
-	UpdateSchedule *ScheduleConfig `json:"update_schedule,omitempty"` // 新增：调度配置
+	UpdateSchedule *ScheduleConfig `json:"update_schedule"` // 调度配置
 	Proxy          *ProxyConfig    `json:"proxy,omitempty"`
 	UserAgent      string          `json:"user_agent,omitempty"`
 	LogLevel       string          `json:"log_level,omitempty"` // 日志级别: silent, error, warn, info, debug
@@ -114,9 +113,10 @@ type ConfigFile struct {
 // ScheduleConfig represents update schedule configuration.
 // It allows users to choose between interval-based updates and hourly updates.
 type ScheduleConfig struct {
-	Type string `json:"type"` // "interval" or "hourly"
+	Type     string `json:"type"`               // "interval" or "hourly"
+	Interval int    `json:"interval,omitempty"` // 更新间隔（小时），仅在 type 为 "interval" 时使用
 	// 当 Type 为 "hourly" 时，程序会在每个整点执行更新
-	// 当 Type 为 "interval" 时，使用 update_interval_hours 的值
+	// 当 Type 为 "interval" 时，使用 Interval 字段指定的小时数
 }
 
 // ProxyConfig represents proxy server configuration.
@@ -214,8 +214,9 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.UpdateInterval <= 0 {
-		return ErrInvalidUpdateInterval
+	// 验证调度配置
+	if c.UpdateSchedule == nil {
+		return fmt.Errorf("update_schedule configuration is required")
 	}
 
 	// Validate subscriptions
@@ -246,11 +247,9 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Validate schedule configuration if present
-	if c.UpdateSchedule != nil {
-		if err := c.validateScheduleConfig(c.UpdateSchedule); err != nil {
-			return err
-		}
+	// Validate schedule configuration
+	if err := c.validateScheduleConfig(c.UpdateSchedule); err != nil {
+		return err
 	}
 
 	return nil
@@ -507,6 +506,16 @@ func (c *Config) validateScheduleConfig(schedule *ScheduleConfig) error {
 	scheduleType := strings.ToLower(schedule.Type)
 	if !slices.Contains(validTypes, scheduleType) {
 		return fmt.Errorf("invalid schedule type '%s', must be one of: %v", schedule.Type, validTypes)
+	}
+
+	// 如果是间隔模式，必须指定间隔时间
+	if scheduleType == "interval" && schedule.Interval <= 0 {
+		return fmt.Errorf("interval must be greater than 0 when schedule type is 'interval'")
+	}
+
+	// 如果是整点模式，间隔时间应该为空或被忽略
+	if scheduleType == "hourly" && schedule.Interval > 0 {
+		logger.Info("Warning: interval field is ignored when schedule type is 'hourly'")
 	}
 
 	return nil
