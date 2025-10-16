@@ -19,13 +19,14 @@ import (
 // It contains all settings needed for the node-box application to operate,
 // including subscription sources, directory paths, and update intervals.
 type Config struct {
-	Nodes          *NodesConfig   `json:"nodes"`
-	Modules        *ModulesConfig `json:"modules,omitempty"`
-	Configs        []ConfigFile   `json:"configs,omitempty"`
-	UpdateInterval int            `json:"update_interval_hours"`
-	Proxy          *ProxyConfig   `json:"proxy,omitempty"`
-	UserAgent      string         `json:"user_agent,omitempty"`
-	LogLevel       string         `json:"log_level,omitempty"` // 日志级别: silent, error, warn, info, debug
+	Nodes          *NodesConfig    `json:"nodes"`
+	Modules        *ModulesConfig  `json:"modules,omitempty"`
+	Configs        []ConfigFile    `json:"configs,omitempty"`
+	UpdateInterval int             `json:"update_interval_hours"`
+	UpdateSchedule *ScheduleConfig `json:"update_schedule,omitempty"` // 新增：调度配置
+	Proxy          *ProxyConfig    `json:"proxy,omitempty"`
+	UserAgent      string          `json:"user_agent,omitempty"`
+	LogLevel       string          `json:"log_level,omitempty"` // 日志级别: silent, error, warn, info, debug
 }
 
 // NodesConfig represents the nodes configuration section.
@@ -108,6 +109,14 @@ type ConfigFile struct {
 	Path    string   `json:"path"`              // target configuration file path
 	Modules []string `json:"modules"`           // list of module names to apply
 	NoNeed  []string `json:"no_need,omitempty"` // keywords to remove from outbounds and endpoints after processing
+}
+
+// ScheduleConfig represents update schedule configuration.
+// It allows users to choose between interval-based updates and hourly updates.
+type ScheduleConfig struct {
+	Type string `json:"type"` // "interval" or "hourly"
+	// 当 Type 为 "hourly" 时，程序会在每个整点执行更新
+	// 当 Type 为 "interval" 时，使用 update_interval_hours 的值
 }
 
 // ProxyConfig represents proxy server configuration.
@@ -233,6 +242,13 @@ func (c *Config) Validate() error {
 	// Validate proxy configuration if present
 	if c.Proxy != nil {
 		if err := c.validateProxyConfig(c.Proxy); err != nil {
+			return err
+		}
+	}
+
+	// Validate schedule configuration if present
+	if c.UpdateSchedule != nil {
+		if err := c.validateScheduleConfig(c.UpdateSchedule); err != nil {
 			return err
 		}
 	}
@@ -480,6 +496,17 @@ func (c *Config) validateProxyConfig(proxy *ProxyConfig) error {
 	// If username is provided, password should also be provided
 	if proxy.Username != "" && proxy.Password == "" {
 		log.Printf("Warning: proxy username provided but password is empty")
+	}
+
+	return nil
+}
+
+// validateScheduleConfig validates schedule configuration
+func (c *Config) validateScheduleConfig(schedule *ScheduleConfig) error {
+	validTypes := []string{"interval", "hourly"}
+	scheduleType := strings.ToLower(schedule.Type)
+	if !slices.Contains(validTypes, scheduleType) {
+		return fmt.Errorf("invalid schedule type '%s', must be one of: %v", schedule.Type, validTypes)
 	}
 
 	return nil

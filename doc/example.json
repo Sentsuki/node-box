@@ -218,6 +218,9 @@
     }
   ],
   "update_interval_hours": 24,
+  "update_schedule": {
+    "type": "hourly"
+  },
   "log_level": "info",
   "proxy": {
     "type": "http",
