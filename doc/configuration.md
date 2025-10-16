@@ -34,9 +34,9 @@
     ],
     "exclude_keywords": ["故障转移", "流量"]
   },
-  "update_interval_hours": 6,
   "update_schedule": {
-    "type": "hourly"
+    "type": "interval",
+    "interval": 6
   },
   "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "proxy": {
@@ -112,23 +112,23 @@
 
 程序支持两种更新调度模式：
 
-#### 1. 间隔模式（默认）
+#### 1. 间隔模式
 ```json
 {
-  "update_interval_hours": 6,
   "update_schedule": {
-    "type": "interval"
+    "type": "interval",
+    "interval": 6
   }
 }
 ```
 - 按照指定的小时间隔进行更新
 - 程序启动后立即执行一次更新，然后按间隔定时更新
+- `interval` 字段指定更新间隔（小时）
 - 适合需要精确控制更新频率的场景
 
-#### 2. 整点模式（新增）
+#### 2. 整点模式
 ```json
 {
-  "update_interval_hours": 6,
   "update_schedule": {
     "type": "hourly"
   }
@@ -136,23 +136,26 @@
 ```
 - 在每个整点（如 1:00、2:00、3:00...）执行更新
 - 程序启动后立即执行一次更新，然后在每个整点更新
+- 不需要指定 `interval` 字段
 - 适合希望在固定时间点更新的场景
-- 注意：`update_interval_hours` 在此模式下不影响更新频率
 
-#### 3. 兼容模式
-如果不配置 `update_schedule` 字段，程序将使用默认的间隔模式：
+#### 3. 向后兼容模式
+如果不配置 `update_schedule` 字段，程序将使用旧的配置方式：
 ```json
 {
   "update_interval_hours": 6
 }
 ```
+- 等同于间隔模式，按指定小时间隔更新
+- 为了保持向后兼容性而保留，建议使用新的 `update_schedule` 配置
 
 ### 调度模式对比
 
-| 模式 | 更新时机 | 适用场景 | 配置示例 |
+| 模式 | 更新时机 | 配置方式 | 适用场景 |
 |------|----------|----------|----------|
-| 间隔模式 | 按固定间隔更新 | 需要精确控制更新频率 | 每6小时更新一次 |
-| 整点模式 | 每个整点更新 | 希望在固定时间点更新 | 每小时的0分更新 |
+| 间隔模式 | 按固定间隔更新 | `{"type": "interval", "interval": 6}` | 需要精确控制更新频率 |
+| 整点模式 | 每个整点更新 | `{"type": "hourly"}` | 希望在固定时间点更新 |
+| 兼容模式 | 按固定间隔更新 | `"update_interval_hours": 6` | 旧版本配置兼容 |
 
 ## 代理配置说明
 

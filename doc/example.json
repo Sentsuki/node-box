@@ -217,9 +217,9 @@
       ]
     }
   ],
-  "update_interval_hours": 24,
   "update_schedule": {
-    "type": "hourly"
+    "type": "interval",
+    "interval": 24
   },
   "log_level": "info",
   "proxy": {

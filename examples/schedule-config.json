@@ -1,0 +1,26 @@
+{
+  "nodes": {
+    "subscriptions": [
+      {
+        "name": "示例订阅",
+        "url": "https://example.com/subscription",
+        "type": "clash",
+        "enable": true
+      }
+    ],
+    "targets": [
+      {
+        "path": "./configs",
+        "proxies": [
+          {
+            "insert_marker": "🚀 节点选择"
+          }
+        ]
+      }
+    ]
+  },
+  "update_schedule": {
+    "type": "hourly"
+  },
+  "log_level": "info"
+}

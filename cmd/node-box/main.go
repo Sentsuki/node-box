@@ -257,12 +257,19 @@ func main() {
 
 	case "run":
 		// 创建并启动调度器，传入配置文件路径以便重新加载
-		updateInterval := time.Duration(cfg.UpdateInterval) * time.Hour
+		var updateInterval time.Duration
+		var scheduleType string
 
-		// 确定调度类型
-		scheduleType := "interval" // 默认值
 		if cfg.UpdateSchedule != nil {
+			// 使用新的调度配置
 			scheduleType = cfg.UpdateSchedule.Type
+			if scheduleType == "interval" {
+				updateInterval = time.Duration(cfg.UpdateSchedule.Interval) * time.Hour
+			}
+		} else {
+			// 向后兼容：使用旧的配置方式
+			scheduleType = "interval"
+			updateInterval = time.Duration(cfg.UpdateInterval) * time.Hour
 		}
 
 		scheduler := manager.NewScheduler(nodeManager, updateInterval, scheduleType, configPath)
