@@ -59,17 +59,9 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 		return fmt.Errorf("%w: %s", ErrConfigFileNotFound, filePath)
 	}
 
-	// Read the target configuration file
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("%w %s: %v", ErrConfigFileRead, filePath, err)
-	}
-
-	// Parse the configuration file as JSON
-	var targetConfig map[string]any
-	if err := json.Unmarshal(data, &targetConfig); err != nil {
-		return fmt.Errorf("%w %s: %v", ErrConfigFileParse, filePath, err)
-	}
+	// 创建一个空的目标配置，不读取现有文件内容
+	// 这样可以确保完全清空原有内容，只保留模块数据
+	var targetConfig map[string]any = make(map[string]any)
 
 	// Apply modules to the configuration
 	updatedConfig, err := cu.applyModules(targetConfig, configFile.Modules)
