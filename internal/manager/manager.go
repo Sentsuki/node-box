@@ -219,6 +219,11 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 			continue
 		}
 
+		// 如果配置了移除emoji，则执行移除操作
+		if sub.RemoveEmoji {
+			nodes = subscription.RemoveEmoji(nodes)
+		}
+
 		// 添加订阅前缀（缓存原始节点，不进行全局过滤）
 		prefixedNodes := subscription.AddSubscriptionPrefix(nodes, sub.Name)
 
@@ -758,6 +763,11 @@ func (nm *NodeManager) fetchRelaySubscriptionNodes(subName string) ([]subscripti
 	nodes, err := processor.Process(data)
 	if err != nil {
 		return nil, fmt.Errorf("处理订阅失败 %s: %v", subConfig.Name, err)
+	}
+
+	// 如果配置了移除emoji，则执行移除操作
+	if subConfig.RemoveEmoji {
+		nodes = subscription.RemoveEmoji(nodes)
 	}
 
 	// 添加订阅前缀

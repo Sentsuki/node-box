@@ -17,6 +17,7 @@
         "url": "订阅链接",
         "type": "clash",
         "enable": true,
+        "remove_emoji": true,
         "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
       }
     ],
@@ -224,4 +225,19 @@
 Android Chrome：
 ```json
 "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+```
+
+## 节点名称处理说明
+
+### Emoji 移除配置
+- 每个订阅可以单独配置 `remove_emoji` 字段
+- 设置为 `true` 时，程序会自动移除该订阅下所有节点名称中的 Emoji 表情
+- 默认为 `false`（不移除）
+
+```json
+{
+  "name": "订阅名称",
+  "url": "订阅链接",
+  "remove_emoji": true
+}
 ```

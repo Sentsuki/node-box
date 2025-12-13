@@ -53,6 +53,7 @@ type Subscription struct {
 	Path      string `json:"path,omitempty"` // 本地文件路径，与URL二选一
 	Type      string `json:"type"`           // "clash" or "singbox"
 	Enable    bool   `json:"enable"`
+	RemoveEmoji bool   `json:"remove_emoji,omitempty"` // 是否移除节点名称中的emoji
 	UserAgent string `json:"user_agent,omitempty"` // 自定义User-Agent，可选
 }
 
