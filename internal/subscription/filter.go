@@ -3,11 +3,9 @@ package subscription
 import (
 	"fmt"
 	"node-box/internal/logger"
-	"regexp"
 	"strings"
+	"unicode"
 )
-
-var emojiRegex = regexp.MustCompile(`\p{Emoji}`)
 
 // Filter provides node filtering functionality based on exclude keywords.
 // It can filter out nodes whose tags contain specified keywords.
@@ -70,8 +68,13 @@ func AddSubscriptionPrefix(nodes []Node, subName string) []Node {
 func RemoveEmoji(nodes []Node) []Node {
 	for _, node := range nodes {
 		if tag, ok := node["tag"].(string); ok {
-			// Replace emojis with empty string
-			newTag := emojiRegex.ReplaceAllString(tag, "")
+			// Replace emojis (Symbol, Other) with empty string using unicode package
+			newTag := strings.Map(func(r rune) rune {
+				if unicode.Is(unicode.So, r) {
+					return -1
+				}
+				return r
+			}, tag)
 			// Trim extra spaces that might have been left behind
 			node["tag"] = strings.TrimSpace(newTag)
 		}
