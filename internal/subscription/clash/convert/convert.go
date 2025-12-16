@@ -36,6 +36,7 @@ func Clash2sing(c clash.Clash, ver model.SingBoxVer) ([]singbox.SingBoxOut, erro
 	sl := make([]singbox.SingBoxOut, 0, len(c.Proxies)+1)
 	var jerr error
 	for _, v := range c.Proxies {
+		v := v
 		s, t, err := comm(&v)
 		if err != nil {
 			jerr = errors.Join(jerr, err)

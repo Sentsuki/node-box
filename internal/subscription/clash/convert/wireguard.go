@@ -7,6 +7,8 @@ import (
 	"node-box/internal/subscription/clash/model"
 	"node-box/internal/subscription/clash/model/clash"
 	"node-box/internal/subscription/clash/model/singbox"
+
+	"golang.org/x/exp/constraints"
 )
 
 func wireguard(p *clash.Proxies, s *singbox.SingBoxOut, _ model.SingBoxVer) (o []singbox.SingBoxOut, err error) {
@@ -43,7 +45,7 @@ func wireguard(p *clash.Proxies, s *singbox.SingBoxOut, _ model.SingBoxVer) (o [
 	return []singbox.SingBoxOut{*s}, nil
 }
 
-func slicesConvert[T ~uint8 | ~int64, E ~uint8 | ~int64](t []T) []E {
+func slicesConvert[T constraints.Integer | constraints.Float, E constraints.Integer | constraints.Float](t []T) []E {
 	e := make([]E, 0, len(t))
 	for _, v := range t {
 		e = append(e, E(v))

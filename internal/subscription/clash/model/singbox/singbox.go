@@ -19,7 +19,7 @@ type SingBoxOut struct {
 	Transport                *SingTransport            `json:"transport,omitempty"`
 	Type                     string                    `json:"type,omitempty"`
 	Method                   string                    `json:"method,omitempty"`
-	AlterID                  int                       `json:"alter_id"`
+	AlterID                  int                       `json:"alter_id,omitempty"`
 	Security                 string                    `json:"security,omitempty"`
 	UUID                     string                    `json:"uuid,omitempty"`
 	Default                  string                    `json:"default,omitempty"`
@@ -73,6 +73,7 @@ type SingBoxOut struct {
 
 type SingUdpOverTcp struct {
 	Enabled bool `json:"enabled,omitempty"`
+	Version int  `json:"version,omitempty"`
 }
 
 type SingTLS struct {
