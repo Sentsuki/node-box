@@ -1,0 +1,214 @@
+{
+  "nodes": {
+    "subscriptions": [
+      {
+        "name": "clash_subscription_1",
+        "url": "https://example.com/clash/subscription1",
+        "type": "clash",
+        "enable": true,
+        "remove_emoji": true,
+        "user_agent": "Custom-User-Agent/1.0"
+      },
+      {
+        "name": "singbox_subscription_1",
+        "url": "https://example.com/singbox/subscription1",
+        "type": "singbox",
+        "enable": true
+      },
+      {
+        "name": "local_clash_config",
+        "path": "/path/to/local/clash/config.yaml",
+        "type": "clash",
+        "enable": true
+      },
+      {
+        "name": "relay_subscription",
+        "url": "https://example.com/relay/subscription",
+        "type": "relay",
+        "enable": false
+      }
+    ],
+    "exclude_keywords": [
+      "过期",
+      "失效",
+      "测试"
+    ],
+    "relay_nodes": [
+      {
+        "tag": "relay-premium",
+        "upstream": [
+          "premium",
+          "vip",
+          "高级"
+        ]
+      },
+      {
+        "tag": "relay-backup",
+        "upstream": [
+          "backup",
+          "备用"
+        ]
+      }
+    ]
+  },
+  "modules": {
+    "log": [
+      {
+        "name": "default_log",
+        "path": "/path/to/local/log.json"
+      },
+      {
+        "name": "remote_log",
+        "from_url": "https://example.com/modules/log.json"
+      }
+    ],
+    "dns": [
+      {
+        "name": "cloudflare_dns",
+        "from_url": "https://example.com/modules/dns/cloudflare.json"
+      },
+      {
+        "name": "local_dns",
+        "path": "/path/to/local/dns.json"
+      }
+    ],
+    "ntp": [
+      {
+        "name": "system_ntp",
+        "path": "/path/to/ntp.json"
+      }
+    ],
+    "certificate": [
+      {
+        "name": "ca_bundle",
+        "from_url": "https://example.com/modules/ca-bundle.json"
+      }
+    ],
+    "endpoints": [
+      {
+        "name": "api_endpoints",
+        "path": "/path/to/endpoints.json"
+      }
+    ],
+    "inbounds": [
+      {
+        "name": "http_inbound",
+        "from_url": "https://example.com/modules/inbounds/http.json"
+      },
+      {
+        "name": "socks_inbound",
+        "path": "/path/to/socks_inbound.json"
+      }
+    ],
+    "outbounds": [
+      {
+        "name": "main_outbound",
+        "path": "/path/to/direct.json",
+        "subscriptions": [
+          "clash_subscription_1",
+          "singbox_subscription_1"
+        ],
+        "selectors": [
+          {
+            "insert_marker": "# PROXY_NODES",
+            "include_nodes": [
+              "香港",
+              "新加坡",
+              "美国"
+            ],
+            "exclude_nodes": [
+              "过期",
+              "测试"
+            ],
+            "include_relay_nodes": [
+              "relay-hk-01",
+              "relay-sg-01"
+            ]
+          },
+          {
+            "insert_marker": "# STREAMING_NODES",
+            "include_nodes": [
+              "Netflix",
+              "Disney",
+              "流媒体"
+            ],
+            "exclude_nodes": [
+              "限速"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "block_outbound",
+        "from_url": "https://example.com/modules/outbounds/block.json"
+      }
+    ],
+    "route": [
+      {
+        "name": "china_route",
+        "from_url": "https://example.com/modules/routes/china.json"
+      },
+      {
+        "name": "custom_route",
+        "path": "/path/to/custom_route.json"
+      }
+    ],
+    "services": [
+      {
+        "name": "clash_api",
+        "path": "/path/to/clash_api.json"
+      }
+    ],
+    "experimental": [
+      {
+        "name": "new_feature",
+        "from_url": "https://example.com/modules/experimental/feature.json"
+      }
+    ]
+  },
+  "configs": [
+    {
+      "name": "main_config",
+      "path": "/path/to/main/config.json",
+      "modules": [
+        "default_log",
+        "cloudflare_dns",
+        "direct_outbound",
+        "china_route"
+      ],
+      "no_need_nodes": [
+        "测试",
+        "过期",
+        "失效"
+      ]
+    },
+    {
+      "name": "streaming_config",
+      "path": "/path/to/streaming/config.json",
+      "modules": [
+        "remote_log",
+        "local_dns",
+        "http_inbound",
+        "custom_route"
+      ],
+      "no_need_nodes": [
+        "广告",
+        "限速",
+        "临时"
+      ]
+    }
+  ],
+  "update_schedule": {
+    "type": "interval",
+    "interval": 24
+  },
+  "log_level": "info",
+  "proxy": {
+    "type": "http",
+    "host": "proxy.example.com",
+    "port": 8080,
+    "username": "proxy_user",
+    "password": "proxy_password"
+  },
+  "user_agent": "NodeBox/1.0 (Custom User Agent)"
+}

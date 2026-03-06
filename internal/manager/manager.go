@@ -41,7 +41,6 @@ type NodeManager struct {
 	config        *config.Config
 	fetcher       *client.Fetcher
 	processors    map[string]subscription.Processor
-	scanners      map[string]*fileops.Scanner
 	filter        *subscription.Filter
 	moduleManager *modules.ModuleManager
 	configUpdater *modules.ConfigUpdater
@@ -67,13 +66,6 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	processors["singbox"] = subscription.NewSingBoxProcessor()
 	processors["relay"] = subscription.NewSingBoxProcessor()
 
-	// 为每个配置路径创建扫描器
-	scanners := make(map[string]*fileops.Scanner)
-
-	for _, target := range cfg.Nodes.Targets {
-		scanners[target.Path] = fileops.NewScanner(target.Path, target.IsFile)
-	}
-
 	// 创建节点过滤器
 	filter := subscription.NewFilter(cfg.Nodes.ExcludeKeywords)
 
@@ -87,7 +79,6 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 		config:        cfg,
 		fetcher:       fetcher,
 		processors:    processors,
-		scanners:      scanners,
 		filter:        filter,
 		moduleManager: moduleManager,
 		configUpdater: configUpdater,
@@ -145,7 +136,6 @@ func (nm *NodeManager) Cleanup() {
 	nm.config = nil
 	nm.fetcher = nil
 	nm.processors = nil
-	nm.scanners = nil
 	nm.filter = nil
 	nm.moduleManager = nil
 	nm.configUpdater = nil
@@ -323,13 +313,12 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 // 不在此处对真实节点集合进行过滤。
 
 // UpdateAllConfigs updates all configuration files with new proxy nodes.
-// It coordinates the complete workflow of file scanning, node fetching,
-// and configuration updating with comprehensive error handling and caching.
-// 执行顺序：1.获取所有节点 2.根据全局exclude_keywords排除节点 3.将真实节点插入path指定的配置中 4.根据proxies里指定的规则更新selector
+// It coordinates the complete workflow of node fetching and configuration updating.
+// 执行顺序：1.获取所有节点 2.根据全局exclude_keywords排除节点 3.将真实节点插入配置中 4.根据selectors里指定的规则更新selector
 func (nm *NodeManager) UpdateAllConfigs() error {
 	logger.Debug("开始更新配置文件")
 
-	// 1. 获取所有节点
+	// 1. 获取所有节点（如果缓存无效）
 	if !nm.cache.valid {
 		if err := nm.FetchAndCacheAllSubscriptions(); err != nil {
 			logger.Warn("获取订阅数据时出现问题: %v，但继续处理", err)
@@ -340,42 +329,50 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 	totalSuccessCount := 0
 	totalFileCount := 0
 
-	for _, target := range nm.config.Nodes.Targets {
-		logger.Debug("处理路径: %s", target.Path)
-
-		// 扫描配置文件
-		scanner := nm.scanners[target.Path]
-		configFiles, err := scanner.ScanConfigFiles()
-		if err != nil {
-			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err)
-			logger.Error("%s", errorMsg)
-			updateErrors = append(updateErrors, errorMsg)
-			continue
+	// 准备 outbounds 模块映射，以便快速查找
+	outboundsMap := make(map[string]config.Module)
+	if nm.config.Modules != nil {
+		for _, mod := range nm.config.Modules.Outbounds {
+			outboundsMap[mod.Name] = mod
 		}
+	}
 
-		if len(configFiles) == 0 {
-			logger.Debug("路径 %s 下未找到配置文件", target.Path)
-			continue
-		}
+	for _, configFile := range nm.config.Configs {
+		logger.Debug("处理配置文件: %s", configFile.Path)
 
-		totalFileCount += len(configFiles)
-
-		// 准备订阅名称列表
+		// 收集该配置文件使用到的 subscriptions 和 selectors
 		var subscriptionNames []string
-		if len(target.Subscriptions) > 0 {
-			subscriptionNames = target.Subscriptions
-		} else {
-			for _, sub := range nm.config.Nodes.Subscriptions {
-				if sub.Enable {
-					subscriptionNames = append(subscriptionNames, sub.Name)
-				}
+		var selectors []config.Selector
+
+		for _, modName := range configFile.Modules {
+			if mod, exists := outboundsMap[modName]; exists {
+				subscriptionNames = append(subscriptionNames, mod.Subscriptions...)
+				selectors = append(selectors, mod.Selectors...)
+			}
+		}
+
+		// 如果该配置文件没有任何 selector 和 subscription，跳过节点注入
+		if len(selectors) == 0 && len(subscriptionNames) == 0 {
+			logger.Debug("配置文件 %s 没有配置 proxy 规则，跳过", configFile.Path)
+			continue
+		}
+
+		totalFileCount++
+
+		// 去重订阅名称
+		uniqueSubsMap := make(map[string]bool)
+		var uniqueSubs []string
+		for _, sub := range subscriptionNames {
+			if !uniqueSubsMap[sub] {
+				uniqueSubsMap[sub] = true
+				uniqueSubs = append(uniqueSubs, sub)
 			}
 		}
 
 		// 获取节点
-		allTargetNodes, err := nm.FetchNodesFromSubscriptions(target.Subscriptions)
+		allTargetNodes, err := nm.FetchNodesFromSubscriptions(uniqueSubs)
 		if err != nil {
-			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", target.Path, err)
+			errorMsg := fmt.Sprintf("获取节点失败 %s: %v", configFile.Path, err)
 			logger.Error("%s", errorMsg)
 			updateErrors = append(updateErrors, errorMsg)
 			continue
@@ -384,7 +381,6 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		// 过滤掉relay订阅的节点，relay节点仅作为模板使用，不写入配置
 		var nonRelayNodes []subscription.Node
 		for _, node := range allTargetNodes {
-			// 检查节点是否来自relay订阅
 			isFromRelaySub := false
 			for _, sub := range nm.config.Nodes.Subscriptions {
 				if sub.Enable && strings.ToLower(sub.Type) == "relay" {
@@ -400,7 +396,7 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		}
 
 		if len(nonRelayNodes) == 0 {
-			logger.Debug("路径 %s 未获取到非relay节点，跳过", target.Path)
+			logger.Debug("路径 %s 未获取到非relay节点，跳过", configFile.Path)
 			continue
 		}
 
@@ -414,36 +410,29 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 			nodesMaps[i] = map[string]any(node)
 		}
 
-		// 3. 将真实节点插入配置文件（每个文件只插入一次）
-		pathSuccessCount := 0
-		for _, configFile := range configFiles {
-			if len(target.Proxies) > 0 {
-				updater := fileops.NewUpdater("")
-				if err := updater.InsertRealNodes(configFile, nodesMaps, subscriptionNames); err != nil {
-					errorMsg := fmt.Sprintf("插入节点失败 %s: %v", configFile, err)
-					logger.Error("%s", errorMsg)
-					updateErrors = append(updateErrors, errorMsg)
-					continue
-				}
-				pathSuccessCount++
+		// 3. 将真实节点插入配置文件
+		if len(selectors) > 0 {
+			updater := fileops.NewUpdater("")
+			if err := updater.InsertRealNodes(configFile.Path, nodesMaps, uniqueSubs); err != nil {
+				errorMsg := fmt.Sprintf("插入节点失败 %s: %v", configFile.Path, err)
+				logger.Error("%s", errorMsg)
+				updateErrors = append(updateErrors, errorMsg)
+				continue
 			}
 		}
 
-		// 4. 根据proxies规则更新selector
-		for _, proxyRule := range target.Proxies {
-			updater := fileops.NewUpdater(proxyRule.InsertMarker)
-
-			for _, configFile := range configFiles {
-				if err := updater.UpdateSelectorOnly(configFile, nodesMaps, subscriptionNames, proxyRule.IncludeKeywords, proxyRule.ExcludeKeywords); err != nil {
-					errorMsg := fmt.Sprintf("更新selector失败 %s: %v", configFile, err)
-					log.Printf("%s", errorMsg)
-					updateErrors = append(updateErrors, errorMsg)
-				}
+		// 4. 根据selectors规则更新selector
+		for _, selectorRule := range selectors {
+			updater := fileops.NewUpdater(selectorRule.InsertMarker)
+			if err := updater.UpdateSelectorOnly(configFile.Path, nodesMaps, uniqueSubs, selectorRule.IncludeNodes, selectorRule.ExcludeNodes); err != nil {
+				errorMsg := fmt.Sprintf("更新selector失败 %s: %v", configFile.Path, err)
+				log.Printf("%s", errorMsg)
+				updateErrors = append(updateErrors, errorMsg)
 			}
 		}
 
-		logger.Debug("路径 %s 处理完成: %d 个文件", target.Path, len(configFiles))
-		totalSuccessCount += pathSuccessCount
+		logger.Debug("路径 %s 处理完成", configFile.Path)
+		totalSuccessCount++
 	}
 
 	// 汇总结果
@@ -499,7 +488,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 		logger.Debug("成功更新配置文件: %s", configFile.Name)
 	}
 
-	// 3. 汇总结果
+	// 4. 汇总结果
 	logger.Info("配置更新完成: 成功 %d 个，失败 %d 个", successCount, len(updateErrors))
 
 	if len(updateErrors) > 0 {
@@ -524,7 +513,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 }
 
 // UpdateAllConfigurations updates all configurations in sequence.
-// Execution order: 1. 失效缓存 2. 节点配置 3. relay 订阅后处理 4. relay 节点写入配置 5. 模块配置
+// Execution order: 1. 失效缓存 2. 模块配置 3. 节点配置 4. relay 订阅后处理 5. relay 节点写入配置
 func (nm *NodeManager) UpdateAllConfigurations() error {
 	logger.Debug("开始更新所有配置...")
 
@@ -534,29 +523,18 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 	nm.InvalidateCache()
 	nm.moduleManager.InvalidateCache()
 
-	// 1.5 在每次更新开始时，清理所有目标配置中包含 [xxx] 模式的节点与 selector 标签
-	// 使用通配清理，确保重命名/删除的订阅残留也能被清除
-	for _, target := range nm.config.Nodes.Targets {
-		scanner := nm.scanners[target.Path]
-		configFiles, err := scanner.ScanConfigFiles()
-		if err != nil {
-			errorMsg := fmt.Sprintf("扫描配置文件失败 %s: %v", target.Path, err)
-			logger.Error("%s", errorMsg)
-			errors = append(errors, errorMsg)
-			continue
-		}
-		for _, cfgPath := range configFiles {
-			updater := fileops.NewUpdater("")
-			if err := updater.CleanAllSubscriptionArtifacts(cfgPath); err != nil {
-				errorMsg := fmt.Sprintf("清理订阅残留失败 %s: %v", cfgPath, err)
-				logger.Error("%s", errorMsg)
-				errors = append(errors, errorMsg)
-			}
-		}
+	// 2. 更新模块配置
+	logger.Info("步骤 1/4: 更新模块配置...")
+	if err := nm.UpdateModuleConfigs(); err != nil {
+		errorMsg := fmt.Sprintf("模块配置更新失败: %v", err)
+		logger.Error("%s", errorMsg)
+		errors = append(errors, errorMsg)
+	} else {
+		logger.Debug("模块配置更新成功")
 	}
 
-	// 2. 更新节点配置
-	logger.Info("步骤 1/4: 更新节点配置...")
+	// 3. 更新节点配置
+	logger.Info("步骤 2/4: 更新节点配置...")
 	if err := nm.UpdateAllConfigs(); err != nil {
 		errorMsg := fmt.Sprintf("节点配置更新失败: %v", err)
 		logger.Error("%s", errorMsg)
@@ -565,8 +543,8 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		logger.Debug("节点配置更新成功")
 	}
 
-	// 3. relay 订阅后处理（为节点添加 detour）
-	logger.Info("步骤 2/4: 处理 Relay 订阅...")
+	// 4. relay 订阅后处理（为节点添加 detour）
+	logger.Info("步骤 3/4: 处理 Relay 订阅...")
 	if err := nm.updateRelayDetourForAllTargets(); err != nil {
 		errorMsg := fmt.Sprintf("Relay 订阅后处理失败: %v", err)
 		logger.Error("%s", errorMsg)
@@ -575,7 +553,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		logger.Debug("Relay 订阅后处理完成")
 	}
 
-	// 4. 将 relay 节点写入配置
+	// 5. 将 relay 节点写入配置
 	logger.Debug("将 Relay 节点写入配置...")
 	if err := nm.writeRelayNodesToConfig(); err != nil {
 		errorMsg := fmt.Sprintf("Relay 节点写入配置失败: %v", err)
@@ -583,16 +561,6 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		errors = append(errors, errorMsg)
 	} else {
 		logger.Info("Relay 节点配置完成")
-	}
-
-	// 5. 更新模块配置
-	logger.Info("步骤 3/4: 更新模块配置...")
-	if err := nm.UpdateModuleConfigs(); err != nil {
-		errorMsg := fmt.Sprintf("模块配置更新失败: %v", err)
-		logger.Error("%s", errorMsg)
-		errors = append(errors, errorMsg)
-	} else {
-		logger.Debug("模块配置更新成功")
 	}
 
 	// 6. 汇总结果
@@ -772,22 +740,65 @@ func (nm *NodeManager) fetchRelaySubscriptionNodes(subName string) ([]subscripti
 }
 
 // writeRelayNodesToConfig 将处理后存在缓存中的 relay 节点写入配置
-// 1. 根据 include_relay 确定哪些节点作为真实节点写入配置文件
-// 2. 根据 relay_nodes 确定哪些节点的 tag 写入到 selector 中（不影响真实节点写入）
+// 1. 根据 relay_nodes 确定哪些节点作为真实节点写入配置文件
+// 2. 根据 include_relay_nodes 确定哪些节点的 tag 写入到 selector 中（不影响真实节点写入）
 func (nm *NodeManager) writeRelayNodesToConfig() error {
 	logger.Debug("开始将 relay 节点写入配置...")
 
-	// 检查是否有 include_relay 配置
-	if len(nm.config.Nodes.IncludeRelay) == 0 {
-		logger.Debug("未配置 include_relay，跳过 relay 节点写入")
+	// 检查是否有 relay_nodes 配置
+	if len(nm.config.Nodes.RelayNodes) == 0 {
+		logger.Debug("未配置 relay_nodes，跳过 relay 节点写入")
 		return nil
 	}
 
+	// 准备 outbounds 模块映射
+	outboundsMap := make(map[string]config.Module)
+	if nm.config.Modules != nil {
+		for _, mod := range nm.config.Modules.Outbounds {
+			outboundsMap[mod.Name] = mod
+		}
+	}
+
 	// 遍历所有目标配置
-	for _, target := range nm.config.Nodes.Targets {
-		if err := nm.writeRelayNodesToTarget(target); err != nil {
-			logger.Error("为目标 %s 写入 relay 节点失败: %v", target.Path, err)
-			return err
+	for _, configFile := range nm.config.Configs {
+		// 收集该配置文件使用到的 subscriptions 和 selectors
+		var subscriptionNames []string
+		var selectors []config.Selector
+
+		for _, modName := range configFile.Modules {
+			if mod, exists := outboundsMap[modName]; exists {
+				subscriptionNames = append(subscriptionNames, mod.Subscriptions...)
+				selectors = append(selectors, mod.Selectors...)
+			}
+		}
+
+		if len(selectors) == 0 {
+			continue
+		}
+
+		// 1. 根据 include_relay 和 target.Subscriptions 筛选需要写入的 relay 节点（真实节点）
+		relayNodesToWrite := nm.filterRelayNodesByIncludeAndSubscriptions(subscriptionNames)
+		if len(relayNodesToWrite) == 0 {
+			logger.Debug("目标 %s: 没有符合 relay_nodes 和 subscriptions 条件的 relay 节点", configFile.Path)
+			continue
+		}
+
+		// 3. 处理每个 proxy/selector 配置
+		for _, selector := range selectors {
+			// 写入所有符合 exclude_relay 条件的真实节点到配置文件
+			if err := nm.writeNodesToConfigFile(configFile.Path, selector.InsertMarker, relayNodesToWrite); err != nil {
+				return fmt.Errorf("写入节点到配置文件失败 %s: %v", configFile.Path, err)
+			}
+
+			// 如果配置了 include_relay_nodes，则更新 selector 的 outbounds 列表
+			if len(selector.IncludeRelayNodes) > 0 {
+				if err := nm.updateSelectorForRelayNodes(configFile.Path, selector.InsertMarker, relayNodesToWrite, selector.IncludeRelayNodes); err != nil {
+					return fmt.Errorf("更新 selector 失败 %s: %v", configFile.Path, err)
+				}
+				logger.Debug("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，并根据 include_relay_nodes 更新 selector", configFile.Path, selector.InsertMarker, len(relayNodesToWrite))
+			} else {
+				logger.Debug("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，未配置 include_relay_nodes", configFile.Path, selector.InsertMarker, len(relayNodesToWrite))
+			}
 		}
 	}
 
@@ -795,50 +806,10 @@ func (nm *NodeManager) writeRelayNodesToConfig() error {
 	return nil
 }
 
-// writeRelayNodesToTarget 为单个目标写入 relay 节点
-func (nm *NodeManager) writeRelayNodesToTarget(target config.Target) error {
-	// 1. 根据 include_relay 和 target.Subscriptions 筛选需要写入的 relay 节点（真实节点）
-	relayNodesToWrite := nm.filterRelayNodesByIncludeAndSubscriptions(target.Subscriptions)
-	if len(relayNodesToWrite) == 0 {
-		logger.Debug("目标 %s: 没有符合 include_relay 和 subscriptions 条件的 relay 节点", target.Path)
-		return nil
-	}
-
-	// 2. 获取目标路径下的所有配置文件
-	scanner := nm.scanners[target.Path]
-	configFiles, err := scanner.ScanConfigFiles()
-	if err != nil {
-		return fmt.Errorf("扫描配置文件失败 %s: %v", target.Path, err)
-	}
-
-	// 3. 处理每个 proxy 配置
-	for _, proxy := range target.Proxies {
-		// 为每个配置文件写入节点
-		for _, configFile := range configFiles {
-			// 写入所有符合 include_relay 条件的真实节点到配置文件
-			if err := nm.writeNodesToConfigFile(configFile, proxy.InsertMarker, relayNodesToWrite); err != nil {
-				return fmt.Errorf("写入节点到配置文件失败 %s: %v", configFile, err)
-			}
-
-			// 如果配置了 relay_nodes，则更新 selector 的 outbounds 列表
-			if len(proxy.RelayNodes) > 0 {
-				if err := nm.updateSelectorForRelayNodes(configFile, proxy.InsertMarker, relayNodesToWrite, proxy.RelayNodes); err != nil {
-					return fmt.Errorf("更新 selector 失败 %s: %v", configFile, err)
-				}
-				logger.Debug("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，并根据 relay_nodes 更新 selector", configFile, proxy.InsertMarker, len(relayNodesToWrite))
-			} else {
-				logger.Debug("配置文件 %s, 选择器 %s: 成功写入 %d 个 relay 节点，未配置 relay_nodes", configFile, proxy.InsertMarker, len(relayNodesToWrite))
-			}
-		}
-	}
-
-	return nil
-}
-
 // (removed) filterRelayNodesByInclude: previously a thin wrapper around
 // filterRelayNodesByIncludeAndSubscriptions(nil). Use the latter directly.
 
-// filterRelayNodesByIncludeAndSubscriptions 根据 include_relay 和 subscriptions 配置筛选 relay 节点
+// filterRelayNodesByIncludeAndSubscriptions 根据 relay_nodes 和 subscriptions 配置筛选 relay 节点
 func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscriptions []string) []subscription.Node {
 	var result []subscription.Node
 
@@ -874,9 +845,9 @@ func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscript
 				}
 			}
 
-			// 2. 然后根据 include_relay 规则检查是否匹配
+			// 2. 然后根据 relay_nodes 规则检查是否匹配
 			shouldInclude := false
-			for _, rule := range nm.config.Nodes.IncludeRelay {
+			for _, rule := range nm.config.Nodes.RelayNodes {
 				if rule.Tag == "" || len(rule.Upstream) == 0 {
 					continue
 				}
@@ -904,9 +875,9 @@ func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscript
 	}
 
 	if len(targetSubscriptions) > 0 {
-		logger.Debug("根据 subscriptions %v 和 include_relay 筛选出 %d 个节点", targetSubscriptions, len(result))
+		logger.Debug("根据 subscriptions %v 和 relay_nodes 筛选出 %d 个节点", targetSubscriptions, len(result))
 	} else {
-		logger.Debug("根据 include_relay 筛选出 %d 个节点", len(result))
+		logger.Debug("根据 relay_nodes 筛选出 %d 个节点", len(result))
 	}
 	return result
 }
