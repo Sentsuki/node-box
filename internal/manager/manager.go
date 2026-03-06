@@ -217,15 +217,15 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 		// 添加订阅前缀（缓存原始节点，不进行全局过滤）
 		prefixedNodes := subscription.AddSubscriptionPrefix(nodes, sub.Name)
 
-		// 只缓存非relay订阅的原始节点，relay节点仅作为模板使用
-		if strings.ToLower(sub.Type) != "relay" {
-			nm.cache.nodes[sub.Name] = prefixedNodes
-		} else {
-			// relay订阅的节点仅用于模板，不缓存到cache_nodes中
-			logger.Debug("relay订阅 %s 的 %d 个节点仅作为模板使用，不缓存", sub.Name, len(prefixedNodes))
-		}
+		// 缓存所有类型的订阅节点（包括 relay）
+		nm.cache.nodes[sub.Name] = prefixedNodes
 		successCount++
-		logger.Debug("缓存订阅 %s: %d 个节点", sub.Name, len(prefixedNodes))
+
+		if strings.ToLower(sub.Type) == "relay" {
+			logger.Debug("缓存relay订阅 %s: %d 个模板节点", sub.Name, len(prefixedNodes))
+		} else {
+			logger.Debug("缓存订阅 %s: %d 个节点", sub.Name, len(prefixedNodes))
+		}
 	}
 
 	// 标记缓存为有效（即使有部分失败）
@@ -299,10 +299,7 @@ func (nm *NodeManager) FetchNodesFromSubscriptions(subscriptionNames []string) (
 		if cachedNodes, exists := nm.cache.nodes[sub.Name]; exists {
 			allNodes = append(allNodes, cachedNodes...)
 		} else {
-			// 当订阅类型是 relay 时，不提醒，因为 relay 节点仅作为模板使用，不缓存到 cache.nodes 中
-			if strings.ToLower(sub.Type) != "relay" {
-				logger.Warn("订阅 %s 不在缓存中", sub.Name)
-			}
+			logger.Warn("订阅 %s 不在缓存中", sub.Name)
 		}
 	}
 
@@ -632,7 +629,7 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 
 	logger.Debug("找到 %d 个可用的detour标签", len(detourTags))
 
-	// 重新获取relay订阅的原始节点作为模板（因为不再缓存到cache.nodes中）
+	// 从缓存中获取 relay 订阅节点并展开
 	cloneMap := func(m map[string]any) map[string]any {
 		c := make(map[string]any, len(m))
 		for k, v := range m {
@@ -642,14 +639,15 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 	}
 
 	for _, relaySub := range relaySubs {
-		// 重新获取relay订阅的原始节点
-		relayNodes, err := nm.fetchRelaySubscriptionNodes(relaySub)
-		if err != nil {
-			logger.Error("获取relay订阅 %s 的节点失败: %v", relaySub, err)
+		// 从缓存获取relay订阅的原始节点
+		relayNodes, exists := nm.cache.nodes[relaySub]
+		if !exists {
+			logger.Error("relay订阅 %s 不在缓存中", relaySub)
 			continue
 		}
 
 		if len(relayNodes) == 0 {
+			logger.Debug("relay订阅 %s 没有节点", relaySub)
 			continue
 		}
 
@@ -680,68 +678,6 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 	}
 
 	return nil
-}
-
-// fetchRelaySubscriptionNodes 重新获取指定relay订阅的原始节点作为模板
-func (nm *NodeManager) fetchRelaySubscriptionNodes(subName string) ([]subscription.Node, error) {
-	// 查找订阅配置
-	var subConfig *config.Subscription
-	for _, sub := range nm.config.Nodes.Subscriptions {
-		if sub.Name == subName && sub.Enable && strings.ToLower(sub.Type) == "relay" {
-			subConfig = &sub
-			break
-		}
-	}
-
-	if subConfig == nil {
-		return nil, fmt.Errorf("未找到relay订阅: %s", subName)
-	}
-
-	// 确定要使用的User-Agent
-	userAgent := subConfig.UserAgent
-	if userAgent == "" {
-		userAgent = nm.config.UserAgent
-	}
-
-	// 根据配置选择获取方式
-	var data []byte
-	var err error
-
-	if subConfig.URL != "" {
-		// 从URL获取订阅数据
-		data, err = nm.fetcher.FetchSubscriptionWithUserAgent(subConfig.URL, userAgent)
-	} else if subConfig.Path != "" {
-		// 从本地路径读取订阅数据
-		data, err = nm.fetcher.FetchSubscriptionFromPath(subConfig.Path)
-	} else {
-		return nil, fmt.Errorf("订阅 %s 既没有配置URL也没有配置Path", subConfig.Name)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("获取订阅失败 %s: %v", subConfig.Name, err)
-	}
-
-	// 获取对应的处理器
-	processor, ok := nm.processors[strings.ToLower(subConfig.Type)]
-	if !ok {
-		return nil, fmt.Errorf("不支持的订阅类型: %s", subConfig.Type)
-	}
-
-	// 处理订阅数据
-	nodes, err := processor.Process(data)
-	if err != nil {
-		return nil, fmt.Errorf("处理订阅失败 %s: %v", subConfig.Name, err)
-	}
-
-	// 如果配置了移除emoji，则执行移除操作
-	if subConfig.RemoveEmoji {
-		nodes = subscription.RemoveEmoji(nodes)
-	}
-
-	// 添加订阅前缀
-	prefixedNodes := subscription.AddSubscriptionPrefix(nodes, subConfig.Name)
-
-	return prefixedNodes, nil
 }
 
 // writeRelayNodesToOutbounds 将处理后存在缓存中的 relay 节点写入对应的出站模块文件中
