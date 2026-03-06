@@ -413,6 +413,14 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 		// 3. 将真实节点插入配置文件
 		if len(selectors) > 0 {
 			updater := fileops.NewUpdater("")
+			// 先清理所有旧的订阅节点
+			if err := updater.CleanAllSubscriptionArtifacts(configFile.Path); err != nil {
+				errorMsg := fmt.Sprintf("清理订阅残留失败 %s: %v", configFile.Path, err)
+				logger.Error("%s", errorMsg)
+				updateErrors = append(updateErrors, errorMsg)
+				continue
+			}
+
 			if err := updater.InsertRealNodes(configFile.Path, nodesMaps, uniqueSubs); err != nil {
 				errorMsg := fmt.Sprintf("插入节点失败 %s: %v", configFile.Path, err)
 				logger.Error("%s", errorMsg)
