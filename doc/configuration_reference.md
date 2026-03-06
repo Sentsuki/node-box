@@ -8,7 +8,7 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 ```json
 {
-  "nodes":           { ... },   // 必填 - 节点订阅与目标配置
+  "nodes":           { ... },   // 必填 - 节点订阅与全局过滤设置
   "modules":         { ... },   // 可选 - sing-box 模块定义
   "configs":         [ ... ],   // 可选 - 配置文件合成规则
   "update_schedule": { ... },   // 必填 - 更新调度
@@ -22,7 +22,7 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 ## `nodes` — 节点配置
 
-节点配置是 node-box 的核心，负责定义订阅源、目标配置文件和过滤规则。
+节点配置负责定义订阅源以及全局适用的过滤规则。注意：这里不再定义目标文件及其代理节点写入规则，文件写入等操作已全部迁移至 [`modules.outbounds`](#modulesoutbounds--特殊字段与逻辑) 中配置。
 
 ### `nodes.subscriptions` — 订阅源列表
 
@@ -30,7 +30,7 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `name` | string | ✅ | 订阅唯一名称，用于在 targets 中引用和在节点 tag 中作为前缀标识 |
+| `name` | string | ✅ | 订阅唯一名称，用于在 outbounds 的 subscriptions 中引用，并在节点 tag 中作为前缀标识 |
 | `url` | string | ⚠️ | 远程订阅 URL，与 `path` 二选一 |
 | `path` | string | ⚠️ | 本地订阅文件路径，与 `url` 二选一 |
 | `type` | string | ✅ | 订阅格式：`"clash"` / `"singbox"` / `"relay"` |
@@ -40,9 +40,9 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 **订阅类型说明：**
 
-- **`clash`** — Clash YAML 格式的订阅，会自动转换为 sing-box 格式。支持的协议：vmess、vless、shadowsocks、trojan、http、socks5、hysteria、hysteria2、wireguard、tuic、anytls
-- **`singbox`** — 原生 sing-box JSON 格式的订阅，直接提取 `outbounds` 中的代理节点（排除 `direct`、`block`、`selector` 类型）
-- **`relay`** — 使用与 `singbox` 相同的处理器，但节点不会作为普通节点写入，而是作为中继模板，与其他普通节点做笛卡尔积展开（详见 [Relay 处理](#relay-处理机制)）
+- **`clash`** — Clash YAML 格式的订阅，会自动转换为 sing-box 格式。支持常见协议（vmess, vless, trojan 等）。
+- **`singbox`** — 原生 sing-box JSON 格式的订阅，直接提取 `outbounds` 中的代理节点（排除 `direct`、`block`、`selector` 等类型）。
+- **`relay`** — 中继模板订阅。节点不会直接作为普通节点写入，而是与其他普通节点做笛卡尔积组合成连通性中继节点（详见 [Relay 处理机制](#relay-处理机制)）。
 
 **示例：**
 
@@ -58,87 +58,10 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
       "user_agent": "ClashForWindows/0.20"
     },
     {
-      "name": "入口订阅",
+      "name": "入口备用",
       "url": "https://example.com/relay/sub",
       "type": "relay",
       "enable": true
-    },
-    {
-      "name": "本地备用",
-      "path": "./subscriptions/backup.json",
-      "type": "singbox",
-      "enable": false
-    }
-  ]
-}
-```
-
----
-
-### `nodes.targets` — 目标配置
-
-定义节点要写入的目标 sing-box 配置文件或目录。
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|:----:|------|
-| `name` | string | ❌ | 目标名称（仅标识用途） |
-| `path` | string | ✅ | 目标路径，可以是目录或单个文件 |
-| `is_file` | bool | ❌ | 设为 `true` 表示 `path` 指向单个文件，默认 `false`（目录模式） |
-| `subscriptions` | string[] | ❌ | 指定使用的订阅名称列表。为空则使用所有已启用订阅 |
-| `proxies` | ProxyTarget[] | ✅ | 代理插入规则列表，至少一条 |
-
-**路径模式说明：**
-
-- **目录模式**（默认）：递归扫描路径下的所有 `.json` 文件
-- **文件模式**（`is_file: true`）：直接操作指定的单个 `.json` 文件
-
----
-
-### `nodes.targets[].proxies` — 代理插入规则
-
-每个 target 可以定义多个 proxy 规则，每个规则对应 sing-box 配置中的一个 selector outbound。
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|:----:|------|
-| `insert_marker` | string | ✅ | 目标 selector 的 tag 名称。程序会在 outbounds 中找到此 tag 对应的 selector，并将匹配节点的 tag 插入到其 outbounds 列表中 |
-| `include_keywords` | string[] | ❌ | 包含关键词过滤。**只有** tag 包含列表中任一关键词的节点会被加入此 selector |
-| `exclude_keywords` | string[] | ❌ | 排除关键词过滤。tag 包含列表中任一关键词的节点会被从此 selector 中排除 |
-| `relay_nodes` | string[] | ❌ | Relay 节点过滤关键词。决定哪些 relay 展开后的节点 tag 会出现在此 selector 中（详见 [Relay 处理](#relay-处理机制)） |
-
-**过滤优先级：** `include_keywords` 和 `exclude_keywords` 仅影响 selector 的 outbounds tag 列表，不影响真实节点的写入。真实代理节点始终会完整写入配置文件的 outbounds 数组。
-
-**示例：**
-
-```json
-{
-  "targets": [
-    {
-      "name": "主配置",
-      "path": "./configs",
-      "subscriptions": ["主力订阅", "入口订阅"],
-      "proxies": [
-        {
-          "insert_marker": "🚀 节点选择",
-          "include_keywords": ["香港", "新加坡", "美国"],
-          "exclude_keywords": ["过期", "测试"],
-          "relay_nodes": ["HK入口", "SG入口"]
-        },
-        {
-          "insert_marker": "🎬 流媒体",
-          "include_keywords": ["Netflix", "Disney"]
-        }
-      ]
-    },
-    {
-      "name": "游戏配置",
-      "path": "./configs/gaming.json",
-      "is_file": true,
-      "subscriptions": ["低延迟订阅"],
-      "proxies": [
-        {
-          "insert_marker": "🎮 游戏节点"
-        }
-      ]
     }
   ]
 }
@@ -150,10 +73,9 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `exclude_keywords` | string[] | ❌ | 全局排除关键词列表。tag 中包含任一关键词的节点会被排除，不写入任何配置文件 |
+| `exclude_keywords` | string[] | ❌ | 全局排除关键词列表。tag 中包含任一关键词的节点会在提取解析阶段直接舍弃，不经过后续写入逻辑 |
 
-与 `proxies[].exclude_keywords` 的区别：全局排除会在真实节点写入前执行，被排除的节点不会出现在配置文件的 outbounds 中；而 proxy 级别的排除只影响特定 selector 的 outbounds tag 列表。
-
+**示例：**
 ```json
 {
   "exclude_keywords": ["过期", "失效", "测试", "故障转移", "流量"]
@@ -162,29 +84,24 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 ---
 
-### `nodes.include_relay` — Relay 节点写入规则
+### `nodes.relay_nodes` — Relay 节点全局写入规则
 
-决定哪些 relay 展开后的节点会作为真实 outbound 写入 sing-box 配置文件。
+决定哪些展开后的 relay 节点组合会作为真实的 outbound 对象配置保留并写入最终文件。
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
 | `tag` | string | ✅ | relay 节点的 tag 中必须包含此关键词 |
 | `upstream` | string[] | ✅ | relay 节点的 tag 中必须同时包含此列表中的至少一个关键词 |
 
-一个节点要被写入，必须同时满足：tag 包含 `tag` 关键词 **并且** tag 包含 `upstream` 中的任一关键词。
+**规则：**一个 relay 节点要被写入，必须同时满足：tag 包含 `tag` 关键词 **并且** tag 包含 `upstream` 数组中的任一关键词。若该列表为空或未配置，则相当于不写入任何 relay 组装节点。
 
-如果 `include_relay` 为空数组或未配置，则不会写入任何 relay 节点。
-
+**示例：**
 ```json
 {
-  "include_relay": [
+  "relay_nodes": [
     {
       "tag": "HK入口",
       "upstream": ["US-1", "SG-1", "JP-1"]
-    },
-    {
-      "tag": "备用入口",
-      "upstream": ["backup"]
     }
   ]
 }
@@ -192,139 +109,80 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 ---
 
-## Relay 处理机制
-
-Relay 是 node-box 的高级功能，用于构建链式代理（多跳转发）。整体流程分四步：
-
-### 1. 模板展开
-
-`type: "relay"` 的订阅节点被视为中继模板。程序将每个模板节点与所有普通节点做笛卡尔积组合，生成展开节点：
-
-- 展开后节点的 `detour` 字段 = 普通节点的 tag（作为上游出口）
-- 展开后节点的 `tag` = `[relay订阅名] 模板原始名称 普通节点tag`
-
-例如：relay 模板 `HK入口` × 普通节点 `[落地] US-1` → 展开为 tag `[入口] HK入口 [落地] US-1`，detour 为 `[落地] US-1`
-
-### 2. `relay_nodes` 全局筛选
-
-从全部展开节点中，根据 `relay_nodes` 规则筛选出要写入配置文件的真实节点。
-
-### 3. `subscriptions` 订阅过滤
-
-在 outbounds 模块中，`subscriptions` 字段过滤哪些订阅的节点会被写入此模块文件。过滤规则：
-- 普通节点：检查节点 tag 是否包含指定的订阅名（如 `[sub_a]`）
-- Relay 节点：检查节点 tag 是否包含指定的订阅名（检查 detour 部分，如 `[relay_x] xxx [sub_a] xxx`）
-
-### 4. `include_relay_nodes` 逐 selector 筛选
-
-在每个 `selectors[]` 项中，`include_relay_nodes` 作为 include 关键词列表，决定哪些已写入的 relay 节点 tag 出现在该 selector 的 outbounds 中。
-
----
-
 ## `modules` — 模块定义
 
-定义 sing-box 配置文件的各个模块片段。模块可以从本地文件或远程 URL 加载，用于组装最终的 sing-box 配置。
+定义 sing-box 配置文件的各个模块片段。模块可以从本地文件及远程 URL 加载，用于最终组装（基于 `configs`）。
 
 ```json
 {
   "modules": {
     "log":          [ ... ],
     "dns":          [ ... ],
-    "ntp":          [ ... ],
-    "certificate":  [ ... ],
-    "endpoints":    [ ... ],
     "inbounds":     [ ... ],
     "outbounds":    [ ... ],
     "route":        [ ... ],
-    "services":     [ ... ],
     "experimental": [ ... ]
   }
 }
 ```
 
-每种类型下可定义多个模块，每个模块的结构如下：
+每种类型可以设置多个模块组，基础结构字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `name` | string | ✅ | 模块唯一名称，在 `configs` 中引用 |
-| `path` | string | ⚠️ | 本地 JSON 文件路径，与 `from_url` 二选一 |
-| `from_url` | string | ⚠️ | 远程 JSON URL，与 `path` 二选一 |
+| `name` | string | ✅ | 模块唯一的引用名称，用于 `configs` 装配组合 |
+| `path` | string | ⚠️ | 本地 JSON 模块文件路径，与 `from_url` 二选一 |
+| `from_url` | string | ⚠️ | 远程 JSON 模块 URL，与 `path` 二选一 |
 
-模块类型与 sing-box 配置结构一一映射：
+### `modules.outbounds` — 特殊字段与逻辑
 
-| 模块类型 | 对应 sing-box 字段 | 说明 |
-|----------|-------------------|------|
-| `log` | `log` | 日志配置 |
-| `dns` | `dns` | DNS 配置 |
-| `ntp` | `ntp` | NTP 时间同步 |
-| `certificate` | `certificate` | 证书配置 |
-| `endpoints` | `endpoints` | 端点配置 |
-| `inbounds` | `inbounds` | 入站配置 |
-| `outbounds` | `outbounds` | 出站配置（支持节点写入和 selector 更新） |
-| `route` | `route` | 路由规则 |
-| `services` | `services` | 服务配置 |
-| `experimental` | `experimental` | 实验性功能 |
-
-### `modules.outbounds` — 特殊字段
-
-outbounds 模块支持额外的字段用于节点管理：
+出站模块（outbounds）相比于其他模块，支持额外的真实节点写入和 selector 出站标签的自动更新功能：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `subscriptions` | string[] | ❌ | 指定使用的订阅名称列表，用于过滤写入此模块的节点 |
-| `selectors` | Selector[] | ❌ | 定义 selector 更新规则列表 |
+| `subscriptions` | string[] | ❌ | 指定要把哪些订阅（Subscription）解析出节点，并写入当前模块对应的文件里。为空则匹配所有订阅的节点（排除了全局 exclude 后） |
+| `selectors` | Selector[] | ❌ | 定义该模块文件内目标 Selector 的自动化过滤和挂载规则 |
+
+**核心工作机制：** 
+
+如果在出站模块配置中启用了 `path` (本地文件读写)，更新将会触发：
+1. **老旧配置清理**：在更新文件前，程序会优先进行清理操作：提取并移除模块文件中之前生成和注入过的旧有订阅节点（节点及 selector tag 中带有 `[订阅名]` 前缀的项将被彻底剔除），防止因重命名订阅遗留的无法追踪的历史数据残存。
+2. **专属作用域限制**：`subscriptions` 获取条件与 `selectors` 更新插入策略仅限应用于当前包含 `path` 所在的单个模块文件，不会波及同组的其他 outbounds 模块。这样便可轻易实现不同的订阅集群独立存放及互不干扰的任务调度。
+3. **只读规则**：对于配置了 `from_url` (远程网络文件) 的 outbounds 模块，因为不具备回写条件而只能被视为静态只读模块，程序会直接跳过该阶段任何对其的节点注入和过滤处理。
 
 ### `modules.outbounds[].selectors` — Selector 更新规则
 
+用于将满足过滤匹配规则节点名 (tag)，追加至指定名称 selector （出站选路）的 `outbounds` 列表下：
+
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `insert_marker` | string | ✅ | 目标 selector 的 tag 名称 |
-| `include_nodes` | string[] | ❌ | 包含关键词过滤。只有 tag 包含列表中任一关键词的节点会被加入此 selector |
-| `exclude_nodes` | string[] | ❌ | 排除关键词过滤。tag 包含列表中任一关键词的节点会被从此 selector 中排除 |
-| `include_relay_nodes` | string[] | ❌ | Relay 节点过滤关键词。决定哪些 relay 展开后的节点 tag 会出现在此 selector 中 |
+| `insert_marker` | string | ✅ | 定位标记，须完全匹配要处理的目标 selector 的 `tag` 名称 |
+| `include_nodes` | string[] | ❌ | 包含词筛选。真实节点 tag 包含这几个关键字中任意一个及以上的，都会被推入此 selector |
+| `exclude_nodes` | string[] | ❌ | 排除词筛选。真实节点 tag 中存在列表里字符任意一项便会从对应 selector 中刷掉（优先级通常高于 include_nodes） |
+| `include_relay_nodes` | string[] | ❌ | 针对 Relay 类型的专门筛选列表。决定哪一部分已合成的 relay 相关节点 tag 会进入并被此 selector 使用 |
 
 **示例：**
 
 ```json
 {
   "modules": {
-    "dns": [
-      {
-        "name": "cloudflare_dns",
-        "from_url": "https://example.com/modules/dns/cloudflare.json"
-      },
-      {
-        "name": "local_dns",
-        "path": "./modules/dns.json"
-      }
-    ],
     "outbounds": [
       {
         "name": "main_outbound",
         "path": "./modules/outbounds/main.json",
-        "subscriptions": ["clash_subscription_1", "singbox_subscription_1"],
+        "subscriptions": ["主力订阅", "备用节点"],
         "selectors": [
           {
-            "insert_marker": "proxy-selector",
+            "insert_marker": "🚀 节点选择",
             "include_nodes": ["香港", "新加坡", "美国"],
-            "exclude_nodes": ["过期", "测试"],
-            "include_relay_nodes": ["relay-hk-01", "relay-sg-01"]
+            "exclude_nodes": ["故障", "内部测试"],
+            "include_relay_nodes": ["HK入口"]
           },
           {
-            "insert_marker": "streaming-selector",
+            "insert_marker": "🎬 流媒体",
             "include_nodes": ["Netflix", "Disney"]
           }
         ]
-      },
-      {
-        "name": "block_outbound",
-        "from_url": "https://example.com/modules/outbounds/block.json"
-      }
-    ],
-    "route": [
-      {
-        "name": "china_route",
-        "from_url": "https://example.com/modules/routes/china.json"
       }
     ]
   }
@@ -333,22 +191,41 @@ outbounds 模块支持额外的字段用于节点管理：
 
 ---
 
-## `configs` — 配置文件合成
+## Relay 处理机制
 
-定义如何将多个模块组装成最终的 sing-box 配置文件。
+Relay 是 node-box 的高级功能设计，用于灵活构建链式代理网与流量接力机制（多跳转发）。由于 relay 各个子规则的作用范围独立，整体处理流程按先后经过四步：
+
+### 1. 模板展开组装
+`type: "relay"` 在订阅配置内的判定是被视为了中继特征模板。程序会把此类下属所有成员节点同所有已被正常保留的普通节点进行自动化的笛卡尔积组装：
+- 组装后的新节点 `detour`（直连脱节向指代值）会被赋上上游被穿透对象普通节点的 tag 属性名。
+- 新的合并后节点本身的 `tag` 名称构成规律为：`[relay订阅名] 源模板节点原始名称 普通节点tag名称`。
+
+### 2. `nodes.relay_nodes` 全局初步保留
+全部经过上阶段组合出来的海量散装 relay 候选体，将借由最外侧配置内 `nodes.relay_nodes` 配置逻辑作为第一道分流门槛，只截留过滤满足了（本身携带了约束 `tag` 和穿层对应 `upstream` 相关名）的合规项，剩余的一律被清退销毁不会向任何下游流转。
+
+### 3. `modules.outbounds[].subscriptions` 模块归类落地
+对于合规留存经过第二步检验的 relay 中继节点集，当匹配到达具体的 Outbounds 输出配置阶段，再根据此时其隶属 `outbounds` 配置给定的 `subscriptions` 是否接纳并涵盖该部分订阅（通过检索节点特征名上的带有被方括号标记出来的订阅名作为特征条件比对）。如果被圈中，才会真正随同原始正常结构化模型实体一起作为 outbounds 配置块保存落盘至当前对应的实体文件之中。
+
+### 4. `include_relay_nodes` 面向 Selector 的按需使用
+最后在针对 `selectors` 对已写入该文件的节点进行标签取用的业务里，借助特定配置好 `include_relay_nodes` 检索关键字匹配那些确有需要挂接到选择器策略下执行后续实务访问分发的上述指定 relay 脱胎类节点 tag 名称并完成最终更新推入动作。
+
+---
+
+## `configs` — 配置文件合成组装
+
+定义如何将分布各处的各个片段模块组装拼合成完整用于 Sing-Box 核心加载运转的单一聚合式总配置文件。
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `name` | string | ✅ | 配置名称 |
-| `path` | string | ✅ | 输出文件路径 |
-| `modules` | string[] | ✅ | 要应用的模块名称列表（必须在 `modules` 中定义） |
-| `no_need_nodes` | string[] | ❌ | 后处理关键词列表。合成后，outbounds 和 endpoints 中 tag 包含这些关键词的节点会被移除 |
+| `name` | string | ✅ | 组装策略名 |
+| `path` | string | ✅ | 生成合并拼接后最终完整总配置输出及覆盖的目标物理文件归宿位置 |
+| `modules` | string[] | ✅ | 要装配提取融合的所有预定义的各层级模块 `name` 集合清单 |
+| `no_need_nodes` | string[] | ❌ | 针对末端产出执行的再筛净化列表。合成整合完毕时刻，倘使检查到 outbounds 或者 endpoints 项目里面含有 tag 匹配到以下字符的情况，会被彻底作为不需要的内容剔除抽离且清空连带从属关系 |
 
-在合成过程中，程序还会自动执行以下后处理：
-- 将 `wireguard` 和 `tailscale` 类型的 outbound 移动到 `endpoints`
-- 清除 endpoints 中带有方括号 `[]` 前缀的订阅节点
-- 根据 `no_need` 关键词过滤不需要的节点
-- 移除所有空的模块字段
+**合成附带自动处理特点：**
+- 核心转换过程会自动感知 `wireguard` / `tailscale` 这一类型的出站节点，并做平移提取将其转存在 `endpoints` 顶层节点树逻辑架构区域。
+- 自动化扫描 `endpoints` 内部那些携有方括号 `[]` 前缀源自订阅解析生成的残次无用节点碎片一并实施清理。
+- 同步执行模块剥离过滤，自动抹除整合产物里部分冗余且没有任何使用指引填充内容的完全空集合。
 
 **示例：**
 
@@ -359,12 +236,13 @@ outbounds 模块支持额外的字段用于节点管理：
       "name": "main_config",
       "path": "./singbox/config.json",
       "modules": [
-        "default_log",
-        "cloudflare_dns",
-        "direct_outbound",
-        "china_route"
+        "log_module",
+        "dns_module",
+        "main_outbound",
+        "route_china",
+        "route_proxy"
       ],
-      "no_need_nodes": ["测试", "过期", "失效"]
+      "no_need_nodes": ["测试", "备用网络", "过期失效"]
     }
   ]
 }
@@ -372,95 +250,52 @@ outbounds 模块支持额外的字段用于节点管理：
 
 ---
 
-## `update_schedule` — 更新调度
+## `update_schedule` — 更新调度策略
+
+控制 node-box 何时、以怎样的高可用性轮转周期去唤起拉取重做节点列表与刷新模块配置的任务。
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `type` | string | ✅ | 调度模式：`"interval"` 或 `"hourly"` |
-| `interval` | int | ⚠️ | 更新间隔（小时），仅在 `type` 为 `"interval"` 时必填 |
+| `type` | string | ✅ | 可供应用的调度类型模式： `"interval"` 或 `"hourly"` |
+| `interval` | int | ⚠️ | 执行时间隔休眠的时长单位定义（小时）。只有上述 `type` 定义值为 `"interval"` 时此项需进行设定 |
 
-**调度模式：**
+**模式说明与说明：**
+- **`"interval"` 模式**：任务将会在节点服务挂载后的冷启动第一顺位刻度立马去跑过一遍大盘数据抽取与落地。其后依照该设置下每经过 N 小时后唤醒执行自循环轮转。
+- **`"hourly"` 模式**：同样在启动伊始必定完整过一次执行队列，此后便固定向系统整点钟对齐，逢每一小时钟头切边必定准点重做。
 
-| 模式 | 行为 | 配置方式 |
-|------|------|----------|
-| `interval` | 启动后立即执行，然后按固定小时间隔循环 | `{"type": "interval", "interval": 6}` |
-| `hourly` | 启动后立即执行，然后在每个整点执行 | `{"type": "hourly"}` |
-
-程序在后台运行时会监测配置文件变化（MD5 哈希 + 修改时间），变化时自动重载配置并执行更新。
+**注意**：无论上述通过调度体系执行还是停止任务，服务在跑于后台生命周期的任意时刻下都会主动监视系统加载用的 config 配置文件的自我变化（特征码 MD5 哈希特征或修改存取状态时延比对）。一旦察觉手工/外部触发更改，总会不依赖任何调度的触发而抢先强插强制热重载全局刷新并实施所有的提取跟组装命令。
 
 ---
 
-## `log_level` — 日志级别
+## 附加环境及其它
 
-| 值 | 说明 |
-|------|------|
-| `"silent"` | 不输出任何日志 |
-| `"error"` | 仅输出错误信息 |
-| `"warn"` | 输出警告和错误 |
-| `"info"` | 输出信息、警告和错误（默认） |
-| `"debug"` | 输出所有日志，包括调试信息 |
+### `log_level` 日志输出界限
+设定程序后台巡检运转时期的打印披露信息的程度。
+可用枚举：`"silent"`, `"error"`, `"warn"`, `"info"`(程序默认倾向), `"debug"`。
+此项支持被同名由系统环境变量中拉出的 `LOG_LEVEL` 进行初始影响覆盖定义，但配置脚本有最终更上的仲裁级别。
 
-也可以通过环境变量 `LOG_LEVEL` 设置。配置文件中的设置优先级更高。
-
----
-
-## `proxy` — 代理设置
-
-可选。配置后所有 HTTP 请求（订阅获取、模块下载）都会通过此代理。
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|:----:|------|
-| `type` | string | ✅ | 代理类型：`"http"` / `"https"` / `"socks5"` |
-| `host` | string | ✅ | 代理服务器地址 |
-| `port` | int | ✅ | 代理服务器端口（1–65535） |
-| `username` | string | ❌ | 认证用户名 |
-| `password` | string | ❌ | 认证密码 |
-
-不配置 `proxy` 时使用直连。
-
+### `proxy` 探路代理
+有些订阅拉取服务器本身阻隔未认证地区的互联，配置后包括外层云端组件获取及订阅网络访问所有的发起均利用此处的指定 HTTP 请求打通桥梁穿透通信（非填入此项时等式直连等效不应用代理）。
 ```json
 {
-  "proxy": {
-    "type": "http",
-    "host": "127.0.0.1",
-    "port": 7890,
-    "username": "user",
-    "password": "pass"
-  }
+  "type": "http", // 支持类型包含 http, https, socks5 规约体系
+  "host": "127.0.0.1",
+  "port": 7890
 }
 ```
 
----
+### `user_agent` 身份辨伪欺骗
+主要负责进行对外资源网络通讯模拟客户端身份。
+由于各个云订阅商端有自我设定的提取隔离机制限定，伪装识别层级按照从下向上传递规则覆盖决胜：
+`订阅节点下自定义的 user_agent` > `根下赋予全局的 user_agent`  >  程序底线硬编码 `"sing-box"`。
 
-## `user_agent` — 全局 User-Agent
+### 核心支持环境变量
 
-可选。设置 HTTP 请求的 User-Agent 头。
+在没有指定配置或用于外层容器化脚本驱动调度时生效的基本环境变量群：
 
-**优先级（从高到低）：**
-
-1. 订阅的 `user_agent` 字段
-2. 全局 `user_agent` 字段
-3. 默认值 `"sing-box"`
-
-```json
-{
-  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
-```
-
----
-
-## 环境变量
-
-| 变量名 | 说明 |
+| 变量名 | 实际控制业务说明 |
 |--------|------|
-| `NODE_BOX_CONFIG` | 配置文件路径（优先级低于命令行参数，高于默认路径） |
-| `LOG_LEVEL` | 日志级别，当配置文件未设置 `log_level` 时生效 |
-| `LOG_TIME` | 设为 `true` 或 `1` 启用日志时间戳 |
-| `LOG_PREFIX` | 日志前缀字符串 |
-
----
-
-## 完整配置示例
-
-参见 [example.json](./example.json)。
+| `NODE_BOX_CONFIG` | 主配核心引用位置引导指针（其启动地位从低往上排序：默认配置常熟位置 < `NODE_BOX_CONFIG` 环境变量 < 用户执行命令行传递显示入参） |
+| `LOG_LEVEL` | 常规未配置情况日志输出定死级 |
+| `LOG_TIME` | 若设 `true` 或者 `1`，日志会强控启用携带时刻日历版带出的系统时刻标记码 |
+| `LOG_PREFIX` | 自定义基础输出在打印时的字符串前缀占位提示 |
