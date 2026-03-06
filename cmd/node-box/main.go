@@ -216,7 +216,7 @@ func main() {
 	case "nodes":
 		// 仅更新节点配置
 		logger.Info("开始更新节点配置...")
-		if err := nodeManager.UpdateAllConfigs(); err != nil {
+		if err := nodeManager.UpdateOutboundsConfigs(); err != nil {
 			logger.Error("节点配置更新失败: %v", err)
 			logger.Warn("程序将继续运行，部分配置可能未更新")
 		} else {
