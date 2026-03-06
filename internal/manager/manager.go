@@ -534,13 +534,8 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 	nm.InvalidateCache()
 	nm.moduleManager.InvalidateCache()
 
-	// 1.5 在每次更新开始时，清理所有目标配置中包含订阅名前缀的节点与 selector 标签
-	// 这样可以移除因为 enable 状态变化或 targets.subscriptions 调整而被排除的历史内容
-	var allSubNames []string
-	for _, sub := range nm.config.Nodes.Subscriptions {
-		// 不论是否启用，都需要作为清理依据
-		allSubNames = append(allSubNames, sub.Name)
-	}
+	// 1.5 在每次更新开始时，清理所有目标配置中包含 [xxx] 模式的节点与 selector 标签
+	// 使用通配清理，确保重命名/删除的订阅残留也能被清除
 	for _, target := range nm.config.Nodes.Targets {
 		scanner := nm.scanners[target.Path]
 		configFiles, err := scanner.ScanConfigFiles()
@@ -552,7 +547,7 @@ func (nm *NodeManager) UpdateAllConfigurations() error {
 		}
 		for _, cfgPath := range configFiles {
 			updater := fileops.NewUpdater("")
-			if err := updater.CleanSubscriptionArtifacts(cfgPath, allSubNames); err != nil {
+			if err := updater.CleanAllSubscriptionArtifacts(cfgPath); err != nil {
 				errorMsg := fmt.Sprintf("清理订阅残留失败 %s: %v", cfgPath, err)
 				logger.Error("%s", errorMsg)
 				errors = append(errors, errorMsg)
