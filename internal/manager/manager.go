@@ -346,8 +346,11 @@ func (nm *NodeManager) UpdateAllConfigs() error {
 
 		for _, modName := range configFile.Modules {
 			if mod, exists := outboundsMap[modName]; exists {
-				subscriptionNames = append(subscriptionNames, mod.Subscriptions...)
-				selectors = append(selectors, mod.Selectors...)
+				// 仅当模块没有指定路径，或者路径与当前配置文件匹配时，才应用其规则
+				if mod.Path == "" || mod.Path == configFile.Path {
+					subscriptionNames = append(subscriptionNames, mod.Subscriptions...)
+					selectors = append(selectors, mod.Selectors...)
+				}
 			}
 		}
 
@@ -775,8 +778,11 @@ func (nm *NodeManager) writeRelayNodesToConfig() error {
 
 		for _, modName := range configFile.Modules {
 			if mod, exists := outboundsMap[modName]; exists {
-				subscriptionNames = append(subscriptionNames, mod.Subscriptions...)
-				selectors = append(selectors, mod.Selectors...)
+				// 仅当模块没有指定路径，或者路径与当前配置文件匹配时，才应用其规则
+				if mod.Path == "" || mod.Path == configFile.Path {
+					subscriptionNames = append(subscriptionNames, mod.Subscriptions...)
+					selectors = append(selectors, mod.Selectors...)
+				}
 			}
 		}
 
