@@ -75,8 +75,8 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 	}
 
 	// 执行 no_need 过滤逻辑
-	if len(configFile.NoNeed) > 0 {
-		if err := cu.applyNoNeedFilter(updatedConfig, configFile.NoNeed); err != nil {
+	if len(configFile.NoNeedNodes) > 0 {
+		if err := cu.applyNoNeedFilter(updatedConfig, configFile.NoNeedNodes); err != nil {
 			return fmt.Errorf("应用no_need过滤失败 %s: %v", configFile.Name, err)
 		}
 	}

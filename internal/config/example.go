@@ -39,25 +39,6 @@ func GenerateExample(configPath string) error {
 					Enable: false,
 				},
 			},
-			Targets: []Target{
-				{
-					Name: "默认目录多规则示例",
-					Path: "./configs",
-					Proxies: []ProxyTarget{
-						{InsertMarker: "🚀 节点选择"},
-						{InsertMarker: "🌟 特定节点", IncludeKeywords: []string{"美国", "日本"}},
-					},
-				},
-				{
-					Name:          "单文件规则示例",
-					Path:          "./test/specific_config.json",
-					IsFile:        true,
-					Subscriptions: []string{"示例订阅1"},
-					Proxies: []ProxyTarget{
-						{InsertMarker: "Proxy"},
-					},
-				},
-			},
 			ExcludeKeywords: []string{"故障转移", "流量"},
 		},
 		Modules: &ModulesConfig{
@@ -107,8 +88,13 @@ func GenerateExample(configPath string) error {
 			},
 			Outbounds: []Module{
 				{
-					Name: "outbounds1",
-					Path: "./configs/outbounds.json",
+					Name:          "outbounds1",
+					Path:          "./configs/outbounds.json",
+					Subscriptions: []string{"示例订阅1-远程"},
+					Selectors: []Selector{
+						{InsertMarker: "🚀 节点选择"},
+						{InsertMarker: "🌟 特定节点", IncludeNodes: []string{"美国", "日本"}},
+					},
 				},
 			},
 			Route: []Module{
@@ -137,9 +123,10 @@ func GenerateExample(configPath string) error {
 				Modules: []string{"log1", "dns1", "ntp1", "cert1"},
 			},
 			{
-				Name:    "config2",
-				Path:    "./singbox/test_config.json",
-				Modules: []string{"log2", "dns2", "endpoints1", "inbounds1", "outbounds1", "route1", "services1", "experimental1"},
+				Name:        "config2",
+				Path:        "./singbox/test_config.json",
+				Modules:     []string{"log2", "dns2", "endpoints1", "inbounds1", "outbounds1", "route1", "services1", "experimental1"},
+				NoNeedNodes: []string{"广告", "测试"},
 			},
 		},
 		UpdateSchedule: &ScheduleConfig{

@@ -29,12 +29,11 @@ type Config struct {
 }
 
 // NodesConfig represents the nodes configuration section.
-// It contains subscriptions, targets, and exclude keywords.
+// It contains subscriptions and exclude keywords.
 type NodesConfig struct {
 	Subscriptions   []Subscription     `json:"subscriptions"`
-	Targets         []Target           `json:"targets"`
 	ExcludeKeywords []string           `json:"exclude_keywords,omitempty"`
-	IncludeRelay    []IncludeRelayRule `json:"include_relay,omitempty"` // 确定哪些节点作为真实节点写入
+	RelayNodes      []IncludeRelayRule `json:"relay_nodes,omitempty"` // 确定哪些节点作为真实节点写入
 }
 
 // IncludeRelayRule defines a rule to include relay nodes whose tag contains
@@ -57,28 +56,6 @@ type Subscription struct {
 	UserAgent   string `json:"user_agent,omitempty"`   // 自定义User-Agent，可选
 }
 
-// Target represents a configuration target path and a set of proxy insertion rules.
-// A target may point to a directory or a single file, and can specify which
-// subscriptions to include. Each target contains one or more proxy rules
-// that define the insert marker and keyword filters.
-type Target struct {
-	Name          string        `json:"name,omitempty"`
-	Path          string        `json:"path"`
-	IsFile        bool          `json:"is_file,omitempty"`
-	Subscriptions []string      `json:"subscriptions,omitempty"`
-	Proxies       []ProxyTarget `json:"proxies"`
-}
-
-// ProxyTarget represents a single proxy insertion rule under a target.
-// It defines the selector tag to insert into, and optional include/exclude
-// keyword filters applied to node tags.
-type ProxyTarget struct {
-	InsertMarker    string   `json:"insert_marker"`
-	IncludeKeywords []string `json:"include_keywords,omitempty"`
-	ExcludeKeywords []string `json:"exclude_keywords,omitempty"`
-	RelayNodes      []string `json:"relay_nodes,omitempty"` // 确定更新哪些 tag 到 selector
-}
-
 // ModulesConfig represents the modules configuration section.
 // It contains different types of modules that can be fetched from remote sources.
 type ModulesConfig struct {
@@ -94,21 +71,31 @@ type ModulesConfig struct {
 	Experimental []Module `json:"experimental,omitempty"`
 }
 
+// Selector replaces ProxyTarget under outbounds modules
+type Selector struct {
+	InsertMarker      string   `json:"insert_marker"`
+	IncludeNodes      []string `json:"include_nodes,omitempty"`
+	ExcludeNodes      []string `json:"exclude_nodes,omitempty"`
+	IncludeRelayNodes []string `json:"include_relay_nodes,omitempty"` // 确定更新哪些 tag 到 selector
+}
+
 // Module represents a single module configuration.
 // It defines how to fetch a module from a local path or remote URL.
 type Module struct {
-	Name    string `json:"name"`               // module name
-	Path    string `json:"path,omitempty"`     // local file path
-	FromURL string `json:"from_url,omitempty"` // remote URL
+	Name          string     `json:"name"`               // module name
+	Path          string     `json:"path,omitempty"`     // local file path
+	FromURL       string     `json:"from_url,omitempty"` // remote URL
+	Subscriptions []string   `json:"subscriptions,omitempty"`
+	Selectors     []Selector `json:"selectors,omitempty"`
 }
 
 // ConfigFile represents a configuration file that uses modules.
 // It defines which modules should be applied to which configuration file.
 type ConfigFile struct {
-	Name    string   `json:"name"`              // configuration name
-	Path    string   `json:"path"`              // target configuration file path
-	Modules []string `json:"modules"`           // list of module names to apply
-	NoNeed  []string `json:"no_need,omitempty"` // keywords to remove from outbounds and endpoints after processing
+	Name        string   `json:"name"`                    // configuration name
+	Path        string   `json:"path"`                    // target configuration file path
+	Modules     []string `json:"modules"`                 // list of module names to apply
+	NoNeedNodes []string `json:"no_need_nodes,omitempty"` // keywords to remove from outbounds and endpoints after processing
 }
 
 // ScheduleConfig represents update schedule configuration.
@@ -204,17 +191,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("nodes configuration is required")
 	}
 
-	// 验证 targets (配置路径)
-	if len(c.Nodes.Targets) == 0 {
-		return fmt.Errorf("nodes.targets cannot be empty")
-	}
-
-	for i, target := range c.Nodes.Targets {
-		if err := c.validateTarget(target, i); err != nil {
-			return err
-		}
-	}
-
 	// 验证调度配置
 	if c.UpdateSchedule == nil {
 		return fmt.Errorf("update_schedule configuration is required")
@@ -256,40 +232,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// validateTarget validates a single target configuration
-func (c *Config) validateTarget(target Target, index int) error {
-	if target.Path == "" {
-		return fmt.Errorf("targets[%d]: path cannot be empty", index)
-	}
-
-	if len(target.Proxies) == 0 {
-		return fmt.Errorf("targets[%d]: proxies cannot be empty", index)
-	}
-
-	// 验证指定的订阅是否存在
-	if len(target.Subscriptions) > 0 {
-		subscriptionMap := make(map[string]bool)
-		for _, sub := range c.Nodes.Subscriptions {
-			subscriptionMap[sub.Name] = true
-		}
-
-		for _, subName := range target.Subscriptions {
-			if !subscriptionMap[subName] {
-				return fmt.Errorf("targets[%d]: subscription '%s' not found in subscriptions list", index, subName)
-			}
-		}
-	}
-
-	// 验证每个 proxy 配置
-	for j, p := range target.Proxies {
-		if strings.TrimSpace(p.InsertMarker) == "" {
-			return fmt.Errorf("targets[%d].proxies[%d]: insert_marker cannot be empty", index, j)
-		}
-		// include/exclude 关键词无需更多格式验证
-	}
-
-	return nil
-}
+// validateConfig validations
 
 // validateSubscription validates a single subscription configuration
 func (c *Config) validateSubscription(sub Subscription, index int) error {
