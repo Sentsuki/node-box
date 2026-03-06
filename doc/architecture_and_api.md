@@ -164,9 +164,8 @@ type Config struct {
 // 节点配置
 type NodesConfig struct {
     Subscriptions   []Subscription
-    Targets         []Target
     ExcludeKeywords []string
-    IncludeRelay    []IncludeRelayRule
+    RelayNodes      []IncludeRelayRule
 }
 
 // 订阅定义
@@ -175,27 +174,27 @@ type Subscription struct {
     Enable, RemoveEmoji              bool
 }
 
-// 目标定义
-type Target struct {
-    Name          string
-    Path          string
-    IsFile        bool
-    Subscriptions []string
-    Proxies       []ProxyTarget
-}
-
-// 代理插入规则
-type ProxyTarget struct {
-    InsertMarker    string
-    IncludeKeywords []string
-    ExcludeKeywords []string
-    RelayNodes      []string
-}
-
 // Relay 包含规则
 type IncludeRelayRule struct {
     Tag      string
     Upstream []string
+}
+
+// 模块定义
+type Module struct {
+    Name          string
+    Path          string
+    FromURL       string
+    Subscriptions []string   // 仅 outbounds 模块支持
+    Selectors     []Selector // 仅 outbounds 模块支持
+}
+
+// Selector 规则
+type Selector struct {
+    InsertMarker      string
+    IncludeNodes      []string
+    ExcludeNodes      []string
+    IncludeRelayNodes []string
 }
 ```
 

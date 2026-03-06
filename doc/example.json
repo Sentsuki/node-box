@@ -28,65 +28,12 @@
         "enable": false
       }
     ],
-    "targets": [
-      {
-        "name": "main_config_directory",
-        "path": "/path/to/config/directory",
-        "is_file": false,
-        "subscriptions": [
-          "clash_subscription_1",
-          "singbox_subscription_1"
-        ],
-        "proxies": [
-          {
-            "insert_marker": "# PROXY_NODES",
-            "include_keywords": [
-              "香港",
-              "新加坡",
-              "美国"
-            ],
-            "exclude_keywords": [
-              "过期",
-              "测试"
-            ],
-            "relay_nodes": [
-              "relay-hk-01",
-              "relay-sg-01"
-            ]
-          },
-          {
-            "insert_marker": "# STREAMING_NODES",
-            "include_keywords": [
-              "Netflix",
-              "Disney",
-              "流媒体"
-            ],
-            "exclude_keywords": [
-              "限速"
-            ]
-          }
-        ]
-      },
-      {
-        "name": "single_config_file",
-        "path": "/path/to/specific/config.json",
-        "is_file": true,
-        "proxies": [
-          {
-            "insert_marker": "# ALL_NODES",
-            "relay_nodes": [
-              "backup-relay"
-            ]
-          }
-        ]
-      }
-    ],
     "exclude_keywords": [
       "过期",
       "失效",
       "测试"
     ],
-    "include_relay": [
+    "relay_nodes": [
       {
         "tag": "relay-premium",
         "upstream": [
@@ -155,8 +102,41 @@
     ],
     "outbounds": [
       {
-        "name": "direct_outbound",
-        "path": "/path/to/direct.json"
+        "name": "main_outbound",
+        "path": "/path/to/main_outbound.json",
+        "subscriptions": [
+          "clash_subscription_1",
+          "singbox_subscription_1"
+        ],
+        "selectors": [
+          {
+            "insert_marker": "# PROXY_NODES",
+            "include_nodes": [
+              "香港",
+              "新加坡",
+              "美国"
+            ],
+            "exclude_nodes": [
+              "过期",
+              "测试"
+            ],
+            "include_relay_nodes": [
+              "relay-hk-01",
+              "relay-sg-01"
+            ]
+          },
+          {
+            "insert_marker": "# STREAMING_NODES",
+            "include_nodes": [
+              "Netflix",
+              "Disney",
+              "流媒体"
+            ],
+            "exclude_nodes": [
+              "限速"
+            ]
+          }
+        ]
       },
       {
         "name": "block_outbound",
@@ -193,10 +173,10 @@
       "modules": [
         "default_log",
         "cloudflare_dns",
-        "direct_outbound",
+        "main_outbound",
         "china_route"
       ],
-      "no_need": [
+      "no_need_nodes": [
         "测试",
         "过期",
         "失效"
@@ -211,7 +191,7 @@
         "http_inbound",
         "custom_route"
       ],
-      "no_need": [
+      "no_need_nodes": [
         "广告",
         "限速",
         "临时"
