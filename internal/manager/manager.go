@@ -599,25 +599,22 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 		return nil
 	}
 
-	// 从订阅缓存中收集所有非relay节点的tag作为detour候选
 	var detourTags []string
-	for subName, nodes := range nm.cache.nodes {
-		// 跳过relay订阅
-		isRelaySub := false
-		for _, relaySub := range relaySubs {
-			if subName == relaySub {
-				isRelaySub = true
-				break
-			}
-		}
-		if isRelaySub {
+
+	// 遍历配置文件中的订阅列表，这保证了不同订阅之间的先后顺序是固定的
+	for _, sub := range nm.config.Nodes.Subscriptions {
+		// 跳过未启用或者是 relay 类型的订阅
+		if !sub.Enable || strings.ToLower(sub.Type) == "relay" {
 			continue
 		}
 
-		// 收集该订阅的节点tag
-		for _, node := range nodes {
-			if tag, ok := node["tag"].(string); ok && tag != "" {
-				detourTags = append(detourTags, tag)
+		// 从缓存中获取该订阅的节点
+		if nodes, exists := nm.cache.nodes[sub.Name]; exists {
+			// 收集该订阅的节点tag，同一订阅内的节点顺序本身就是固定的
+			for _, node := range nodes {
+				if tag, ok := node["tag"].(string); ok && tag != "" {
+					detourTags = append(detourTags, tag)
+				}
 			}
 		}
 	}
