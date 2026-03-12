@@ -47,13 +47,14 @@ type IncludeRelayRule struct {
 // It defines the properties of a subscription including its URL or local path, type,
 // and whether it's enabled for processing.
 type Subscription struct {
-	Name        string `json:"name"`
-	URL         string `json:"url,omitempty"`  // 远程订阅URL，与Path二选一
-	Path        string `json:"path,omitempty"` // 本地文件路径，与URL二选一
-	Type        string `json:"type"`           // "clash" or "singbox"
-	Enable      bool   `json:"enable"`
-	RemoveEmoji bool   `json:"remove_emoji,omitempty"` // 是否移除节点名称中的emoji
-	UserAgent   string `json:"user_agent,omitempty"`   // 自定义User-Agent，可选
+	Name           string   `json:"name"`
+	URL            string   `json:"url,omitempty"`  // 远程订阅URL，与Path二选一
+	Path           string   `json:"path,omitempty"` // 本地文件路径，与URL二选一
+	Type           string   `json:"type"`           // "clash" or "singbox"
+	Enable         bool     `json:"enable"`
+	RemoveEmoji    bool     `json:"remove_emoji,omitempty"`    // 是否移除节点名称中的emoji
+	RemoveKeywords []string `json:"remove_keywords,omitempty"` // 从节点名称中移除的关键词列表
+	UserAgent      string   `json:"user_agent,omitempty"`      // 自定义User-Agent，可选
 }
 
 // ModulesConfig represents the modules configuration section.

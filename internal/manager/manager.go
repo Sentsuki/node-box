@@ -214,6 +214,11 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 			nodes = subscription.RemoveEmoji(nodes)
 		}
 
+		// 如果配置了移除关键词，则执行移除操作
+		if len(sub.RemoveKeywords) > 0 {
+			nodes = subscription.RemoveKeywords(nodes, sub.RemoveKeywords)
+		}
+
 		// 添加订阅前缀（缓存原始节点，不进行全局过滤）
 		prefixedNodes := subscription.AddSubscriptionPrefix(nodes, sub.Name)
 

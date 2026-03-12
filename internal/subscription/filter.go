@@ -3,6 +3,7 @@ package subscription
 import (
 	"fmt"
 	"node-box/internal/logger"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -80,4 +81,74 @@ func RemoveEmoji(nodes []Node) []Node {
 		}
 	}
 	return nodes
+}
+
+// RemoveKeywords removes specified keywords from node tags.
+// Supports glob-style wildcards: * matches any characters, ? matches a single character.
+// For example:
+//   - "(112人)" exact match removes "(112人)"
+//   - "(*人)" removes any string matching the pattern like "(112人)", "(50人)"
+//   - "节点?" removes "节点1", "节点A", etc.
+func RemoveKeywords(nodes []Node, keywords []string) []Node {
+	if len(keywords) == 0 {
+		return nodes
+	}
+
+	// Pre-compile patterns: separate plain strings from glob patterns
+	type keywordMatcher struct {
+		plain string         // non-empty if this is a plain string match
+		re    *regexp.Regexp // non-nil if this is a glob pattern match
+	}
+
+	var matchers []keywordMatcher
+	for _, kw := range keywords {
+		if strings.ContainsAny(kw, "*?") {
+			// Convert glob pattern to regex
+			if re, err := globToRegex(kw); err == nil {
+				matchers = append(matchers, keywordMatcher{re: re})
+			} else {
+				logger.Warn("无效的 remove_keywords 通配符模式 '%s': %v，将作为纯文本处理", kw, err)
+				matchers = append(matchers, keywordMatcher{plain: kw})
+			}
+		} else {
+			matchers = append(matchers, keywordMatcher{plain: kw})
+		}
+	}
+
+	for _, node := range nodes {
+		if tag, ok := node["tag"].(string); ok {
+			newTag := tag
+			for _, m := range matchers {
+				if m.re != nil {
+					newTag = m.re.ReplaceAllString(newTag, "")
+				} else {
+					newTag = strings.ReplaceAll(newTag, m.plain, "")
+				}
+			}
+			// Clean up multiple spaces and trim
+			for strings.Contains(newTag, "  ") {
+				newTag = strings.ReplaceAll(newTag, "  ", " ")
+			}
+			node["tag"] = strings.TrimSpace(newTag)
+		}
+	}
+	return nodes
+}
+
+// globToRegex converts a glob pattern with * and ? wildcards to a compiled regexp.
+// * matches zero or more characters, ? matches exactly one character.
+// All other regex special characters are escaped.
+func globToRegex(pattern string) (*regexp.Regexp, error) {
+	var regexStr strings.Builder
+	for _, ch := range pattern {
+		switch ch {
+		case '*':
+			regexStr.WriteString(".*")
+		case '?':
+			regexStr.WriteString(".")
+		default:
+			regexStr.WriteString(regexp.QuoteMeta(string(ch)))
+		}
+	}
+	return regexp.Compile(regexStr.String())
 }

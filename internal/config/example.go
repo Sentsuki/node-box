@@ -15,10 +15,12 @@ func GenerateExample(configPath string) error {
 		Nodes: &NodesConfig{
 			Subscriptions: []Subscription{
 				{
-					Name:   "示例订阅1-远程",
-					URL:    "https://example.com/clash-subscription",
-					Type:   "clash",
-					Enable: true,
+					Name:           "示例订阅1-远程",
+					URL:            "https://example.com/clash-subscription",
+					Type:           "clash",
+					Enable:         true,
+					RemoveEmoji:    true,
+					RemoveKeywords: []string{"(*人)", "BGP专线"},
 				},
 				{
 					Name:   "示例订阅2-远程",
