@@ -209,14 +209,21 @@ func (nm *NodeManager) FetchAndCacheAllSubscriptions() error {
 			continue
 		}
 
-		// 如果配置了移除emoji，则执行移除操作
-		if sub.RemoveEmoji {
-			nodes = subscription.RemoveEmoji(nodes)
-		}
-
-		// 如果配置了移除关键词，则执行移除操作
+		// 如果配置了移除关键词，则先执行移除操作（在 emoji 处理之前，确保关键词不影响 emoji 匹配）
 		if len(sub.RemoveKeywords) > 0 {
 			nodes = subscription.RemoveKeywords(nodes, sub.RemoveKeywords)
+		}
+
+		// 根据 emoji 配置处理节点名称中的 emoji
+		// nil: 保留订阅源原始格式
+		// true: 根据节点名自动适配 emoji
+		// false: 移除所有 emoji
+		if sub.Emoji != nil {
+			if *sub.Emoji {
+				nodes = subscription.AutoEmoji(nodes)
+			} else {
+				nodes = subscription.RemoveEmoji(nodes)
+			}
 		}
 
 		// 添加订阅前缀（缓存原始节点，不进行全局过滤）

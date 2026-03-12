@@ -83,6 +83,104 @@ func RemoveEmoji(nodes []Node) []Node {
 	return nodes
 }
 
+// emojiMapping defines the mapping from keywords to emoji for auto-assignment.
+// Order matters: more specific patterns should come before general ones.
+var emojiMapping = []struct {
+	keywords []string
+	emoji    string
+}{
+	{[]string{"阿根廷", "AR", "Argentina"}, "🇦🇷"},
+	{[]string{"澳大利亚", "澳洲", "AU", "Australia"}, "🇦🇺"},
+	{[]string{"奥地利", "AT", "Austria"}, "🇦🇹"},
+	{[]string{"孟加拉", "BD", "Bangladesh"}, "🇧🇩"},
+	{[]string{"比利时", "BE", "Belgium"}, "🇧🇪"},
+	{[]string{"巴西", "BR", "Brazil"}, "🇧🇷"},
+	{[]string{"加拿大", "CA", "Canada"}, "🇨🇦"},
+	{[]string{"智利", "CL", "Chile"}, "🇨🇱"},
+	{[]string{"哥伦比亚", "CO", "Colombia"}, "🇨🇴"},
+	{[]string{"捷克", "CZ", "Czech"}, "🇨🇿"},
+	{[]string{"丹麦", "DK", "Denmark"}, "🇩🇰"},
+	{[]string{"埃及", "EG", "Egypt"}, "🇪🇬"},
+	{[]string{"芬兰", "FI", "Finland"}, "🇫🇮"},
+	{[]string{"法国", "FR", "France"}, "🇫🇷"},
+	{[]string{"德国", "DE", "Germany"}, "🇩🇪"},
+	{[]string{"香港", "HK", "Hong Kong", "HongKong"}, "🇭🇰"},
+	{[]string{"匈牙利", "HU", "Hungary"}, "🇭🇺"},
+	{[]string{"冰岛", "IS", "Iceland"}, "🇮🇸"},
+	{[]string{"印度", "IN", "India"}, "🇮🇳"},
+	{[]string{"印尼", "印度尼西亚", "ID", "Indonesia"}, "🇮🇩"},
+	{[]string{"爱尔兰", "IE", "Ireland"}, "🇮🇪"},
+	{[]string{"以色列", "IL", "Israel"}, "🇮🇱"},
+	{[]string{"意大利", "IT", "Italy"}, "🇮🇹"},
+	{[]string{"日本", "JP", "Japan"}, "🇯🇵"},
+	{[]string{"哈萨克斯坦", "KZ", "Kazakhstan"}, "🇰🇿"},
+	{[]string{"肯尼亚", "KE", "Kenya"}, "🇰🇪"},
+	{[]string{"韩国", "KR", "Korea"}, "🇰🇷"},
+	{[]string{"马来西亚", "MY", "大马", "Malaysia"}, "🇲🇾"},
+	{[]string{"墨西哥", "MX", "Mexico"}, "🇲🇽"},
+	{[]string{"荷兰", "NL", "Netherlands"}, "🇳🇱"},
+	{[]string{"新西兰", "NZ", "New Zealand"}, "🇳🇿"},
+	{[]string{"尼日利亚", "NG", "Nigeria"}, "🇳🇬"},
+	{[]string{"挪威", "NO", "Norway"}, "🇳🇴"},
+	{[]string{"巴基斯坦", "PK", "Pakistan"}, "🇵🇰"},
+	{[]string{"菲律宾", "PH", "Philippines"}, "🇵🇭"},
+	{[]string{"波兰", "PL", "Poland"}, "🇵🇱"},
+	{[]string{"葡萄牙", "PT", "Portugal"}, "🇵🇹"},
+	{[]string{"罗马尼亚", "RO", "Romania"}, "🇷🇴"},
+	{[]string{"俄罗斯", "RU", "Russia"}, "🇷🇺"},
+	{[]string{"沙特", "SA", "Saudi"}, "🇸🇦"},
+	{[]string{"新加坡", "SG", "Singapore"}, "🇸🇬"},
+	{[]string{"南非", "ZA", "South Africa"}, "🇿🇦"},
+	{[]string{"西班牙", "ES", "Spain"}, "🇪🇸"},
+	{[]string{"瑞典", "SE", "Sweden"}, "🇸🇪"},
+	{[]string{"瑞士", "CH", "Switzerland"}, "🇨🇭"},
+	{[]string{"台湾", "TW", "Taiwan"}, "🇹🇼"},
+	{[]string{"泰国", "TH", "Thailand"}, "🇹🇭"},
+	{[]string{"土耳其", "TR", "Turkey", "Türkiye"}, "🇹🇷"},
+	{[]string{"阿联酋", "AE", "UAE", "Dubai", "迪拜"}, "🇦🇪"},
+	{[]string{"乌克兰", "UA", "Ukraine"}, "🇺🇦"},
+	{[]string{"英国", "UK", "GB", "United Kingdom", "Britain"}, "🇬🇧"},
+	{[]string{"美国", "US", "USA", "United States", "America"}, "🇺🇸"},
+	{[]string{"越南", "VN", "Vietnam"}, "🇻🇳"},
+}
+
+// matchEmoji returns the appropriate emoji for a given node tag based on keyword matching.
+// Returns "🌐" if no specific region is matched.
+func matchEmoji(tag string) string {
+	upperTag := strings.ToUpper(tag)
+	for _, mapping := range emojiMapping {
+		for _, keyword := range mapping.keywords {
+			if strings.Contains(upperTag, strings.ToUpper(keyword)) {
+				return mapping.emoji
+			}
+		}
+	}
+	return "🌐"
+}
+
+// AutoEmoji removes existing emojis from node tags and adds appropriate emoji
+// based on geographic/keyword matching of the node name.
+// This avoids problematic emoji from subscription sources and ensures consistency.
+func AutoEmoji(nodes []Node) []Node {
+	for _, node := range nodes {
+		if tag, ok := node["tag"].(string); ok {
+			// Step 1: Remove existing emojis
+			cleanTag := strings.Map(func(r rune) rune {
+				if unicode.Is(unicode.So, r) {
+					return -1
+				}
+				return r
+			}, tag)
+			cleanTag = strings.TrimSpace(cleanTag)
+
+			// Step 2: Auto-assign emoji based on node name
+			emoji := matchEmoji(cleanTag)
+			node["tag"] = emoji + " " + cleanTag
+		}
+	}
+	return nodes
+}
+
 // RemoveKeywords removes specified keywords from node tags.
 // Supports glob-style wildcards: * matches any characters, ? matches a single character.
 // For example:

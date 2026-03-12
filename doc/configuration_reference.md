@@ -33,7 +33,7 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 | `path` | string | ⚠️ | 本地订阅文件路径（与 `url` 二选一） |
 | `type` | string | ✅ | 订阅类型，可选：`"clash"`, `"singbox"`, `"relay"` |
 | `enable` | bool | ✅ | 是否启用该订阅 |
-| `remove_emoji` | bool | ❌ | 是否移除节点名称中的 Emoji，默认 `false` |
+| `emoji` | bool | ❌ | 控制节点名称中的 Emoji 处理方式。不填：保留订阅源原始格式；`true`：根据节点名自动适配 Emoji（移除原有 Emoji 并按地区关键词重新分配）；`false`：移除所有 Emoji |
 | `remove_keywords` | string[] | ❌ | 从节点名称中移除的关键词列表。支持 `*` (匹配任意字符) 和 `?` (匹配单个字符) 通配符。 |
 | `user_agent` | string | ❌ | 请求当前订阅专用 User-Agent（优先级最高） |
 

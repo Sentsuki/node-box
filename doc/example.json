@@ -6,7 +6,7 @@
         "url": "https://example.com/clash/subscription1",
         "type": "clash",
         "enable": true,
-        "remove_emoji": true,
+        "emoji": true,
         "remove_keywords": ["(*人)", "BGP专线"],
         "user_agent": "Custom-User-Agent/1.0"
       },

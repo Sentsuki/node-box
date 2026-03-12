@@ -11,6 +11,8 @@ import (
 // users can modify according to their needs. It includes example subscriptions,
 // proxy configuration, and other common settings.
 func GenerateExample(configPath string) error {
+	boolPtr := func(b bool) *bool { return &b }
+
 	config := Config{
 		Nodes: &NodesConfig{
 			Subscriptions: []Subscription{
@@ -19,7 +21,7 @@ func GenerateExample(configPath string) error {
 					URL:            "https://example.com/clash-subscription",
 					Type:           "clash",
 					Enable:         true,
-					RemoveEmoji:    true,
+					Emoji:          boolPtr(true),
 					RemoveKeywords: []string{"(*人)", "BGP专线"},
 				},
 				{
