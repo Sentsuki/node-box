@@ -16,7 +16,7 @@ var (
 	ErrMissingOutbounds       = errors.New("missing outbounds field in config")
 	ErrInvalidOutboundsFormat = errors.New("invalid outbounds field format")
 	ErrInsertMarkerNotFound   = errors.New("insert marker not found")
-	ErrInvalidMarkerType      = errors.New("insert marker is not selector type")
+	ErrInvalidMarkerType      = errors.New("insert marker is not selector or urltest type")
 	ErrConfigFileWrite        = errors.New("failed to write config file")
 	ErrConfigSerialization    = errors.New("failed to serialize config")
 )
@@ -90,7 +90,7 @@ func (u *Updater) CleanSubscriptionArtifacts(configPath string, subscriptionName
 		}
 
 		// 如果是 selector，清理其 outbounds 列表里包含订阅名的 tag
-		if t, ok := outboundMap["type"].(string); ok && t == "selector" {
+		if t, ok := outboundMap["type"].(string); ok && (t == "selector" || t == "urltest") {
 			if obList, ok := outboundMap["outbounds"].([]any); ok {
 				var filtered []any
 				for _, ob := range obList {
@@ -178,7 +178,7 @@ func (u *Updater) CleanAllSubscriptionArtifacts(configPath string) error {
 		}
 
 		// 如果是 selector，清理其 outbounds 列表里匹配 [xxx] 模式的 tag
-		if t, ok := outboundMap["type"].(string); ok && t == "selector" {
+		if t, ok := outboundMap["type"].(string); ok && (t == "selector" || t == "urltest") {
 			if obList, ok := outboundMap["outbounds"].([]any); ok {
 				var filtered []any
 				for _, ob := range obList {
@@ -559,11 +559,11 @@ func (u *Updater) findInsertMarker(outbounds []any) (int, map[string]any, error)
 	return -1, nil, fmt.Errorf("%w: %s", ErrInsertMarkerNotFound, u.insertMarker)
 }
 
-// validateMarkerType validates that the insert marker is of selector type.
-// Only selector type outbounds can be used as insert markers for proxy nodes.
+// validateMarkerType validates that the insert marker is of selector or urltest type.
+// Only selector and urltest type outbounds can be used as insert markers for proxy nodes.
 func (u *Updater) validateMarkerType(markerOutbound map[string]any) error {
 	markerType, ok := markerOutbound["type"].(string)
-	if !ok || markerType != "selector" {
+	if !ok || (markerType != "selector" && markerType != "urltest") {
 		return fmt.Errorf("%w: %s", ErrInvalidMarkerType, u.insertMarker)
 	}
 	return nil

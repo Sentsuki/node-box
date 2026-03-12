@@ -85,7 +85,7 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `insert_marker` | string | ✅ | 对应文件中，作为容器的目标 selector 的 `tag` 名称 |
+| `insert_marker` | string | ✅ | 对应文件中，作为容器的目标出站节点的 `tag` 名称（支持 `selector` 和 `urltest` 类型） |
 | `include_nodes` | string[] | ❌ | 包含词筛选。节点 tag 匹配任一元素即被抓取进入该 selector |
 | `exclude_nodes` | string[] | ❌ | 排除词筛选。优先级高，节点 tag 匹配任一元素便会在此 selector 中出局 |
 | `include_relay_nodes` | string[] | ❌ | 针对已生成的 Relay 节点的专用筛选，tag 匹配的会被装载进入此 selector |
