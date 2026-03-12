@@ -145,7 +145,7 @@ var emojiMapping = []struct {
 }
 
 // matchEmoji returns the appropriate emoji for a given node tag based on keyword matching.
-// Returns "🌐" if no specific region is matched.
+// Returns "🇺🇳" if no specific region is matched.
 func matchEmoji(tag string) string {
 	upperTag := strings.ToUpper(tag)
 	for _, mapping := range emojiMapping {
@@ -155,7 +155,7 @@ func matchEmoji(tag string) string {
 			}
 		}
 	}
-	return "🌐"
+	return "🇺🇳"
 }
 
 // AutoEmoji removes existing emojis from node tags and adds appropriate emoji
