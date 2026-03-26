@@ -73,6 +73,51 @@ type ModulesConfig struct {
 	Experimental         []Module `json:"experimental,omitempty"`
 }
 
+// ModuleEntry represents a named group of modules for iteration.
+type ModuleEntry struct {
+	Type    string
+	Modules []Module
+}
+
+// ModuleEntries returns all module groups with their type names in a fixed order.
+// This eliminates repetitive per-field iteration across the codebase.
+func (m *ModulesConfig) ModuleEntries() []ModuleEntry {
+	return []ModuleEntry{
+		{"log", m.Log},
+		{"dns", m.DNS},
+		{"ntp", m.NTP},
+		{"certificate", m.Certificate},
+		{"certificate_providers", m.CertificateProviders},
+		{"endpoints", m.Endpoints},
+		{"inbounds", m.Inbounds},
+		{"outbounds", m.Outbounds},
+		{"route", m.Route},
+		{"services", m.Services},
+		{"experimental", m.Experimental},
+	}
+}
+
+// AllModuleNames returns a set of all module names across every type.
+func (m *ModulesConfig) AllModuleNames() map[string]bool {
+	names := make(map[string]bool)
+	for _, entry := range m.ModuleEntries() {
+		for _, module := range entry.Modules {
+			names[module.Name] = true
+		}
+	}
+	return names
+}
+
+// ModulesByType returns the module slice for the given type string, or nil if unknown.
+func (m *ModulesConfig) ModulesByType(moduleType string) []Module {
+	for _, entry := range m.ModuleEntries() {
+		if entry.Type == moduleType {
+			return entry.Modules
+		}
+	}
+	return nil
+}
+
 // Selector replaces ProxyTarget under outbounds modules
 type Selector struct {
 	InsertMarker      string   `json:"insert_marker"`
@@ -266,83 +311,13 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 
 // validateModulesConfig validates modules configuration
 func (c *Config) validateModulesConfig(modules *ModulesConfig) error {
-	// Validate log modules
-	for i, module := range modules.Log {
-		if err := c.validateModule(module, "log", i); err != nil {
-			return err
+	for _, entry := range modules.ModuleEntries() {
+		for i, module := range entry.Modules {
+			if err := c.validateModule(module, entry.Type, i); err != nil {
+				return err
+			}
 		}
 	}
-
-	// Validate DNS modules
-	for i, module := range modules.DNS {
-		if err := c.validateModule(module, "dns", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate NTP modules
-	for i, module := range modules.NTP {
-		if err := c.validateModule(module, "ntp", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate Certificate modules
-	for i, module := range modules.Certificate {
-		if err := c.validateModule(module, "certificate", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate CertificateProviders modules
-	for i, module := range modules.CertificateProviders {
-		if err := c.validateModule(module, "certificate_providers", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate Endpoints modules
-	for i, module := range modules.Endpoints {
-		if err := c.validateModule(module, "endpoints", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate Inbounds modules
-	for i, module := range modules.Inbounds {
-		if err := c.validateModule(module, "inbounds", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate Outbounds modules
-	for i, module := range modules.Outbounds {
-		if err := c.validateModule(module, "outbounds", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate Route modules
-	for i, module := range modules.Route {
-		if err := c.validateModule(module, "route", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate Services modules
-	for i, module := range modules.Services {
-		if err := c.validateModule(module, "services", i); err != nil {
-			return err
-		}
-	}
-
-	// Validate Experimental modules
-	for i, module := range modules.Experimental {
-		if err := c.validateModule(module, "experimental", i); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -383,42 +358,7 @@ func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
 
 	// Validate that all referenced modules exist
 	if c.Modules != nil {
-		allModules := make(map[string]bool)
-
-		// Collect all module names from all module types
-		for _, module := range c.Modules.Log {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.DNS {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.NTP {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.Certificate {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.CertificateProviders {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.Endpoints {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.Inbounds {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.Outbounds {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.Route {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.Services {
-			allModules[module.Name] = true
-		}
-		for _, module := range c.Modules.Experimental {
-			allModules[module.Name] = true
-		}
+		allModules := c.Modules.AllModuleNames()
 
 		// Check if all referenced modules exist
 		for _, moduleName := range configFile.Modules {
