@@ -60,16 +60,17 @@ type Subscription struct {
 // ModulesConfig represents the modules configuration section.
 // It contains different types of modules that can be fetched from remote sources.
 type ModulesConfig struct {
-	Log          []Module `json:"log,omitempty"`
-	DNS          []Module `json:"dns,omitempty"`
-	NTP          []Module `json:"ntp,omitempty"`
-	Certificate  []Module `json:"certificate,omitempty"`
-	Endpoints    []Module `json:"endpoints,omitempty"`
-	Inbounds     []Module `json:"inbounds,omitempty"`
-	Outbounds    []Module `json:"outbounds,omitempty"`
-	Route        []Module `json:"route,omitempty"`
-	Services     []Module `json:"services,omitempty"`
-	Experimental []Module `json:"experimental,omitempty"`
+	Log                  []Module `json:"log,omitempty"`
+	DNS                  []Module `json:"dns,omitempty"`
+	NTP                  []Module `json:"ntp,omitempty"`
+	Certificate          []Module `json:"certificate,omitempty"`
+	CertificateProviders []Module `json:"certificate_providers,omitempty"`
+	Endpoints            []Module `json:"endpoints,omitempty"`
+	Inbounds             []Module `json:"inbounds,omitempty"`
+	Outbounds            []Module `json:"outbounds,omitempty"`
+	Route                []Module `json:"route,omitempty"`
+	Services             []Module `json:"services,omitempty"`
+	Experimental         []Module `json:"experimental,omitempty"`
 }
 
 // Selector replaces ProxyTarget under outbounds modules
@@ -293,6 +294,13 @@ func (c *Config) validateModulesConfig(modules *ModulesConfig) error {
 		}
 	}
 
+	// Validate CertificateProviders modules
+	for i, module := range modules.CertificateProviders {
+		if err := c.validateModule(module, "certificate_providers", i); err != nil {
+			return err
+		}
+	}
+
 	// Validate Endpoints modules
 	for i, module := range modules.Endpoints {
 		if err := c.validateModule(module, "endpoints", i); err != nil {
@@ -388,6 +396,9 @@ func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
 			allModules[module.Name] = true
 		}
 		for _, module := range c.Modules.Certificate {
+			allModules[module.Name] = true
+		}
+		for _, module := range c.Modules.CertificateProviders {
 			allModules[module.Name] = true
 		}
 		for _, module := range c.Modules.Endpoints {

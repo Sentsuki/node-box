@@ -374,7 +374,7 @@ func (cu *ConfigUpdater) filterNodesFromSection(config map[string]any, sectionNa
 func (cu *ConfigUpdater) removeEmptyModuleFields(config map[string]any) {
 	// 定义所有需要检查的模块字段
 	moduleFields := []string{
-		"log", "dns", "ntp", "certificate", "endpoints",
+		"log", "dns", "ntp", "certificate", "certificate_providers", "endpoints",
 		"inbounds", "outbounds", "route", "services", "experimental",
 	}
 

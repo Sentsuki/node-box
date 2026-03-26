@@ -137,6 +137,17 @@ func (mm *ModuleManager) FetchAllModules() error {
 		successCount++
 	}
 
+	// Fetch CertificateProviders modules
+	for _, module := range mm.config.Modules.CertificateProviders {
+		if err := mm.fetchModule(module, "certificate_providers"); err != nil {
+			errorMsg := fmt.Sprintf("获取CertificateProviders模块失败 %s: %v", module.Name, err)
+			logger.Error("%s", errorMsg)
+			fetchErrors = append(fetchErrors, errorMsg)
+			continue
+		}
+		successCount++
+	}
+
 	// Fetch Endpoints modules
 	for _, module := range mm.config.Modules.Endpoints {
 		if err := mm.fetchModule(module, "endpoints"); err != nil {
@@ -293,6 +304,8 @@ func (mm *ModuleManager) GetModulesByType(moduleType string) map[string]map[stri
 		modules = mm.config.Modules.NTP
 	case "certificate":
 		modules = mm.config.Modules.Certificate
+	case "certificate_providers":
+		modules = mm.config.Modules.CertificateProviders
 	case "endpoints":
 		modules = mm.config.Modules.Endpoints
 	case "inbounds":
