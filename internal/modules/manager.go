@@ -93,114 +93,17 @@ func (mm *ModuleManager) FetchAllModules() error {
 	var fetchErrors []string
 	successCount := 0
 
-	// Fetch log modules
-	for _, module := range mm.config.Modules.Log {
-		if err := mm.fetchModule(module, "log"); err != nil {
-			errorMsg := fmt.Sprintf("获取日志模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
+	// Fetch all module types using ModuleEntries
+	for _, entry := range mm.config.Modules.ModuleEntries() {
+		for _, module := range entry.Modules {
+			if err := mm.fetchModule(module, entry.Type); err != nil {
+				errorMsg := fmt.Sprintf("获取%s模块失败 %s: %v", entry.Type, module.Name, err)
+				logger.Error("%s", errorMsg)
+				fetchErrors = append(fetchErrors, errorMsg)
+				continue
+			}
+			successCount++
 		}
-		successCount++
-	}
-
-	// Fetch DNS modules
-	for _, module := range mm.config.Modules.DNS {
-		if err := mm.fetchModule(module, "dns"); err != nil {
-			errorMsg := fmt.Sprintf("获取DNS模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch NTP modules
-	for _, module := range mm.config.Modules.NTP {
-		if err := mm.fetchModule(module, "ntp"); err != nil {
-			errorMsg := fmt.Sprintf("获取NTP模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch Certificate modules
-	for _, module := range mm.config.Modules.Certificate {
-		if err := mm.fetchModule(module, "certificate"); err != nil {
-			errorMsg := fmt.Sprintf("获取Certificate模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch Endpoints modules
-	for _, module := range mm.config.Modules.Endpoints {
-		if err := mm.fetchModule(module, "endpoints"); err != nil {
-			errorMsg := fmt.Sprintf("获取Endpoints模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch Inbounds modules
-	for _, module := range mm.config.Modules.Inbounds {
-		if err := mm.fetchModule(module, "inbounds"); err != nil {
-			errorMsg := fmt.Sprintf("获取Inbounds模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch Outbounds modules
-	for _, module := range mm.config.Modules.Outbounds {
-		if err := mm.fetchModule(module, "outbounds"); err != nil {
-			errorMsg := fmt.Sprintf("获取Outbounds模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch Route modules
-	for _, module := range mm.config.Modules.Route {
-		if err := mm.fetchModule(module, "route"); err != nil {
-			errorMsg := fmt.Sprintf("获取Route模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch Services modules
-	for _, module := range mm.config.Modules.Services {
-		if err := mm.fetchModule(module, "services"); err != nil {
-			errorMsg := fmt.Sprintf("获取Services模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
-	}
-
-	// Fetch Experimental modules
-	for _, module := range mm.config.Modules.Experimental {
-		if err := mm.fetchModule(module, "experimental"); err != nil {
-			errorMsg := fmt.Sprintf("获取Experimental模块失败 %s: %v", module.Name, err)
-			logger.Error("%s", errorMsg)
-			fetchErrors = append(fetchErrors, errorMsg)
-			continue
-		}
-		successCount++
 	}
 
 	// 标记缓存为有效（即使有部分失败）
@@ -284,28 +187,10 @@ func (mm *ModuleManager) GetModulesByType(moduleType string) map[string]map[stri
 	}
 
 	var modules []config.Module
-	switch moduleType {
-	case "log":
-		modules = mm.config.Modules.Log
-	case "dns":
-		modules = mm.config.Modules.DNS
-	case "ntp":
-		modules = mm.config.Modules.NTP
-	case "certificate":
-		modules = mm.config.Modules.Certificate
-	case "endpoints":
-		modules = mm.config.Modules.Endpoints
-	case "inbounds":
-		modules = mm.config.Modules.Inbounds
-	case "outbounds":
-		modules = mm.config.Modules.Outbounds
-	case "route":
-		modules = mm.config.Modules.Route
-	case "services":
-		modules = mm.config.Modules.Services
-	case "experimental":
-		modules = mm.config.Modules.Experimental
-	default:
+	if mm.config.Modules != nil {
+		modules = mm.config.Modules.ModulesByType(moduleType)
+	}
+	if modules == nil {
 		logger.Warn("未知的模块类型: %s", moduleType)
 		return result
 	}

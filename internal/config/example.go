@@ -78,6 +78,12 @@ func GenerateExample(configPath string) error {
 					FromURL: "https://example.com/certificate.json",
 				},
 			},
+			CertificateProviders: []Module{
+				{
+					Name:    "cert_provider1",
+					FromURL: "https://example.com/certificate_providers.json",
+				},
+			},
 			Endpoints: []Module{
 				{
 					Name: "endpoints1",
