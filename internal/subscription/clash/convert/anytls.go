@@ -11,6 +11,7 @@ import (
 func anytls(p *clash.Proxies, s *singbox.SingBoxOut, v model.SingBoxVer) ([]singbox.SingBoxOut, error) {
 	p.Tls = true
 	tls(p, s)
+	s.TcpFastOpen = false
 
 	if p.IdleSessionCheckInterval != 0 {
 		s.IdleSessionCheckInterval = fmt.Sprintf("%vs", p.IdleSessionCheckInterval)

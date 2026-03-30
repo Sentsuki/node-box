@@ -15,15 +15,16 @@ import (
 func hysteria(p *clash.Proxies, s *singbox.SingBoxOut) error {
 	p.Tls = true
 	tls(p, s)
-	if p.Port == "" || p.Ports == "" {
+	if p.Port == "" && p.Ports == "" {
 		return fmt.Errorf("hysteria: %w", ErrNotSupportType)
 	}
 	if p.Ports != "" {
-		port, err := portsToPort(p.Ports)
+		ports, err := portsToPorts(p.Ports)
 		if err != nil {
 			return fmt.Errorf("hysteria: %w", err)
 		}
-		s.ServerPort = port
+		s.ServerPort = 0
+		s.ServerPorts = ports
 	}
 	if p.AuthStr != "" {
 		s.AuthStr = p.AuthStr
@@ -60,11 +61,14 @@ func hysteria(p *clash.Proxies, s *singbox.SingBoxOut) error {
 		s.RecvWindowConn = int(p.RecvWindowConn1)
 	}
 	if p.CaStr != "" {
-		s.TLS.Certificate = p.CaStr
-	} else {
-		s.TLS.Certificate = p.CaStr1
+		s.TLS.Certificate = []string{p.CaStr}
+	} else if p.CaStr1 != "" {
+		s.TLS.Certificate = []string{p.CaStr1}
 	}
 	s.DisableMtuDiscovery = bool(p.DisableMtuDiscovery)
+	if p.HopInterval != 0 {
+		s.HopInterval = fmt.Sprintf("%vs", p.HopInterval)
+	}
 	return nil
 }
 
@@ -98,7 +102,10 @@ func hysteia2(p *clash.Proxies, s *singbox.SingBoxOut, v model.SingBoxVer) ([]si
 		return nil, fmt.Errorf("hysteia2: %w", err)
 	}
 	s.Password = p.Password
-	if p.ObfsPassword != "" {
+	if p.HopInterval != 0 {
+		s.HopInterval = fmt.Sprintf("%vs", p.HopInterval)
+	}
+	if p.ObfsPassword != "" && p.Obfs != "" {
 		s.Obfs = &singbox.SingObfs{
 			Type:  p.Obfs,
 			Value: p.ObfsPassword,

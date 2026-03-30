@@ -20,7 +20,6 @@ var convertMap = map[string]func(*clash.Proxies, *singbox.SingBoxOut, model.Sing
 	"socks":     oldConver(socks5),
 	"hysteria":  oldConver(hysteria),
 	"hysteria2": hysteia2,
-	"wireguard": wireguard,
 	"tuic":      tuic,
 	"anytls":    anytls,
 }
@@ -32,12 +31,29 @@ func oldConver(f func(*clash.Proxies, *singbox.SingBoxOut) error) func(*clash.Pr
 	}
 }
 
-func Clash2sing(c clash.Clash, ver model.SingBoxVer) ([]singbox.SingBoxOut, error) {
+func Clash2sing(c clash.Clash, ver model.SingBoxVer) ([]singbox.SingBoxOut, []*singbox.SingBoxEndpoint, error) {
 	sl := make([]singbox.SingBoxOut, 0, len(c.Proxies)+1)
+	var eps []*singbox.SingBoxEndpoint
 	var jerr error
 	for _, v := range c.Proxies {
 		v := v
-		s, t, err := comm(&v)
+		t := typeMap[v.Type]
+		if t == "" {
+			jerr = errors.Join(jerr, fmt.Errorf("comm: %w %v", ErrNotSupportType, v.Type))
+			continue
+		}
+
+		if t == "wireguard" {
+			ep, err := wireguardEndpoint(&v)
+			if err != nil {
+				jerr = errors.Join(jerr, err)
+				continue
+			}
+			eps = append(eps, ep)
+			continue
+		}
+
+		s, _, err := comm(&v)
 		if err != nil {
 			jerr = errors.Join(jerr, err)
 			continue
@@ -61,7 +77,7 @@ func Clash2sing(c clash.Clash, ver model.SingBoxVer) ([]singbox.SingBoxOut, erro
 		sl = append(sl, l...)
 	}
 
-	return sl, jerr
+	return sl, eps, jerr
 }
 
 var ErrNotSupportType = errors.New("不支持的类型")

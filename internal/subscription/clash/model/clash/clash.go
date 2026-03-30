@@ -40,7 +40,10 @@ type Proxies struct {
 	ProtocolParam            string            `yaml:"protocol-param"`
 	ClientFingerprint        string            `yaml:"client-fingerprint"`
 	Flow                     string            `yaml:"flow"`
-	PacketEncoding           string            `yaml:"packet_encoding"`
+	PacketEncoding           string            `yaml:"packet-encoding"`
+	PacketEncoding1          string            `yaml:"packet_encoding"`
+	GlobalPadding            MyBool            `yaml:"global-padding"`
+	AuthenticatedLength      MyBool            `yaml:"authenticated-length"`
 	RealityOpts              realityOpts       `yaml:"reality-opts"`
 	AuthStr                  string            `yaml:"auth-str"`
 	AuthStr1                 string            `yaml:"auth_str"`
@@ -55,6 +58,7 @@ type Proxies struct {
 	RecvWindowConn1          MyInt             `yaml:"recv_window_conn"`
 	Up                       string            `yaml:"up"`
 	Ports                    string            `yaml:"ports"`
+	HopInterval              MyInt             `yaml:"hop-interval"`
 	Smux                     smuxOpts          `yaml:"smux"`
 	UdpOverTcp               MyBool            `yaml:"udp-over-tcp"`
 	UdpOverTcpVersion        MyInt             `yaml:"udp-over-tcp-version"`
@@ -65,13 +69,15 @@ type Proxies struct {
 	PrivateKey               string            `yaml:"private-key"`
 	Reserved                 *wgReserved       `yaml:"reserved"`
 	DialerProxy              string            `yaml:"dialer-proxy"`
-	Peers                    []wgPeer
-	MTU                      MyInt  `yaml:"mtu"`
+	Peers                    []wgPeer          `yaml:"peers"`
+	MTU                      MyInt             `yaml:"mtu"`
 	DisableSni               MyBool `yaml:"disable-sni"`
 	CongestionController     string `yaml:"congestion-controller"`
 	UdpRelayMode             string `yaml:"udp-relay-mode"`
 	ReduceRtt                MyBool `yaml:"reduce-rtt"`
 	HeartbeatInterval        MyInt  `yaml:"heartbeat-interval"`
+	UdpOverStream            MyBool `yaml:"udp-over-stream"`
+	UdpOverStreamVersion     MyInt  `yaml:"udp-over-stream-version"`
 	ObfsPassword             string `yaml:"obfs-password"`
 	Tfo                      bool   `yaml:"tfo"`
 	Mptcp                    bool   `yaml:"mptcp"`

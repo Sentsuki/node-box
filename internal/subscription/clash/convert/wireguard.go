@@ -3,54 +3,61 @@ package convert
 import (
 	"fmt"
 	"net/netip"
+	"strconv"
 
-	"node-box/internal/subscription/clash/model"
 	"node-box/internal/subscription/clash/model/clash"
 	"node-box/internal/subscription/clash/model/singbox"
-
-	"golang.org/x/exp/constraints"
 )
 
-func wireguard(p *clash.Proxies, s *singbox.SingBoxOut, _ model.SingBoxVer) (o []singbox.SingBoxOut, err error) {
-	s.LocalAddress = append(s.LocalAddress, p.IP, p.IPv6)
-	s.LocalAddress, err = addCidr(s.LocalAddress)
+func wireguardEndpoint(p *clash.Proxies) (*singbox.SingBoxEndpoint, error) {
+	address, err := addCidr([]string{p.IP, p.IPv6})
 	if err != nil {
 		return nil, fmt.Errorf("wireguard: %w", err)
 	}
-	s.PeerPublicKey = p.PublicKey
-	s.PreSharedKey = p.PreSharedKey
-	s.PrivateKey = p.PrivateKey
-	// Transform reserved array
-	if p.Reserved != nil {
-		s.Reserved = slicesConvert[uint8, int64](p.Reserved.Value)
+
+	ep := &singbox.SingBoxEndpoint{
+		Type:       "wireguard",
+		Tag:        p.Name,
+		Address:    address,
+		PrivateKey: p.PrivateKey,
+		Detour:     p.DialerProxy,
+		MTU:        uint32(p.MTU),
 	}
-	// Dialer-proxy
-	s.Detour = p.DialerProxy
-	s.MTU = uint(p.MTU)
-	// Multi-peers
-	for _, peer := range p.Peers {
-		var reserved []int64
-		if peer.Reserved != nil {
-			reserved = slicesConvert[uint8, int64](peer.Reserved.Value)
+
+	if len(p.Peers) > 0 {
+		for _, peer := range p.Peers {
+			var reserved []uint8
+			if peer.Reserved != nil {
+				reserved = peer.Reserved.Value
+			}
+			ep.Peers = append(ep.Peers, &singbox.SingWireguardMultiPeer{
+				Address:      peer.Server,
+				Port:         uint16(peer.Port),
+				PublicKey:    peer.PublicKey,
+				PreSharedKey: peer.PreSharedKey,
+				AllowedIps:   peer.AllowedIPs,
+				Reserved:     reserved,
+			})
 		}
-		s.Peers = append(s.Peers, &singbox.SingWireguardMultiPeer{
-			Server:       peer.Server,
-			ServerPort:   int(peer.Port),
-			PublicKey:    peer.PublicKey,
-			PreSharedKey: peer.PreSharedKey,
-			AllowedIps:   peer.AllowedIPs,
+	} else {
+		port, err := strconv.Atoi(p.Port)
+		if err != nil {
+			return nil, fmt.Errorf("wireguard: %w", err)
+		}
+		var reserved []uint8
+		if p.Reserved != nil {
+			reserved = p.Reserved.Value
+		}
+		ep.Peers = append(ep.Peers, &singbox.SingWireguardMultiPeer{
+			Address:      p.Server,
+			Port:         uint16(port),
+			PublicKey:    p.PublicKey,
+			PreSharedKey: p.PreSharedKey,
 			Reserved:     reserved,
 		})
 	}
-	return []singbox.SingBoxOut{*s}, nil
-}
 
-func slicesConvert[T constraints.Integer | constraints.Float, E constraints.Integer | constraints.Float](t []T) []E {
-	e := make([]E, 0, len(t))
-	for _, v := range t {
-		e = append(e, E(v))
-	}
-	return e
+	return ep, nil
 }
 
 func addCidr(ipl []string) ([]string, error) {
