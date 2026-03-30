@@ -36,14 +36,16 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 	}
 
 	// 使用新的转换逻辑
-	singboxNodes, err := convert.Clash2sing(clashConfig, cp.version)
+	singboxOutbounds, singboxEndpoints, err := convert.Clash2sing(clashConfig, cp.version)
 	if err != nil {
 		logger.Warn("Conversion warnings: %v", err)
 		// 继续处理，因为可能只是部分节点转换失败
 	}
 
 	var nodes []Node
-	for _, singboxNode := range singboxNodes {
+
+	// 处理常规 outbounds（VMess, VLESS, SS 等）
+	for _, singboxNode := range singboxOutbounds {
 		// 将SingBoxOut转换为Node (map[string]any)
 		nodeBytes, err := json.Marshal(singboxNode)
 		if err != nil {
@@ -59,6 +61,25 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 
 		// 过滤掉被忽略的节点
 		if singboxNode.Ignored {
+			continue
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	// 处理 endpoints（WireGuard 等），统一放入 nodes 中
+	// 后续 updater.go 的 moveSpecialOutboundsToEndpoints 会自动将
+	// type 为 wireguard 的节点从 outbounds 移动到 endpoints
+	for _, ep := range singboxEndpoints {
+		nodeBytes, err := json.Marshal(ep)
+		if err != nil {
+			logger.Error("Failed to marshal endpoint %s: %v", ep.Tag, err)
+			continue
+		}
+
+		var node Node
+		if err := json.Unmarshal(nodeBytes, &node); err != nil {
+			logger.Error("Failed to unmarshal endpoint %s: %v", ep.Tag, err)
 			continue
 		}
 
