@@ -71,19 +71,19 @@ type Proxies struct {
 	DialerProxy              string            `yaml:"dialer-proxy"`
 	Peers                    []wgPeer          `yaml:"peers"`
 	MTU                      MyInt             `yaml:"mtu"`
-	DisableSni               MyBool `yaml:"disable-sni"`
-	CongestionController     string `yaml:"congestion-controller"`
-	UdpRelayMode             string `yaml:"udp-relay-mode"`
-	ReduceRtt                MyBool `yaml:"reduce-rtt"`
-	HeartbeatInterval        MyInt  `yaml:"heartbeat-interval"`
-	UdpOverStream            MyBool `yaml:"udp-over-stream"`
-	UdpOverStreamVersion     MyInt  `yaml:"udp-over-stream-version"`
-	ObfsPassword             string `yaml:"obfs-password"`
-	Tfo                      bool   `yaml:"tfo"`
-	Mptcp                    bool   `yaml:"mptcp"`
-	IdleSessionCheckInterval MyInt  `yaml:"idle-session-check-interval"`
-	IdleSessionTimeout       MyInt  `yaml:"idle-session-timeout"`
-	MinIdleSession           MyInt  `yaml:"min-idle-session"`
+	DisableSni               MyBool            `yaml:"disable-sni"`
+	CongestionController     string            `yaml:"congestion-controller"`
+	UdpRelayMode             string            `yaml:"udp-relay-mode"`
+	ReduceRtt                MyBool            `yaml:"reduce-rtt"`
+	HeartbeatInterval        MyInt             `yaml:"heartbeat-interval"`
+	UdpOverStream            MyBool            `yaml:"udp-over-stream"`
+	UdpOverStreamVersion     MyInt             `yaml:"udp-over-stream-version"`
+	ObfsPassword             string            `yaml:"obfs-password"`
+	Tfo                      bool              `yaml:"tfo"`
+	Mptcp                    bool              `yaml:"mptcp"`
+	IdleSessionCheckInterval MyInt             `yaml:"idle-session-check-interval"`
+	IdleSessionTimeout       MyInt             `yaml:"idle-session-timeout"`
+	MinIdleSession           MyInt             `yaml:"min-idle-session"`
 }
 
 type smuxOpts struct {
