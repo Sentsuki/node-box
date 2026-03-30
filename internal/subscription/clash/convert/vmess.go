@@ -11,6 +11,7 @@ func tls(p *clash.Proxies, s *singbox.SingBoxOut) {
 	if p.Tls {
 		s.TLS = &singbox.SingTLS{}
 		s.TLS.Enabled = bool(p.Tls)
+		s.TLS.DisableSNI = bool(p.DisableSni)
 		if p.Servername != "" {
 			s.TLS.ServerName = p.Servername
 		} else if p.Sni != "" {
@@ -21,9 +22,7 @@ func tls(p *clash.Proxies, s *singbox.SingBoxOut) {
 		if p.ClientFingerprint != "" {
 			s.TLS.Utls = &singbox.SingUtls{}
 			s.TLS.Utls.Enabled = true
-			if p.ClientFingerprint != "" {
-				s.TLS.Utls.Fingerprint = p.ClientFingerprint
-			}
+			s.TLS.Utls.Fingerprint = p.ClientFingerprint
 		}
 		s.TLS.Insecure = bool(p.SkipCertVerify)
 		s.TLS.Alpn = p.Alpn
@@ -46,6 +45,9 @@ func vmess(p *clash.Proxies, s *singbox.SingBoxOut) error {
 	s.AlterID = int(p.AlterId)
 	s.UUID = p.Uuid
 	s.Security = p.Cipher
+	s.GlobalPadding = bool(p.GlobalPadding)
+	s.AuthenticatedLength = bool(p.AuthenticatedLength)
+	s.PacketEncoding = packetEncodingValue(p)
 	if p.WsOpts.Path != "" || p.Network == "ws" {
 		err := vmessWsOpts(p, s)
 		if err != nil {
@@ -67,7 +69,7 @@ func vmess(p *clash.Proxies, s *singbox.SingBoxOut) error {
 		}
 		return nil
 	}
-	if p.HTTPOpts.Method != "" {
+	if p.Network == "http" || len(p.HTTPOpts.Path) > 0 || len(p.HTTPOpts.Headers) > 0 || p.HTTPOpts.Method != "" {
 		err := vmessHttpOpts(p, s)
 		if err != nil {
 			return fmt.Errorf("vmess: %w", err)
@@ -82,11 +84,10 @@ func vless(p *clash.Proxies, s *singbox.SingBoxOut) error {
 		return fmt.Errorf("vless: %w", err)
 	}
 	s.Security = ""
-	s.PacketEncoding = "xudp"
-	if p.PacketEncoding != "" {
-		s.PacketEncoding = p.PacketEncoding
-	}
-	if p.Network != "ws" && len(p.Flow) >= 16 {
+	s.GlobalPadding = false
+	s.AuthenticatedLength = false
+	s.PacketEncoding = packetEncodingValue(p)
+	if p.Network != "ws" && p.Flow != "" {
 		if p.Flow != "" && p.Flow != "xtls-rprx-vision" {
 			return fmt.Errorf("vless: Flow %w", ErrNotSupportType)
 		}
@@ -153,13 +154,31 @@ func vmessHttpOpts(p *clash.Proxies, s *singbox.SingBoxOut) error {
 		s.Transport = &singbox.SingTransport{}
 	}
 	s.Transport.Type = "http"
-	s.Transport.Host = p.HTTPOpts.Headers["Host"]
+	if len(p.HTTPOpts.Headers["Host"]) > 0 {
+		s.Transport.Host = p.HTTPOpts.Headers["Host"]
+	}
 	if len(p.HTTPOpts.Path) > 0 {
 		s.Transport.Path = p.HTTPOpts.Path[0]
 	}
 	s.Transport.Method = p.HTTPOpts.Method
 	s.Transport.Headers = p.HTTPOpts.Headers
 	return nil
+}
+
+func packetEncodingValue(p *clash.Proxies) string {
+	packetEncoding := p.PacketEncoding
+	if packetEncoding == "" {
+		packetEncoding = p.PacketEncoding1
+	}
+	if packetEncoding == "" {
+		return ""
+	}
+	switch packetEncoding {
+	case "packetaddr", "packet", "xudp":
+		return packetEncoding
+	default:
+		return ""
+	}
 }
 
 func trojan(p *clash.Proxies, s *singbox.SingBoxOut) error {

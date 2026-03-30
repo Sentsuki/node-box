@@ -15,14 +15,6 @@ import (
 
 func ss(p *clash.Proxies, s *singbox.SingBoxOut, _ model.SingBoxVer) ([]singbox.SingBoxOut, error) {
 	s.Method = p.Cipher
-	if p.Obfs != "" {
-		s.Obfs = &singbox.SingObfs{
-			Value: p.Obfs,
-		}
-	}
-	s.ProtocolParam = p.ProtocolParam
-	s.Protocol = p.Protocol
-	s.ObfsParam = p.ObfsParam
 
 	if p.UdpOverTcp {
 		s.UdpOverTcp = &singbox.SingUdpOverTcp{Enabled: true, Version: 1}

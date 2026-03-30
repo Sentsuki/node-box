@@ -63,8 +63,8 @@ func getTags(s []singbox.SingBoxOut) []string {
 	})
 }
 
-func Patch(b []byte, s []singbox.SingBoxOut, include, exclude string, extOut []any, extags ...string) ([]byte, error) {
-	d, err := patchMap(b, s, include, exclude, extOut, extags, true, true)
+func Patch(b []byte, s []singbox.SingBoxOut, eps []*singbox.SingBoxEndpoint, include, exclude string, extOut []any, extags ...string) ([]byte, error) {
+	d, err := patchMap(b, s, eps, include, exclude, extOut, extags, true, true)
 	if err != nil {
 		return nil, fmt.Errorf("Patch: %w", err)
 	}
@@ -89,6 +89,7 @@ func ToInsecure(c *clash.Clash) {
 func patchMap(
 	tpl []byte,
 	s []singbox.SingBoxOut,
+	eps []*singbox.SingBoxEndpoint,
 	include, exclude string,
 	extOut []any,
 	extags []string,
@@ -276,12 +277,27 @@ func patchMap(
 	finalOutbounds := append(templateOutbounds, anyList...)
 	d["outbounds"] = finalOutbounds
 
+	// 将 WireGuard endpoints 写入顶层 "endpoints" 数组
+	if len(eps) > 0 {
+		var existingEndpoints []any
+		if raw, exists := d["endpoints"]; exists {
+			if sl, ok := raw.([]any); ok {
+				existingEndpoints = sl
+			}
+		}
+		for _, ep := range eps {
+			existingEndpoints = append(existingEndpoints, ep)
+		}
+		d["endpoints"] = existingEndpoints
+	}
+
 	return d, nil
 }
 
 func PatchMap(
 	tpl []byte,
 	s []singbox.SingBoxOut,
+	eps []*singbox.SingBoxEndpoint,
 	include, exclude string,
 	extOut []any,
 	extags []string,
@@ -349,6 +365,19 @@ func PatchMap(
 	}
 
 	d["outbounds"] = anyList
+
+	if len(eps) > 0 {
+		var existingEndpoints []any
+		if raw, exists := d["endpoints"]; exists {
+			if sl, ok := raw.([]any); ok {
+				existingEndpoints = sl
+			}
+		}
+		for _, ep := range eps {
+			existingEndpoints = append(existingEndpoints, ep)
+		}
+		d["endpoints"] = existingEndpoints
+	}
 
 	return d, nil
 }

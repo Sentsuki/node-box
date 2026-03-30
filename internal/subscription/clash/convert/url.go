@@ -87,11 +87,16 @@ func parseSocks5(u *url.URL) (clash.Proxies, error) {
 
 func parseTuic(u *url.URL) (clash.Proxies, error) {
 	p := clash.Proxies{
-		Name:     u.Fragment,
-		Type:     "tuic",
-		Server:   u.Hostname(),
-		Port:     u.Port(),
-		Password: u.User.Username(),
+		Name:   u.Fragment,
+		Type:   "tuic",
+		Server: u.Hostname(),
+		Port:   u.Port(),
+	}
+	if u.User != nil {
+		p.Uuid = u.User.Username()
+		if password, ok := u.User.Password(); ok {
+			p.Password = password
+		}
 	}
 	q := u.Query()
 	if sni, ok := q["sni"]; ok {
@@ -119,6 +124,15 @@ func parseTuic(u *url.URL) (clash.Proxies, error) {
 		i, err := strconv.Atoi(hi[0])
 		if err == nil {
 			p.HeartbeatInterval = clash.MyInt(i)
+		}
+	}
+	if uos, ok := q["udp-over-stream"]; ok && len(uos) > 0 && (uos[0] == "true" || uos[0] == "1") {
+		p.UdpOverStream = clash.MyBool(true)
+	}
+	if uosv, ok := q["udp-over-stream-version"]; ok {
+		i, err := strconv.Atoi(uosv[0])
+		if err == nil {
+			p.UdpOverStreamVersion = clash.MyInt(i)
 		}
 	}
 	return p, nil
@@ -247,10 +261,10 @@ func parseTrojan(u *url.URL) (clash.Proxies, error) {
 		p.SkipCertVerify = clash.MyBool(true)
 	}
 	if fp, ok := q["fingerprint"]; ok {
-		p.Fingerprint = fp[0]
+		p.ClientFingerprint = fp[0]
 	}
 	if fp, ok := q["fp"]; ok {
-		p.Fingerprint = fp[0]
+		p.ClientFingerprint = fp[0]
 	}
 	if cfp, ok := q["client-fingerprint"]; ok {
 		p.ClientFingerprint = cfp[0]

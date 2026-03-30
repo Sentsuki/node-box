@@ -14,12 +14,13 @@ type SingBoxOut struct {
 	Server                   string                    `json:"server,omitempty"`
 	ServerPort               int                       `json:"server_port,omitempty"`
 	ServerPorts              []string                  `json:"server_ports,omitempty"`
+	HopInterval              string                    `json:"hop_interval,omitempty"`
 	Tag                      string                    `json:"tag,omitempty"`
 	TLS                      *SingTLS                  `json:"tls,omitempty"`
 	Transport                *SingTransport            `json:"transport,omitempty"`
 	Type                     string                    `json:"type,omitempty"`
 	Method                   string                    `json:"method,omitempty"`
-	AlterID                  int                       `json:"alter_id"`
+	AlterID                  int                       `json:"alter_id,omitempty"`
 	Security                 string                    `json:"security,omitempty"`
 	UUID                     string                    `json:"uuid,omitempty"`
 	Default                  string                    `json:"default,omitempty"`
@@ -30,11 +31,10 @@ type SingBoxOut struct {
 	Network                  string                    `json:"network,omitempty"`
 	Plugin                   string                    `json:"plugin,omitempty"`
 	PluginOpts               string                    `json:"plugin_opts,omitempty"`
-	ObfsParam                string                    `json:"obfs_param,omitempty"`
-	Protocol                 string                    `json:"protocol,omitempty"`
-	ProtocolParam            string                    `json:"protocol_param,omitempty"`
 	Flow                     string                    `json:"flow,omitempty"`
 	PacketEncoding           string                    `json:"packet_encoding,omitempty"`
+	GlobalPadding            bool                      `json:"global_padding,omitempty"`
+	AuthenticatedLength      bool                      `json:"authenticated_length,omitempty"`
 	AuthStr                  string                    `json:"auth_str,omitempty"`
 	DisableMtuDiscovery      bool                      `json:"disable_mtu_discovery,omitempty"`
 	Down                     string                    `json:"down,omitempty"`
@@ -49,15 +49,9 @@ type SingBoxOut struct {
 	UdpOverTcp               *SingUdpOverTcp           `json:"udp_over_tcp,omitempty"`
 	SystemInterface          bool                      `json:"system_interface,omitempty"`
 	InterfaceName            string                    `json:"interface_name,omitempty"`
-	LocalAddress             []string                  `json:"local_address,omitempty"`
-	PrivateKey               string                    `json:"private_key,omitempty"`
-	Peers                    []*SingWireguardMultiPeer `json:"peers,omitempty"`
-	PeerPublicKey            string                    `json:"peer_public_key,omitempty"`
-	PreSharedKey             string                    `json:"pre_shared_key,omitempty"`
-	Reserved                 []int64                   `json:"reserved,omitempty"`
-	MTU                      uint                      `json:"mtu,omitempty"`
 	CongestionController     string                    `json:"congestion_control,omitempty"`
 	UdpRelayMode             string                    `json:"udp_relay_mode,omitempty"`
+	UdpOverStream            bool                      `json:"udp_over_stream,omitempty"`
 	ZeroRttHandshake         bool                      `json:"zero_rtt_handshake,omitempty"`
 	Heartbeat                string                    `json:"heartbeat,omitempty"`
 	Obfs                     *SingObfs                 `json:"obfs,omitempty"`
@@ -78,12 +72,13 @@ type SingUdpOverTcp struct {
 
 type SingTLS struct {
 	Enabled     bool         `json:"enabled,omitempty"`
+	DisableSNI  bool         `json:"disable_sni,omitempty"`
 	ServerName  string       `json:"server_name,omitempty"`
 	Alpn        []string     `json:"alpn,omitempty"`
 	Insecure    bool         `json:"insecure,omitempty"`
 	Utls        *SingUtls    `json:"utls,omitempty"`
 	Reality     *SingReality `json:"reality,omitempty"`
-	Certificate string       `json:"certificate,omitempty"`
+	Certificate []string     `json:"certificate,omitempty"`
 }
 
 type SingUtls struct {
@@ -117,13 +112,23 @@ type SingMultiplex struct {
 	Protocol       string `json:"protocol,omitempty"`
 }
 
+type SingBoxEndpoint struct {
+	Type       string                    `json:"type"`
+	Tag        string                    `json:"tag,omitempty"`
+	Address    []string                  `json:"address,omitempty"`
+	PrivateKey string                    `json:"private_key,omitempty"`
+	Peers      []*SingWireguardMultiPeer `json:"peers,omitempty"`
+	MTU        uint32                    `json:"mtu,omitempty"`
+	Detour     string                    `json:"detour,omitempty"`
+}
+
 type SingWireguardMultiPeer struct {
-	Server       string   `json:"server,omitempty"`
-	ServerPort   int      `json:"server_port,omitempty"`
+	Address      string   `json:"address,omitempty"`
+	Port         uint16   `json:"port,omitempty"`
 	PublicKey    string   `json:"public_key,omitempty"`
 	PreSharedKey string   `json:"pre_shared_key,omitempty"`
 	AllowedIps   []string `json:"allowed_ips,omitempty"`
-	Reserved     []int64  `json:"reserved,omitempty"`
+	Reserved     []uint8  `json:"reserved,omitempty"`
 }
 
 type SingObfs struct {
