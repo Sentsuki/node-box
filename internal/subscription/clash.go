@@ -3,6 +3,7 @@ package subscription
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"node-box/internal/logger"
 	"node-box/internal/subscription/clash/convert"
@@ -38,8 +39,13 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 	// 使用新的转换逻辑
 	singboxOutbounds, singboxEndpoints, err := convert.Clash2sing(clashConfig, cp.version)
 	if err != nil {
-		logger.Warn("Conversion warnings: %v", err)
-		// 继续处理，因为可能只是部分节点转换失败
+		// 逐条输出转换警告，跳过失败的节点
+		for _, line := range strings.Split(err.Error(), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				logger.Warn("Conversion skipped: %s", line)
+			}
+		}
 	}
 
 	var nodes []Node
