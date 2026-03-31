@@ -48,9 +48,9 @@ func (sp *SingBoxProcessor) Process(data []byte) ([]map[string]any, error) {
 			continue
 		}
 
-		// 检查类型，排除 direct、block、selector
+		// 检查类型，排除 direct、block、selector、urltest
 		outboundType, ok := outboundMap["type"].(string)
-		if !ok || outboundType == "direct" || outboundType == "block" || outboundType == "selector" {
+		if !ok || outboundType == "direct" || outboundType == "block" || outboundType == "selector" || outboundType == "urltest" {
 			continue
 		}
 
