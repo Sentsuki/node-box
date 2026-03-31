@@ -1,7 +1,6 @@
 package xray
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -43,13 +42,9 @@ func parseLink(link string) (map[string]any, error) {
 
 func parseVMess(link string) (map[string]any, error) {
 	raw := strings.TrimPrefix(link, "vmess://")
-	b, err := base64.StdEncoding.DecodeString(raw)
-	if err != nil {
-		// Try without padding
-		b, err = base64.RawStdEncoding.DecodeString(raw)
-		if err != nil {
-			return nil, fmt.Errorf("vmess base64 decode: %w", err)
-		}
+	b, ok := tryBase64Decode(raw)
+	if !ok {
+		return nil, fmt.Errorf("vmess base64 decode failed")
 	}
 
 	var v struct {
@@ -222,23 +217,21 @@ func parseVLESS(u *url.URL) (map[string]any, error) {
 // --- Shadowsocks ---
 
 func parseSS(u *url.URL) (map[string]any, error) {
-	port, err := strconv.Atoi(u.Port())
-	if err != nil {
-		return nil, fmt.Errorf("ss: invalid port: %w", err)
-	}
+	var method, password, host string
+	var port int
 
-	var method, password string
-
-	// Try SIP002 format: method:password@host:port
+	// First, check if the entire userInfo part is base64(method:password)
+	// Example: ss://YmYtY2ZiOnRlc3Q=@1.2.3.4:1234#tag
 	if u.User != nil {
 		pwd, hasPwd := u.User.Password()
 		if hasPwd {
+			// Plaintext user:pass (SIP002 if unencoded, unlikely in practice but possible)
 			method = u.User.Username()
 			password = pwd
 		} else {
-			// Legacy format: base64(method:password)@host:port
-			decoded, decErr := base64.RawURLEncoding.DecodeString(u.User.Username())
-			if decErr == nil {
+			// Base64 encoded part (SIP002 standard)
+			decoded, ok := tryBase64Decode(u.User.Username())
+			if ok {
 				parts := strings.SplitN(string(decoded), ":", 2)
 				if len(parts) == 2 {
 					method = parts[0]
@@ -248,14 +241,58 @@ func parseSS(u *url.URL) (map[string]any, error) {
 		}
 	}
 
+	// If method is still empty, it might be the legacy format:
+	// ss://BASE64(method:password@host:port)#tag
+	if method == "" {
+		// Try to decode the whole host/path/opaque part
+		raw := u.Host
+		if raw == "" {
+			raw = u.Path
+		}
+		decoded, ok := tryBase64Decode(raw)
+		if ok {
+			// The decoded content looks like method:password@host:port
+			s := string(decoded)
+			if atIdx := strings.LastIndex(s, "@"); atIdx != -1 {
+				userInfo := s[:atIdx]
+				serverAddr := s[atIdx+1:]
+
+				userParts := strings.SplitN(userInfo, ":", 2)
+				if len(userParts) == 2 {
+					method = userParts[0]
+					password = userParts[1]
+				}
+
+				if addrParts := strings.SplitN(serverAddr, ":", 2); len(addrParts) == 2 {
+					host = addrParts[0]
+					p, _ := strconv.Atoi(addrParts[1])
+					port = p
+				} else {
+					host = serverAddr
+					port = 8388 // default
+				}
+			}
+		}
+	}
+
 	if method == "" || password == "" {
 		return nil, fmt.Errorf("ss: cannot parse method/password")
+	}
+
+	if host == "" {
+		host = u.Hostname()
+	}
+	if port == 0 {
+		p, err := strconv.Atoi(u.Port())
+		if err == nil {
+			port = p
+		}
 	}
 
 	node := map[string]any{
 		"type":        "shadowsocks",
 		"tag":         decodeFragment(u.Fragment),
-		"server":      u.Hostname(),
+		"server":      host,
 		"server_port": port,
 		"method":      method,
 		"password":    password,

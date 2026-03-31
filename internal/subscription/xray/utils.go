@@ -10,24 +10,28 @@ import (
 
 // tryBase64Decode attempts to decode a base64-encoded string.
 // It handles standard, URL-safe, padded and unpadded variants.
-func tryBase64Decode(s string) (string, bool) {
+func tryBase64Decode(s string) ([]byte, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, false
+	}
 	// Try standard base64 with padding
 	if b, err := base64.StdEncoding.DecodeString(s); err == nil {
-		return string(b), true
+		return b, true
 	}
 	// Try standard base64 without padding
 	if b, err := base64.RawStdEncoding.DecodeString(s); err == nil {
-		return string(b), true
+		return b, true
 	}
 	// Try URL-safe base64 with padding
 	if b, err := base64.URLEncoding.DecodeString(s); err == nil {
-		return string(b), true
+		return b, true
 	}
 	// Try URL-safe base64 without padding
 	if b, err := base64.RawURLEncoding.DecodeString(s); err == nil {
-		return string(b), true
+		return b, true
 	}
-	return "", false
+	return nil, false
 }
 
 // isLikelyShareLinks checks if data looks like raw (non-base64) sharing links.
@@ -51,7 +55,7 @@ func decodeSubscription(data []byte) string {
 
 	// Try base64 decoding
 	if decoded, ok := tryBase64Decode(s); ok {
-		return decoded
+		return string(decoded)
 	}
 
 	// Fallback: return as-is
