@@ -160,13 +160,6 @@ func parseVLESS(u *url.URL) (map[string]any, error) {
 			tls["server_name"] = sni
 		}
 
-		if q.Get("fp") != "" {
-			tls["utls"] = map[string]any{
-				"enabled":     true,
-				"fingerprint": q.Get("fp"),
-			}
-		}
-
 		if alpn := q.Get("alpn"); alpn != "" {
 			tls["alpn"] = strings.Split(alpn, ",")
 		}
@@ -187,6 +180,19 @@ func parseVLESS(u *url.URL) (map[string]any, error) {
 				reality["short_id"] = sid
 			}
 			tls["reality"] = reality
+		}
+
+		// uTLS: use subscription value if present, otherwise default to chrome for reality
+		if fp := q.Get("fp"); fp != "" {
+			tls["utls"] = map[string]any{
+				"enabled":     true,
+				"fingerprint": fp,
+			}
+		} else if security == "reality" {
+			tls["utls"] = map[string]any{
+				"enabled":     true,
+				"fingerprint": "chrome",
+			}
 		}
 
 		node["tls"] = tls
@@ -333,13 +339,6 @@ func parseTrojan(u *url.URL) (map[string]any, error) {
 		tls["server_name"] = sni
 	}
 
-	if fp := q.Get("fp"); fp != "" {
-		tls["utls"] = map[string]any{
-			"enabled":     true,
-			"fingerprint": fp,
-		}
-	}
-
 	if alpn := q.Get("alpn"); alpn != "" {
 		tls["alpn"] = strings.Split(alpn, ",")
 	}
@@ -347,6 +346,34 @@ func parseTrojan(u *url.URL) (map[string]any, error) {
 	if queryBool(q.Get("allowInsecure")) || queryBool(q.Get("allowinsecure")) ||
 		queryBool(q.Get("skip-cert-verify")) {
 		tls["insecure"] = true
+	}
+
+	// Reality
+	security := q.Get("security")
+	if security == "reality" {
+		reality := map[string]any{
+			"enabled": true,
+		}
+		if pbk := q.Get("pbk"); pbk != "" {
+			reality["public_key"] = pbk
+		}
+		if sid := q.Get("sid"); sid != "" {
+			reality["short_id"] = sid
+		}
+		tls["reality"] = reality
+	}
+
+	// uTLS: use subscription value if present, otherwise default to chrome for reality
+	if fp := q.Get("fp"); fp != "" {
+		tls["utls"] = map[string]any{
+			"enabled":     true,
+			"fingerprint": fp,
+		}
+	} else if security == "reality" {
+		tls["utls"] = map[string]any{
+			"enabled":     true,
+			"fingerprint": "chrome",
+		}
 	}
 
 	node["tls"] = tls
