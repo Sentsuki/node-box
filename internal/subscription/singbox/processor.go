@@ -1,8 +1,15 @@
-package subscription
+package singbox
 
 import (
 	"encoding/json"
 	"fmt"
+)
+
+// Processor errors
+var (
+	ErrInvalidSingBoxConfig   = fmt.Errorf("invalid SingBox configuration")
+	ErrMissingOutbounds       = fmt.Errorf("missing outbounds field in configuration")
+	ErrInvalidOutboundsFormat = fmt.Errorf("invalid outbounds field format")
 )
 
 // SingBoxProcessor handles SingBox subscription data processing.
@@ -18,7 +25,7 @@ func NewSingBoxProcessor() *SingBoxProcessor {
 // Process handles SingBox subscription data and preserves all original fields.
 // It parses the JSON configuration, extracts outbound proxy configurations,
 // and filters out non-proxy entries like direct, block, and selector types.
-func (sp *SingBoxProcessor) Process(data []byte) ([]Node, error) {
+func (sp *SingBoxProcessor) Process(data []byte) ([]map[string]any, error) {
 	var config map[string]any
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSingBoxConfig, err)
@@ -34,7 +41,7 @@ func (sp *SingBoxProcessor) Process(data []byte) ([]Node, error) {
 		return nil, ErrInvalidOutboundsFormat
 	}
 
-	var nodes []Node
+	var nodes []map[string]any
 	for _, outboundRaw := range outboundsArray {
 		outboundMap, ok := outboundRaw.(map[string]any)
 		if !ok {

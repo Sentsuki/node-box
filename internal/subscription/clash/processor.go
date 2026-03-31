@@ -1,4 +1,4 @@
-package subscription
+package clash
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"node-box/internal/logger"
 	"node-box/internal/subscription/clash/convert"
 	"node-box/internal/subscription/clash/model"
-	"node-box/internal/subscription/clash/model/clash"
+	clashmodel "node-box/internal/subscription/clash/model/clash"
 
 	"gopkg.in/yaml.v3"
 )
@@ -30,10 +30,10 @@ func NewClashProcessor() *ClashProcessor {
 // Process handles Clash subscription data and converts it to SingBox format nodes.
 // It parses the YAML data, extracts proxy configurations, and converts each
 // proxy to the unified Node format compatible with SingBox using the new conversion logic.
-func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
-	var clashConfig clash.Clash
+func (cp *ClashProcessor) Process(data []byte) ([]map[string]any, error) {
+	var clashConfig clashmodel.Clash
 	if err := yaml.Unmarshal(data, &clashConfig); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidClashConfig, err)
+		return nil, fmt.Errorf("invalid Clash configuration: %v", err)
 	}
 
 	// 使用新的转换逻辑
@@ -48,7 +48,7 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 		}
 	}
 
-	var nodes []Node
+	var nodes []map[string]any
 
 	// 处理常规 outbounds（VMess, VLESS, SS 等）
 	for _, singboxNode := range singboxOutbounds {
@@ -59,7 +59,7 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 			continue
 		}
 
-		var node Node
+		var node map[string]any
 		if err := json.Unmarshal(nodeBytes, &node); err != nil {
 			logger.Error("Failed to unmarshal node %s: %v", singboxNode.Tag, err)
 			continue
@@ -83,7 +83,7 @@ func (cp *ClashProcessor) Process(data []byte) ([]Node, error) {
 			continue
 		}
 
-		var node Node
+		var node map[string]any
 		if err := json.Unmarshal(nodeBytes, &node); err != nil {
 			logger.Error("Failed to unmarshal endpoint %s: %v", ep.Tag, err)
 			continue
