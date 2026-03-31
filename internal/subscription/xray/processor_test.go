@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -164,6 +166,49 @@ func TestProcessor_Process_Base64Subscription(t *testing.T) {
 
 	assertValue(t, nodes[0], "tag", "node1")
 	assertValue(t, nodes[1], "tag", "node2")
+}
+
+// TestProcessor_Manual is for manually testing real subscription data.
+// It reads from a "test_data.txt" file in the same directory.
+func TestProcessor_Manual(t *testing.T) {
+	path := "test_data.txt"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skip("Skipping manual test: test_data.txt not found. Create it to test real data.")
+		}
+		t.Fatalf("Failed to read test_data.txt: %v", err)
+	}
+
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		t.Skip("Skipping manual test: test_data.txt is empty.")
+	}
+
+	xp := NewXrayProcessor()
+	nodes, err := xp.Process([]byte(content))
+	if err != nil {
+		t.Fatalf("Manual process failed: %v", err)
+	}
+
+	t.Logf("Successfully parsed %d nodes from test_data.txt", len(nodes))
+	
+	// Print the first few nodes tags for verification
+	maxPrint := 5
+	if len(nodes) < maxPrint {
+		maxPrint = len(nodes)
+	}
+	for i := 0; i < maxPrint; i++ {
+		t.Logf("Node [%d]: %v (Type: %v)", i, nodes[i]["tag"], nodes[i]["type"])
+	}
+
+	// Print to a JSON file for deep inspection
+	resultsPath := "test_results.json"
+	out, _ := json.MarshalIndent(nodes, "", "  ")
+	if err := os.WriteFile(resultsPath, out, 0644); err == nil {
+		absPath, _ := filepath.Abs(resultsPath)
+		t.Logf("Full results written to: %s", absPath)
+	}
 }
 
 // Helper
