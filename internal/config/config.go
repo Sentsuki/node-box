@@ -50,7 +50,7 @@ type Subscription struct {
 	Name           string   `json:"name"`
 	URL            string   `json:"url,omitempty"`  // 远程订阅URL，与Path二选一
 	Path           string   `json:"path,omitempty"` // 本地文件路径，与URL二选一
-	Type           string   `json:"type"`           // "clash" or "singbox"
+	Type           string   `json:"type"`           // "clash", "singbox", "relay", "xray" or "v2ray"
 	Enable         bool     `json:"enable"`
 	Emoji          *bool    `json:"emoji,omitempty"`           // nil:保留原格式 true:根据节点名自动适配emoji false:移除emoji
 	RemoveKeywords []string `json:"remove_keywords,omitempty"` // 从节点名称中移除的关键词列表
@@ -172,7 +172,7 @@ var (
 	ErrInvalidUpdateInterval = errors.New("update interval must be greater than 0")
 )
 
-// Environment variable name for config file path
+// ConfigPathEnvVar defines the environment variable name for the custom configuration file path.
 const ConfigPathEnvVar = "NODE_BOX_CONFIG"
 
 // GetConfigPath returns the configuration file path.
@@ -299,7 +299,7 @@ func (c *Config) validateSubscription(sub Subscription, index int) error {
 		return fmt.Errorf("subscription %d (%s): cannot specify both URL and Path", index, sub.Name)
 	}
 
-	validTypes := []string{"clash", "singbox", "relay"}
+	validTypes := []string{"clash", "singbox", "relay", "xray", "v2ray"}
 	subType := strings.ToLower(sub.Type)
 	if !slices.Contains(validTypes, subType) {
 		return fmt.Errorf("subscription %d (%s): invalid type '%s', must be one of: %v",
