@@ -36,6 +36,11 @@ func NewSingBoxProcessor() Processor {
 	return &mapAdapter{inner: singbox.NewSingBoxProcessor()}
 }
 
+// NewXrayProcessor creates an Xray processor wrapped as a Processor.
+func NewXrayProcessor() Processor {
+	return &mapAdapter{inner: xray.NewXrayProcessor()}
+}
+
 // subProcessor is the interface that all subpackage processors implement.
 type subProcessor interface {
 	Process(data []byte) ([]map[string]any, error)

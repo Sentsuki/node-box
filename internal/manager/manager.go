@@ -65,6 +65,8 @@ func NewNodeManager(cfg *config.Config) (*NodeManager, error) {
 	processors["clash"] = subscription.NewClashProcessor()
 	processors["singbox"] = subscription.NewSingBoxProcessor()
 	processors["relay"] = subscription.NewSingBoxProcessor()
+	processors["xray"] = subscription.NewXrayProcessor()
+	processors["v2ray"] = subscription.NewXrayProcessor()
 
 	// 创建节点过滤器
 	filter := subscription.NewFilter(cfg.Nodes.ExcludeKeywords)
