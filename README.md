@@ -1,7 +1,5 @@
 # Node Box
 
-A tool for managing and updating SingBox configuration files, supporting automatic retrieval of node information from Clash and SingBox subscriptions.
-
 ## License
 
 GPL-3.0 license
