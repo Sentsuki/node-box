@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-
 // parseLink parses a single sharing link and returns a SingBox outbound node.
 func parseLink(link string) (map[string]any, error) {
 	link = strings.TrimSpace(link)

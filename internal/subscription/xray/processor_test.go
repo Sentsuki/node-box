@@ -192,7 +192,7 @@ func TestProcessor_Manual(t *testing.T) {
 	}
 
 	t.Logf("Successfully parsed %d nodes from test_data.txt", len(nodes))
-	
+
 	// Print the first few nodes tags for verification
 	maxPrint := 5
 	if len(nodes) < maxPrint {
