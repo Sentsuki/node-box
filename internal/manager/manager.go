@@ -14,6 +14,7 @@ import (
 	"node-box/internal/logger"
 	"node-box/internal/modules"
 	"node-box/internal/subscription"
+	"node-box/internal/utils"
 )
 
 // Manager package errors
@@ -795,14 +796,14 @@ func (nm *NodeManager) filterRelayNodesByIncludeAndSubscriptions(targetSubscript
 				if rule.Tag == "" || len(rule.Upstream) == 0 {
 					continue
 				}
-				if !strings.Contains(tag, rule.Tag) {
+				if !utils.ContainsIgnoreEmoji(tag, rule.Tag) {
 					continue
 				}
 				for _, up := range rule.Upstream {
 					if up == "" {
 						continue
 					}
-					if strings.Contains(tag, up) {
+					if utils.ContainsIgnoreEmoji(tag, up) {
 						shouldInclude = true
 						break
 					}

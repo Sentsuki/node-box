@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"node-box/internal/logger"
+	"node-box/internal/utils"
 	"os"
 	"strings"
 )
@@ -618,7 +619,7 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 					if kw == "" {
 						continue
 					}
-					if strings.Contains(t, kw) {
+					if utils.ContainsIgnoreEmoji(t, kw) {
 						included = append(included, t)
 						break
 					}
@@ -639,7 +640,7 @@ func (u *Updater) updateSelectorOutbounds(outbounds []any, nodes []map[string]an
 				if kw == "" {
 					continue
 				}
-				if strings.Contains(t, kw) {
+				if utils.ContainsIgnoreEmoji(t, kw) {
 					skip = true
 					break
 				}

@@ -11,6 +11,7 @@ import (
 
 	"node-box/internal/config"
 	"node-box/internal/logger"
+	"node-box/internal/utils"
 )
 
 // ConfigUpdater package errors
@@ -61,7 +62,7 @@ func (cu *ConfigUpdater) UpdateConfigFile(configFile config.ConfigFile) error {
 
 	// 创建一个空的目标配置，不读取现有文件内容
 	// 这样可以确保完全清空原有内容，只保留模块数据
-	var targetConfig map[string]any = make(map[string]any)
+	targetConfig := make(map[string]any)
 
 	// Apply modules to the configuration
 	updatedConfig, err := cu.applyModules(targetConfig, configFile.Modules)
@@ -345,7 +346,7 @@ func (cu *ConfigUpdater) filterNodesFromSection(config map[string]any, sectionNa
 		if tag, exists := nodeMap["tag"]; exists {
 			if tagStr, ok := tag.(string); ok {
 				for _, keyword := range keywords {
-					if keyword != "" && strings.Contains(tagStr, keyword) {
+					if keyword != "" && utils.ContainsIgnoreEmoji(tagStr, keyword) {
 						logger.Debug("从%s中移除包含关键词'%s'的节点: %s", sectionName, keyword, tagStr)
 						shouldRemove = true
 						removedCount++

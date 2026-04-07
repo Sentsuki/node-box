@@ -13,7 +13,7 @@ import (
 const (
 	defaultConfigPath = "config.json"
 	appName           = "node-box"
-	version           = "2.5.4"
+	version           = "2.5.5"
 )
 
 // printUsage 显示程序使用帮助信息

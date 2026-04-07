@@ -3,6 +3,7 @@ package subscription
 import (
 	"fmt"
 	"node-box/internal/logger"
+	"node-box/internal/utils"
 	"regexp"
 	"strings"
 	"unicode"
@@ -35,7 +36,7 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 
 		shouldExclude := false
 		for _, keyword := range f.excludeKeywords {
-			if strings.Contains(tag, keyword) {
+			if utils.ContainsIgnoreEmoji(tag, keyword) {
 				shouldExclude = true
 				excludedCount++
 				break
