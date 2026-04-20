@@ -117,7 +117,11 @@ func parseVMess(link string) (map[string]any, error) {
 	}
 
 	// Transport
-	setTransport(node, v.Net, v.Host, v.Path, "")
+	vmessQ := url.Values{}
+	if v.Path != "" {
+		vmessQ.Set("path", v.Path)
+	}
+	setTransport(node, v.Net, v.Host, vmessQ)
 
 	return node, nil
 }
@@ -212,9 +216,7 @@ func parseVLESS(u *url.URL) (map[string]any, error) {
 
 	// Transport
 	host := q.Get("host")
-	path := q.Get("path")
-	serviceName := q.Get("serviceName")
-	setTransport(node, network, host, path, serviceName)
+	setTransport(node, network, host, q)
 
 	return node, nil
 }
@@ -381,9 +383,7 @@ func parseTrojan(u *url.URL) (map[string]any, error) {
 	// Transport
 	network := q.Get("type")
 	host := q.Get("host")
-	path := q.Get("path")
-	serviceName := q.Get("serviceName")
-	setTransport(node, network, host, path, serviceName)
+	setTransport(node, network, host, q)
 
 	return node, nil
 }
@@ -391,38 +391,81 @@ func parseTrojan(u *url.URL) (map[string]any, error) {
 // --- Helpers ---
 
 // setTransport sets the transport field on the node based on network type.
-func setTransport(node map[string]any, network, host, path, serviceName string) {
+// q holds the full set of URL query parameters (or a synthetic equivalent for VMess).
+func setTransport(node map[string]any, network, host string, q url.Values) {
 	switch network {
 	case "ws":
 		transport := map[string]any{
 			"type": "ws",
 		}
-		if path != "" {
-			transport["path"] = path
+
+		// Parse path and extract Early Data threshold (?ed=N)
+		rawPath := q.Get("path")
+		cleanPath := rawPath
+		maxEarlyData := 0
+		if idx := strings.Index(rawPath, "?"); idx != -1 {
+			if pq, err := url.ParseQuery(rawPath[idx+1:]); err == nil {
+				if ed := pq.Get("ed"); ed != "" {
+					if v, err := strconv.Atoi(ed); err == nil && v > 0 {
+						maxEarlyData = v
+					}
+				}
+			}
+			cleanPath = rawPath[:idx]
 		}
+		if cleanPath != "" {
+			transport["path"] = cleanPath
+		}
+
+		// Host header
 		if host != "" {
 			transport["headers"] = map[string]any{
-				"Host": []string{host},
+				"Host": host,
 			}
 		}
+
+		// Early Data: set max_early_data and use Sec-WebSocket-Protocol header
+		// for Xray-core compatibility (early data sent in header, not path)
+		if maxEarlyData > 0 {
+			transport["max_early_data"] = maxEarlyData
+			transport["early_data_header_name"] = "Sec-WebSocket-Protocol"
+		}
+
 		node["transport"] = transport
 	case "grpc":
 		transport := map[string]any{
 			"type": "grpc",
 		}
-		sn := serviceName
+		// serviceName takes priority; fall back to path (VMess convention)
+		sn := q.Get("serviceName")
 		if sn == "" {
-			sn = path
+			sn = q.Get("path")
 		}
 		if sn != "" {
 			transport["service_name"] = sn
+		}
+		// idle_timeout (seconds int -> SingBox duration string, e.g. "60s")
+		if it := q.Get("idle_timeout"); it != "" {
+			if secs, err := strconv.Atoi(it); err == nil && secs > 0 {
+				transport["idle_timeout"] = fmt.Sprintf("%ds", secs)
+			}
+		}
+		// health_check_timeout -> ping_timeout
+		if hct := q.Get("health_check_timeout"); hct != "" {
+			if secs, err := strconv.Atoi(hct); err == nil && secs > 0 {
+				transport["ping_timeout"] = fmt.Sprintf("%ds", secs)
+			}
+		}
+		// permit_without_stream
+		if pws := q.Get("permit_without_stream"); pws != "" {
+			transport["permit_without_stream"] = queryBool(pws)
 		}
 		node["transport"] = transport
 	case "h2", "http":
 		transport := map[string]any{
 			"type": "http",
 		}
-		if path != "" {
+		if path := q.Get("path"); path != "" {
 			transport["path"] = path
 		}
 		if host != "" {
@@ -433,11 +476,25 @@ func setTransport(node map[string]any, network, host, path, serviceName string) 
 		transport := map[string]any{
 			"type": "httpupgrade",
 		}
-		if path != "" {
+		// path -> path (direct mapping)
+		if path := q.Get("path"); path != "" {
 			transport["path"] = path
 		}
+		// host -> host (direct mapping)
 		if host != "" {
 			transport["host"] = host
+		}
+		// headers -> headers (merge extra headers if provided as JSON object)
+		// acceptProxyProtocol is not supported by SingBox, discard
+		if raw := q.Get("headers"); raw != "" {
+			var extra map[string]string
+			if err := json.Unmarshal([]byte(raw), &extra); err == nil && len(extra) > 0 {
+				headers := make(map[string]any, len(extra))
+				for k, v := range extra {
+					headers[k] = v
+				}
+				transport["headers"] = headers
+			}
 		}
 		node["transport"] = transport
 	}
