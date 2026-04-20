@@ -65,6 +65,7 @@ type ModulesConfig struct {
 	NTP                  []Module `json:"ntp,omitempty"`
 	Certificate          []Module `json:"certificate,omitempty"`
 	CertificateProviders []Module `json:"certificate_providers,omitempty"`
+	HttpClients          []Module `json:"http_clients,omitempty"`
 	Endpoints            []Module `json:"endpoints,omitempty"`
 	Inbounds             []Module `json:"inbounds,omitempty"`
 	Outbounds            []Module `json:"outbounds,omitempty"`
@@ -88,6 +89,7 @@ func (m *ModulesConfig) ModuleEntries() []ModuleEntry {
 		{"ntp", m.NTP},
 		{"certificate", m.Certificate},
 		{"certificate_providers", m.CertificateProviders},
+		{"http_clients", m.HttpClients},
 		{"endpoints", m.Endpoints},
 		{"inbounds", m.Inbounds},
 		{"outbounds", m.Outbounds},

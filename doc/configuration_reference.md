@@ -60,7 +60,7 @@ node-box 使用 JSON 格式的配置文件。可通过命令 `node-box init conf
 
 用于声明 sing-box 的各类配置模块片段（来源可以是本地或网络），供后续 `configs` 组装使用。
 
-支持的模块类型对应 sing-box 的标准配置结构：`log`, `dns`, `ntp`, `certificate`, `certificate_providers`, `endpoints`, `inbounds`, `outbounds`, `route`, `services`, `experimental`。
+支持的模块类型对应 sing-box 的标准配置结构：`log`, `dns`, `ntp`, `certificate`, `certificate_providers`, `http_clients`, `endpoints`, `inbounds`, `outbounds`, `route`, `services`, `experimental`。
 
 ### 通用模块参数
 
