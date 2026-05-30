@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"node-box/internal/logger"
-	"node-box/internal/utils"
 	"os"
 	"strings"
+
+	"node-box/internal/logger"
+	"node-box/internal/utils"
 )
 
 // FileOps package errors
@@ -209,15 +210,6 @@ func (u *Updater) CleanAllSubscriptionArtifacts(configPath string) error {
 	return nil
 }
 
-// cloneMap creates a shallow copy of a map[string]any
-func cloneMap(m map[string]any) map[string]any {
-	c := make(map[string]any, len(m))
-	for k, v := range m {
-		c[k] = v
-	}
-	return c
-}
-
 // AddDetourForSubscriptions sets detour field for all nodes that belong to given subscriptions.
 // A node is considered belonging to a subscription if its tag contains "[subName]" prefix.
 func (u *Updater) AddDetourForSubscriptions(configPath string, subscriptionNames []string, detourValue string) error {
@@ -347,7 +339,7 @@ func (u *Updater) ExpandRelayNodesByDetours(configPath string, subscriptionNames
 			if detour == "" {
 				continue
 			}
-			nm := cloneMap(outboundMap)
+			nm := utils.CloneMap(outboundMap)
 			nm["detour"] = detour
 			// 生成唯一标签，避免与现有重复
 			if baseTag, ok := nm["tag"].(string); ok && baseTag != "" {

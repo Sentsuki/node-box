@@ -38,14 +38,12 @@ func NewFetcherWithRetry(client HTTPClient, maxRetries int, retryDelay time.Dura
 
 // FetchSubscription retrieves subscription data from the specified URL with retry support.
 // It returns the raw subscription data as bytes or an error if all retry attempts fail.
-// This method handles logging, error wrapping, and automatic retry with exponential backoff.
 func (f *Fetcher) FetchSubscription(url string) ([]byte, error) {
 	return f.FetchSubscriptionWithUserAgent(url, "")
 }
 
-// FetchSubscriptionWithUserAgent retrieves subscription data from the specified URL with custom User-Agent and retry support.
-// It returns the raw subscription data as bytes or an error if all retry attempts fail.
-// This method handles logging, error wrapping, and automatic retry with exponential backoff.
+// FetchSubscriptionWithUserAgent retrieves subscription data from the specified URL
+// with a custom User-Agent and retry support.
 func (f *Fetcher) FetchSubscriptionWithUserAgent(url string, userAgent string) ([]byte, error) {
 	if userAgent != "" {
 		logger.Debug("获取订阅: %s (User-Agent: %s)", url, userAgent)
@@ -84,49 +82,25 @@ func (f *Fetcher) FetchSubscriptionWithUserAgent(url string, userAgent string) (
 }
 
 // FetchSubscriptionFromPath reads subscription data from a local file path with retry support.
-// It returns the raw subscription data as bytes or an error if the file cannot be read.
-// This method handles logging, error wrapping, and automatic retry for transient file access issues.
 func (f *Fetcher) FetchSubscriptionFromPath(path string) ([]byte, error) {
-	logger.Debug("读取本地订阅文件: %s", path)
-
-	var lastErr error
-	for attempt := 0; attempt <= f.maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(attempt) * f.retryDelay
-			logger.Warn("第 %d 次重试读取文件 %s，等待 %v...", attempt, path, delay)
-			time.Sleep(delay)
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			// 文件不存在是非临时性错误，不需要重试
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("订阅文件不存在: %s", path)
-			}
-
-			lastErr = err
-			logger.Debug("读取订阅文件失败 (尝试 %d/%d): %s - %v", attempt+1, f.maxRetries+1, path, err)
-			continue
-		}
-
-		logger.Debug("成功读取 %d 字节数据: %s", len(data), path)
-		return data, nil
-	}
-
-	return nil, fmt.Errorf("读取订阅文件失败，已重试 %d 次: %s - %v", f.maxRetries, path, lastErr)
+	return f.readFileWithRetry(path, "订阅文件")
 }
 
 // FetchModuleFromPath reads module data from a local file path with retry support.
-// It returns the raw module data as bytes or an error if the file cannot be read.
-// This method is specifically designed for module fetching with appropriate logging.
 func (f *Fetcher) FetchModuleFromPath(path string) ([]byte, error) {
-	logger.Debug("读取本地模块文件: %s", path)
+	return f.readFileWithRetry(path, "模块文件")
+}
+
+// readFileWithRetry reads a local file with retry support for transient errors.
+// label is used in log messages to distinguish between subscription and module files.
+func (f *Fetcher) readFileWithRetry(path, label string) ([]byte, error) {
+	logger.Debug("读取本地%s: %s", label, path)
 
 	var lastErr error
 	for attempt := 0; attempt <= f.maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(attempt) * f.retryDelay
-			logger.Warn("第 %d 次重试读取模块文件 %s，等待 %v...", attempt, path, delay)
+			logger.Warn("第 %d 次重试读取%s %s，等待 %v...", attempt, label, path, delay)
 			time.Sleep(delay)
 		}
 
@@ -134,17 +108,17 @@ func (f *Fetcher) FetchModuleFromPath(path string) ([]byte, error) {
 		if err != nil {
 			// 文件不存在是非临时性错误，不需要重试
 			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("模块文件不存在: %s", path)
+				return nil, fmt.Errorf("%s不存在: %s", label, path)
 			}
 
 			lastErr = err
-			logger.Debug("读取模块文件失败 (尝试 %d/%d): %s - %v", attempt+1, f.maxRetries+1, path, err)
+			logger.Debug("读取%s失败 (尝试 %d/%d): %s - %v", label, attempt+1, f.maxRetries+1, path, err)
 			continue
 		}
 
-		logger.Debug("成功读取模块文件 %d 字节数据: %s", len(data), path)
+		logger.Debug("成功读取%s %d 字节数据: %s", label, len(data), path)
 		return data, nil
 	}
 
-	return nil, fmt.Errorf("读取模块文件失败，已重试 %d 次: %s - %v", f.maxRetries, path, lastErr)
+	return nil, fmt.Errorf("读取%s失败，已重试 %d 次: %s - %v", label, f.maxRetries, path, lastErr)
 }

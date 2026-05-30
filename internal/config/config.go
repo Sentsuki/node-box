@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"slices"
 	"strings"
@@ -392,7 +391,7 @@ func (c *Config) validateProxyConfig(proxy *ProxyConfig) error {
 
 	// If username is provided, password should also be provided
 	if proxy.Username != "" && proxy.Password == "" {
-		log.Printf("Warning: proxy username provided but password is empty")
+		logger.Warn("proxy username provided but password is empty")
 	}
 
 	return nil

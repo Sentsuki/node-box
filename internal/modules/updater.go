@@ -28,24 +28,14 @@ var (
 // It can merge module configurations into target configuration files
 // and supports JSON format.
 type ConfigUpdater struct {
-	moduleManager  *ModuleManager
-	processedCount int // 记录已处理的配置文件数量
-	totalCount     int // 记录总配置文件数量
+	moduleManager *ModuleManager
 }
 
 // NewConfigUpdater creates a new ConfigUpdater instance.
 func NewConfigUpdater(moduleManager *ModuleManager) *ConfigUpdater {
 	return &ConfigUpdater{
-		moduleManager:  moduleManager,
-		processedCount: 0,
-		totalCount:     0,
+		moduleManager: moduleManager,
 	}
-}
-
-// SetTotalCount sets the total number of configuration files to be processed.
-func (cu *ConfigUpdater) SetTotalCount(total int) {
-	cu.totalCount = total
-	cu.processedCount = 0
 }
 
 // UpdateConfigFile updates a configuration file with the specified modules.
@@ -137,41 +127,14 @@ func (cu *ConfigUpdater) applyModuleByType(targetConfig map[string]any, moduleDa
 func (cu *ConfigUpdater) postProcessMergedConfig(config map[string]any) error {
 	logger.Debug("开始执行模块配置后处理...")
 
-	successCount := 0
-	failureCount := 0
-
 	// 1. 检查 endpoints 里是否有节点tag带有方括号[]，即来自订阅的节点，如果有，清除掉
 	if err := cu.cleanSubscriptionNodesFromEndpoints(config); err != nil {
-		logger.Error("清理endpoints中的订阅节点失败: %v", err)
-		failureCount++
-	} else {
-		successCount++
+		return fmt.Errorf("清理endpoints中的订阅节点失败: %w", err)
 	}
 
 	// 2. 检查 outbounds 的节点是否有 type: wireguard, tailscale，如果有，移动到 endpoints 里
 	if err := cu.moveSpecialOutboundsToEndpoints(config); err != nil {
-		logger.Error("移动特殊outbounds到endpoints失败: %v", err)
-		failureCount++
-	} else {
-		successCount++
-	}
-
-	// 增加已处理的配置文件计数
-	cu.processedCount++
-
-	// 只在处理完所有配置文件后输出一次日志
-	if cu.processedCount >= cu.totalCount {
-		if failureCount > 0 {
-			logger.Info("模块处理完成: 成功 %d 个，失败 %d 个", successCount, failureCount)
-			return fmt.Errorf("后处理过程中有 %d 个操作失败", failureCount)
-		}
-		// 全部成功时只输出一次
-		logger.Info("模块处理完成")
-	}
-
-	// 如果有失败但不是最后一个配置文件，仍然返回错误但不输出日志
-	if failureCount > 0 {
-		return fmt.Errorf("后处理过程中有 %d 个操作失败", failureCount)
+		return fmt.Errorf("移动特殊outbounds到endpoints失败: %w", err)
 	}
 
 	return nil
