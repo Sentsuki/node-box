@@ -6,7 +6,6 @@ import (
 	"node-box/internal/utils"
 	"regexp"
 	"strings"
-	"unicode"
 )
 
 // Filter provides node filtering functionality based on exclude keywords.
@@ -24,6 +23,7 @@ func NewFilter(excludeKeywords []string) *Filter {
 }
 
 // FilterNodes filters out nodes that contain exclude keywords in their tags.
+// Nodes without a tag field are preserved as-is.
 func (f *Filter) FilterNodes(nodes []Node) []Node {
 	var filteredNodes []Node
 	excludedCount := 0
@@ -31,6 +31,8 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 	for _, node := range nodes {
 		tag, ok := node["tag"].(string)
 		if !ok {
+			// 没有 tag 字段的节点直接保留，不参与过滤
+			filteredNodes = append(filteredNodes, node)
 			continue
 		}
 
@@ -67,17 +69,16 @@ func AddSubscriptionPrefix(nodes []Node, subName string) []Node {
 }
 
 // RemoveEmoji removes emojis from node tags.
+// Uses the same emoji detection logic as utils.ContainsIgnoreEmoji for consistency.
 func RemoveEmoji(nodes []Node) []Node {
 	for _, node := range nodes {
 		if tag, ok := node["tag"].(string); ok {
-			// Replace emojis (Symbol, Other) with empty string using unicode package
 			newTag := strings.Map(func(r rune) rune {
-				if unicode.Is(unicode.So, r) {
+				if utils.IsEmojiRune(r) {
 					return -1
 				}
 				return r
 			}, tag)
-			// Trim extra spaces that might have been left behind
 			node["tag"] = strings.TrimSpace(newTag)
 		}
 	}
@@ -147,11 +148,12 @@ var emojiMapping = []struct {
 
 // matchEmoji returns the appropriate emoji for a given node tag based on keyword matching.
 // Returns "🇺🇳" if no specific region is matched.
+// Uses word-boundary-aware matching to avoid false positives like "China" matching "IN" (India).
 func matchEmoji(tag string) string {
 	upperTag := strings.ToUpper(tag)
 	for _, mapping := range emojiMapping {
 		for _, keyword := range mapping.keywords {
-			if strings.Contains(upperTag, strings.ToUpper(keyword)) {
+			if containsWord(upperTag, strings.ToUpper(keyword)) {
 				return mapping.emoji
 			}
 		}
@@ -159,15 +161,49 @@ func matchEmoji(tag string) string {
 	return "🇺🇳"
 }
 
+// containsWord reports whether s contains keyword as a whole word.
+// A "word" boundary is defined as a non-letter, non-digit character (or string edge).
+// This prevents short codes like "IN" from matching inside longer words like "China" or "Finland".
+func containsWord(s, keyword string) bool {
+	idx := strings.Index(s, keyword)
+	if idx == -1 {
+		return false
+	}
+	kLen := len(keyword)
+	// Check left boundary
+	if idx > 0 {
+		prev := rune(s[idx-1])
+		if isWordChar(prev) {
+			return false
+		}
+	}
+	// Check right boundary
+	end := idx + kLen
+	if end < len(s) {
+		next := rune(s[end])
+		if isWordChar(next) {
+			return false
+		}
+	}
+	return true
+}
+
+// isWordChar reports whether r is a letter or digit (i.e., part of a word).
+func isWordChar(r rune) bool {
+	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+		// CJK Unified Ideographs — treat each Chinese character as its own word
+		(r >= 0x4E00 && r <= 0x9FFF)
+}
+
 // AutoEmoji removes existing emojis from node tags and adds appropriate emoji
 // based on geographic/keyword matching of the node name.
-// This avoids problematic emoji from subscription sources and ensures consistency.
+// Uses the same emoji detection logic as utils.ContainsIgnoreEmoji for consistency.
 func AutoEmoji(nodes []Node) []Node {
 	for _, node := range nodes {
 		if tag, ok := node["tag"].(string); ok {
-			// Step 1: Remove existing emojis
+			// Step 1: Remove existing emojis using the shared IsEmojiRune detector
 			cleanTag := strings.Map(func(r rune) rune {
-				if unicode.Is(unicode.So, r) {
+				if utils.IsEmojiRune(r) {
 					return -1
 				}
 				return r

@@ -71,6 +71,10 @@ func parseVMess(link string) (map[string]any, error) {
 		return nil, fmt.Errorf("vmess: invalid port")
 	}
 
+	if v.Ps == "" {
+		return nil, fmt.Errorf("vmess: missing node name (ps field)")
+	}
+
 	alterId := 0
 	switch aid := v.Aid.(type) {
 	case string:
@@ -294,6 +298,9 @@ func parseSS(u *url.URL) (map[string]any, error) {
 		if err == nil {
 			port = p
 		}
+	}
+	if port == 0 {
+		return nil, fmt.Errorf("ss: invalid or missing port")
 	}
 
 	node := map[string]any{
