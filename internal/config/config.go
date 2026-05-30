@@ -360,13 +360,14 @@ func (c *Config) validateConfigFile(configFile ConfigFile, index int) error {
 	// Validate that all referenced modules exist
 	if c.Modules != nil {
 		allModules := c.Modules.AllModuleNames()
-
-		// Check if all referenced modules exist
 		for _, moduleName := range configFile.Modules {
 			if !allModules[moduleName] {
 				return fmt.Errorf("configs[%d] (%s): module '%s' not found", index, configFile.Name, moduleName)
 			}
 		}
+	} else if len(configFile.Modules) > 0 {
+		return fmt.Errorf("configs[%d] (%s): references modules %v but no modules are configured",
+			index, configFile.Name, configFile.Modules)
 	}
 
 	return nil

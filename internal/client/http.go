@@ -154,10 +154,9 @@ func buildProxyURL(proxy *config.ProxyConfig) (string, error) {
 
 	// Build proxy URL with or without authentication
 	if proxy.Username != "" && proxy.Password != "" {
-		return fmt.Sprintf("%s://%s:%s@%s:%d",
+		return fmt.Sprintf("%s://%s@%s:%d",
 			proxyType,
-			proxy.Username,
-			proxy.Password,
+			url.UserPassword(proxy.Username, proxy.Password).String(),
 			proxy.Host,
 			proxy.Port), nil
 	}

@@ -83,17 +83,21 @@ func (nm *NodeManager) UpdateOutboundsConfigs() error {
 			}
 		}
 
+		selectorFailed := false
 		for _, selectorRule := range mod.Selectors {
 			updater := fileops.NewUpdater(selectorRule.InsertMarker)
 			if err := updater.UpdateSelectorOnly(mod.Path, nodesMaps, uniqueSubs, selectorRule.IncludeNodes, selectorRule.ExcludeNodes); err != nil {
 				errMsg := fmt.Sprintf("更新selector失败 %s: %v", mod.Path, err)
 				logger.Error("%s", errMsg)
 				updateErrors = append(updateErrors, errMsg)
+				selectorFailed = true
 			}
 		}
 
 		logger.Debug("路径 %s 处理完成", mod.Path)
-		totalSuccessCount++
+		if !selectorFailed {
+			totalSuccessCount++
+		}
 	}
 
 	if len(updateErrors) > 0 {

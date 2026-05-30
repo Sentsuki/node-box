@@ -148,16 +148,51 @@ var emojiMapping = []struct {
 
 // matchEmoji returns the appropriate emoji for a given node tag based on keyword matching.
 // Returns "🇺🇳" if no specific region is matched.
+// Uses word-boundary-aware matching to avoid false positives like "China" matching "IN" (India).
 func matchEmoji(tag string) string {
 	upperTag := strings.ToUpper(tag)
 	for _, mapping := range emojiMapping {
 		for _, keyword := range mapping.keywords {
-			if strings.Contains(upperTag, strings.ToUpper(keyword)) {
+			if containsWord(upperTag, strings.ToUpper(keyword)) {
 				return mapping.emoji
 			}
 		}
 	}
 	return "🇺🇳"
+}
+
+// containsWord reports whether s contains keyword as a whole word.
+// A "word" boundary is defined as a non-letter, non-digit character (or string edge).
+// This prevents short codes like "IN" from matching inside longer words like "China" or "Finland".
+func containsWord(s, keyword string) bool {
+	idx := strings.Index(s, keyword)
+	if idx == -1 {
+		return false
+	}
+	kLen := len(keyword)
+	// Check left boundary
+	if idx > 0 {
+		prev := rune(s[idx-1])
+		if isWordChar(prev) {
+			return false
+		}
+	}
+	// Check right boundary
+	end := idx + kLen
+	if end < len(s) {
+		next := rune(s[end])
+		if isWordChar(next) {
+			return false
+		}
+	}
+	return true
+}
+
+// isWordChar reports whether r is a letter or digit (i.e., part of a word).
+func isWordChar(r rune) bool {
+	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+		// CJK Unified Ideographs — treat each Chinese character as its own word
+		(r >= 0x4E00 && r <= 0x9FFF)
 }
 
 // AutoEmoji removes existing emojis from node tags and adds appropriate emoji
