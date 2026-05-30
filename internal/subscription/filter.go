@@ -6,7 +6,6 @@ import (
 	"node-box/internal/utils"
 	"regexp"
 	"strings"
-	"unicode"
 )
 
 // Filter provides node filtering functionality based on exclude keywords.
@@ -24,6 +23,7 @@ func NewFilter(excludeKeywords []string) *Filter {
 }
 
 // FilterNodes filters out nodes that contain exclude keywords in their tags.
+// Nodes without a tag field are preserved as-is.
 func (f *Filter) FilterNodes(nodes []Node) []Node {
 	var filteredNodes []Node
 	excludedCount := 0
@@ -31,6 +31,8 @@ func (f *Filter) FilterNodes(nodes []Node) []Node {
 	for _, node := range nodes {
 		tag, ok := node["tag"].(string)
 		if !ok {
+			// 没有 tag 字段的节点直接保留，不参与过滤
+			filteredNodes = append(filteredNodes, node)
 			continue
 		}
 
@@ -67,17 +69,16 @@ func AddSubscriptionPrefix(nodes []Node, subName string) []Node {
 }
 
 // RemoveEmoji removes emojis from node tags.
+// Uses the same emoji detection logic as utils.ContainsIgnoreEmoji for consistency.
 func RemoveEmoji(nodes []Node) []Node {
 	for _, node := range nodes {
 		if tag, ok := node["tag"].(string); ok {
-			// Replace emojis (Symbol, Other) with empty string using unicode package
 			newTag := strings.Map(func(r rune) rune {
-				if unicode.Is(unicode.So, r) {
+				if utils.IsEmojiRune(r) {
 					return -1
 				}
 				return r
 			}, tag)
-			// Trim extra spaces that might have been left behind
 			node["tag"] = strings.TrimSpace(newTag)
 		}
 	}
@@ -161,13 +162,13 @@ func matchEmoji(tag string) string {
 
 // AutoEmoji removes existing emojis from node tags and adds appropriate emoji
 // based on geographic/keyword matching of the node name.
-// This avoids problematic emoji from subscription sources and ensures consistency.
+// Uses the same emoji detection logic as utils.ContainsIgnoreEmoji for consistency.
 func AutoEmoji(nodes []Node) []Node {
 	for _, node := range nodes {
 		if tag, ok := node["tag"].(string); ok {
-			// Step 1: Remove existing emojis
+			// Step 1: Remove existing emojis using the shared IsEmojiRune detector
 			cleanTag := strings.Map(func(r rune) rune {
-				if unicode.Is(unicode.So, r) {
+				if utils.IsEmojiRune(r) {
 					return -1
 				}
 				return r

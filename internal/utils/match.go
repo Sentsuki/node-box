@@ -25,10 +25,6 @@ func stripEmoji(s string) string {
 	prevWasSpace := false
 	for _, r := range s {
 		if isEmojiRune(r) {
-			// Mark that we saw non-text here; a single space will be
-			// inserted if the surrounding text needs to be separated.
-			// We DON'T write anything here — the surrounding spaces in
-			// the original string already provide word separation.
 			prevWasSpace = true
 			continue
 		}
@@ -71,6 +67,11 @@ func isEmojiRune(r rune) bool {
 		return true
 	}
 	return false
+}
+
+// IsEmojiRune is the exported version of isEmojiRune, for use in other packages.
+func IsEmojiRune(r rune) bool {
+	return isEmojiRune(r)
 }
 
 // ContainsIgnoreEmoji reports whether s contains keyword, ignoring emoji in

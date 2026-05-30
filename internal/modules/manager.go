@@ -187,9 +187,7 @@ func (mm *ModuleManager) GetModulesByType(moduleType string) map[string]map[stri
 	}
 
 	var modules []config.Module
-	if mm.config.Modules != nil {
-		modules = mm.config.Modules.ModulesByType(moduleType)
-	}
+	modules = mm.config.Modules.ModulesByType(moduleType)
 	if modules == nil {
 		logger.Warn("未知的模块类型: %s", moduleType)
 		return result

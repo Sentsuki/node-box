@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,11 @@ import (
 	"node-box/internal/config"
 	"node-box/internal/logger"
 )
+
+// errScheduleChanged is a sentinel error returned by reloadConfigAndUpdate when the
+// schedule configuration has changed. The scheduling loops use this to restart
+// themselves cleanly without spawning extra goroutines.
+var errScheduleChanged = errors.New("schedule configuration changed, restart required")
 
 // Scheduler provides periodic task scheduling for configuration updates.
 // It manages the timing and execution of regular configuration update operations
@@ -74,10 +80,8 @@ func (s *Scheduler) startIntervalSchedule() error {
 	logger.Debug("执行初始配置更新...")
 	if err := s.manager.UpdateAllConfigurations(); err != nil {
 		logger.Error("初始配置更新失败: %v", err)
-		// 不因为初始更新失败而停止调度器
 	}
 
-	// 创建定时器
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
@@ -92,12 +96,21 @@ func (s *Scheduler) startIntervalSchedule() error {
 		case <-ticker.C:
 			logger.Info("*****开始定时配置更新*****")
 
-			// 重新加载配置文件
+			prevInterval := s.interval
 			if err := s.reloadConfigAndUpdate(); err != nil {
+				if errors.Is(err, errScheduleChanged) {
+					logger.Info("调度配置已变更，重启调度循环...")
+					return s.Start()
+				}
 				logger.Error("定时配置更新失败: %v", err)
-				// 继续运行，不因为单次更新失败而停止调度器
 			} else {
 				logger.Info("定时配置更新完成")
+			}
+
+			// 如果 interval 发生了变化，重置 ticker
+			if s.interval != prevInterval && s.scheduleType == "interval" {
+				ticker.Reset(s.interval)
+				logger.Info("更新间隔已调整为 %v", s.interval)
 			}
 		}
 	}
@@ -134,10 +147,13 @@ func (s *Scheduler) startHourlySchedule() error {
 		case <-timer.C:
 			logger.Info("*****开始整点配置更新*****")
 
-			// 重新加载配置文件
 			if err := s.reloadConfigAndUpdate(); err != nil {
+				if errors.Is(err, errScheduleChanged) {
+					logger.Info("调度配置已变更，重启调度循环...")
+					timer.Stop()
+					return s.Start()
+				}
 				logger.Error("整点配置更新失败: %v", err)
-				// 继续运行，不因为单次更新失败而停止调度器
 			} else {
 				logger.Info("整点配置更新完成")
 			}
@@ -235,8 +251,16 @@ func (s *Scheduler) hasConfigChanged() bool {
 	changed := currentHash != s.lastConfigHash || !currentModTime.Equal(s.lastModTime)
 
 	if changed {
+		oldHash := s.lastConfigHash
+		if len(oldHash) > 8 {
+			oldHash = oldHash[:8]
+		}
+		newHash := currentHash
+		if len(newHash) > 8 {
+			newHash = newHash[:8]
+		}
 		logger.Debug("检测到配置文件变化 (哈希: %s -> %s, 修改时间: %v -> %v)",
-			s.lastConfigHash[:8], currentHash[:8], s.lastModTime, currentModTime)
+			oldHash, newHash, s.lastModTime, currentModTime)
 	} else {
 		logger.Debug("配置文件未发生变化，使用现有配置")
 	}
@@ -273,21 +297,21 @@ func (s *Scheduler) reloadConfigAndUpdate() error {
 	// 检查调度配置是否发生变化
 	newScheduleType := cfg.UpdateSchedule.Type
 	var newInterval time.Duration
-
 	if newScheduleType == "interval" {
 		newInterval = time.Duration(cfg.UpdateSchedule.Interval) * time.Hour
 	}
 
-	if newScheduleType != s.scheduleType {
-		logger.Info("检测到调度类型变化: %s -> %s", s.scheduleType, newScheduleType)
+	scheduleChanged := newScheduleType != s.scheduleType || newInterval != s.interval
+	if scheduleChanged {
+		if newScheduleType != s.scheduleType {
+			logger.Info("检测到调度类型变化: %s -> %s", s.scheduleType, newScheduleType)
+		}
+		if newInterval != s.interval {
+			logger.Info("检测到更新间隔变化: %v -> %v", s.interval, newInterval)
+		}
 		s.scheduleType = newScheduleType
-		logger.Info("调度类型已更新，将在下次调度器重启时生效")
-	}
-
-	if newInterval != s.interval {
-		logger.Info("检测到更新间隔变化: %v -> %v", s.interval, newInterval)
 		s.interval = newInterval
-		logger.Info("更新间隔已更新，将在下次定时器重置时生效")
+		logger.Info("调度配置已更新，将在本次更新完成后重启调度循环")
 	}
 
 	// 清理旧的节点管理器，避免内存泄漏
@@ -311,5 +335,15 @@ func (s *Scheduler) reloadConfigAndUpdate() error {
 	logger.Info("配置重新加载完成，开始执行更新...")
 
 	// 执行配置更新
-	return s.manager.UpdateAllConfigurations()
+	if err := s.manager.UpdateAllConfigurations(); err != nil {
+		return err
+	}
+
+	// 如果调度配置发生了变化，返回特殊哨兵错误，由调度循环负责重启
+	if scheduleChanged {
+		logger.Info("调度配置已变更，调度循环将重启以应用新配置")
+		return errScheduleChanged
+	}
+
+	return nil
 }
