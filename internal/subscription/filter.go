@@ -6,6 +6,7 @@ import (
 	"node-box/internal/utils"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Filter provides node filtering functionality based on exclude keywords.
@@ -162,37 +163,60 @@ func matchEmoji(tag string) string {
 }
 
 // containsWord reports whether s contains keyword as a whole word.
-// A "word" boundary is defined as a non-letter, non-digit character (or string edge).
-// This prevents short codes like "IN" from matching inside longer words like "China" or "Finland".
+// Boundary rules differ by keyword type:
+//   - CJK keywords (e.g. "英国"): boundary is any non-CJK character (digits, letters, spaces all count)
+//   - ASCII keywords (e.g. "UK", "US"): boundary is any non-ASCII-letter character (digits are OK, so "UK3" matches "UK")
 func containsWord(s, keyword string) bool {
 	idx := strings.Index(s, keyword)
 	if idx == -1 {
 		return false
 	}
 	kLen := len(keyword)
+
+	// Determine if keyword is CJK-based (first rune decides)
+	firstRune, _ := utf8.DecodeRuneInString(keyword)
+	isCJKKeyword := isCJKRune(firstRune)
+
 	// Check left boundary
 	if idx > 0 {
-		prev := rune(s[idx-1])
-		if isWordChar(prev) {
-			return false
+		prev, _ := utf8.DecodeLastRuneInString(s[:idx])
+		if isCJKKeyword {
+			if isCJKRune(prev) {
+				return false
+			}
+		} else {
+			if isASCIILetter(prev) {
+				return false
+			}
 		}
 	}
+
 	// Check right boundary
 	end := idx + kLen
 	if end < len(s) {
-		next := rune(s[end])
-		if isWordChar(next) {
-			return false
+		next, _ := utf8.DecodeRuneInString(s[end:])
+		if isCJKKeyword {
+			if isCJKRune(next) {
+				return false
+			}
+		} else {
+			if isASCIILetter(next) {
+				return false
+			}
 		}
 	}
+
 	return true
 }
 
-// isWordChar reports whether r is a letter or digit (i.e., part of a word).
-func isWordChar(r rune) bool {
-	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
-		// CJK Unified Ideographs — treat each Chinese character as its own word
-		(r >= 0x4E00 && r <= 0x9FFF)
+// isCJKRune reports whether r is a CJK Unified Ideograph.
+func isCJKRune(r rune) bool {
+	return r >= 0x4E00 && r <= 0x9FFF
+}
+
+// isASCIILetter reports whether r is an ASCII letter (A-Z or a-z).
+func isASCIILetter(r rune) bool {
+	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
 }
 
 // AutoEmoji removes existing emojis from node tags and adds appropriate emoji
