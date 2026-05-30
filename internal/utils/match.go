@@ -6,6 +6,15 @@ import (
 	"unicode"
 )
 
+// CloneMap creates a shallow copy of a map[string]any.
+func CloneMap(m map[string]any) map[string]any {
+	c := make(map[string]any, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
+}
+
 // stripEmoji removes all emoji (Symbol, Other category) and regional indicator
 // symbols from s, then collapses runs of whitespace into a single space and
 // trims leading/trailing whitespace.

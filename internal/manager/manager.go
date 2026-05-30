@@ -5,7 +5,6 @@ package manager
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"node-box/internal/client"
@@ -434,7 +433,7 @@ func (nm *NodeManager) UpdateOutboundsConfigs() error {
 			updater := fileops.NewUpdater(selectorRule.InsertMarker)
 			if err := updater.UpdateSelectorOnly(mod.Path, nodesMaps, uniqueSubs, selectorRule.IncludeNodes, selectorRule.ExcludeNodes); err != nil {
 				errorMsg := fmt.Sprintf("更新selector失败 %s: %v", mod.Path, err)
-				log.Printf("%s", errorMsg)
+				logger.Error("%s", errorMsg)
 				updateErrors = append(updateErrors, errorMsg)
 			}
 		}
@@ -476,8 +475,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 		logger.Warn("获取模块时出现问题: %v，但继续处理", err)
 	}
 
-	// 2. 设置总配置文件数量
-	nm.configUpdater.SetTotalCount(len(nm.config.Configs))
+	// 2. 设置总配置文件数量（已移除，日志由本方法统一汇总）
 
 	// 3. 更新每个配置文件
 	var updateErrors []string
@@ -498,9 +496,8 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 	}
 
 	// 4. 汇总结果
-	logger.Info("配置更新完成: 成功 %d 个，失败 %d 个", successCount, len(updateErrors))
-
 	if len(updateErrors) > 0 {
+		logger.Info("模块处理完成: 成功 %d 个，失败 %d 个", successCount, len(updateErrors))
 		logger.Debug("更新失败的配置文件:")
 		for _, errMsg := range updateErrors {
 			logger.Debug("  - %s", errMsg)
@@ -517,7 +514,7 @@ func (nm *NodeManager) UpdateModuleConfigs() error {
 		return fmt.Errorf("没有配置文件需要更新")
 	}
 
-	logger.Debug("所有模块配置更新成功")
+	logger.Info("模块处理完成: 成功 %d 个", successCount)
 	return nil
 }
 
@@ -642,14 +639,6 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 	logger.Debug("找到 %d 个可用的detour标签", len(detourTags))
 
 	// 从缓存中获取 relay 订阅节点并展开
-	cloneMap := func(m map[string]any) map[string]any {
-		c := make(map[string]any, len(m))
-		for k, v := range m {
-			c[k] = v
-		}
-		return c
-	}
-
 	for _, relaySub := range relaySubs {
 		// 从缓存获取relay订阅的原始节点
 		relayNodes, exists := nm.cache.nodes[relaySub]
@@ -678,7 +667,7 @@ func (nm *NodeManager) updateRelayDetourForAllTargets() error {
 				if detour == "" {
 					continue
 				}
-				nm2 := cloneMap(base)
+				nm2 := utils.CloneMap(base)
 				nm2["detour"] = detour
 				// 组合格式: [relaySub] originalNodeName detourTag
 				nm2["tag"] = fmt.Sprintf("[%s] %s %s", relaySub, originalNodeName, detour)
