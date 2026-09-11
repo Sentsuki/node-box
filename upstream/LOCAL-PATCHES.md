@@ -53,27 +53,6 @@ AlterID  int  `json:"alter_id,omitempty"`
 AlterID  int  `json:"alter_id"`
 ```
 
-**为什么**：Go 的 `omitempty` 认为 int 的 `0` 是空值，于是 `alter_id: 0` 会被整个丢掉。
-产出的配置里应该如实写出订阅给的值，而不是靠 sing-box 的默认值兜着。
-
-**副作用（已知并接受）**：`AlterID` 是 `SingBoxOut` 上所有类型共用的字段，去掉
-`omitempty` 之后，clash 转出来的**每一个**节点都会带 `alter_id: 0`，不只 vmess：
-
-```
-vmess       {"alter_id":0, ...}
-trojan      {"alter_id":0, ...}
-shadowsocks {"alter_id":0, ...}
-```
-
-这是长期以来的行为，保持不变。
-
-重新打补丁：
-
-```bash
-sed -i 's|`json:"alter_id,omitempty"`|`json:"alter_id"`|' \
-  upstream/model/singbox/singbox.go
-```
-
 ---
 
 ## 同步后的检查清单
