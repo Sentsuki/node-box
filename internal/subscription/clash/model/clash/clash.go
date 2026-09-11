@@ -84,6 +84,36 @@ type Proxies struct {
 	IdleSessionCheckInterval MyInt             `yaml:"idle-session-check-interval"`
 	IdleSessionTimeout       MyInt             `yaml:"idle-session-timeout"`
 	MinIdleSession           MyInt             `yaml:"min-idle-session"`
+	RealmOpts                RealmOpts         `yaml:"realm-opts"`
+	Psk                      string            `yaml:"psk"`
+	Version                  MyInt             `yaml:"version"`
+	Reuse                    MyBool            `yaml:"reuse"`
+	ObfsOpts                 *snellObfsOpts    `yaml:"obfs-opts"`
+	Proto                    string            `yaml:"proto"`
+	Dev                      string            `yaml:"dev"`
+	DataCiphers              []string          `yaml:"data-ciphers"`
+	DataCipherFallback       string            `yaml:"data-ciphers-fallback"`
+	Auth                     string            `yaml:"auth"`
+	CompLZO                  string            `yaml:"comp-lzo"`
+	CA                       string            `yaml:"ca"`
+	Cert                     string            `yaml:"cert"`
+	Key                      string            `yaml:"key"`
+	TLSAuth                  string            `yaml:"tls-auth"`
+	KeyDirection             string            `yaml:"key-direction"`
+	TLSCrypt                 string            `yaml:"tls-crypt"`
+	TLSCryptV2               string            `yaml:"tls-crypt-v2"`
+	PeerInfo                 map[string]string `yaml:"peer-info"`
+	Ping                     MyInt             `yaml:"ping"`
+	PingRestart              MyInt             `yaml:"ping-restart"`
+	TranWindow               *int              `yaml:"tran-window"`
+	HandshakeTimeout         MyInt             `yaml:"handshake-timeout"`
+	RemoteDnsResolve         MyBool            `yaml:"remote-dns-resolve"`
+	Dns                      []string          `yaml:"dns"`
+}
+
+type snellObfsOpts struct {
+	Mode string `yaml:"mode"`
+	Host string `yaml:"host"`
 }
 
 type smuxOpts struct {
@@ -121,6 +151,14 @@ type wsOpts struct {
 type realityOpts struct {
 	PublicKey string `yaml:"public-key"`
 	ShortId   string `yaml:"short-id"`
+}
+
+type RealmOpts struct {
+	Enable      MyBool   `yaml:"enable"`
+	ServerUrl   string   `yaml:"server-url"`
+	Token       string   `yaml:"token"`
+	RealmId     string   `yaml:"realm-id"`
+	StunServers []string `yaml:"stun-servers"`
 }
 
 type ProxyGroup struct {

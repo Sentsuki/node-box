@@ -1,7 +1,7 @@
 package convert
 
 import (
-	"fmt"
+	"strconv"
 
 	"node-box/internal/subscription/clash/model"
 	"node-box/internal/subscription/clash/model/clash"
@@ -9,15 +9,14 @@ import (
 )
 
 func tuic(p *clash.Proxies, s *singbox.SingBoxOut, _ model.SingBoxVer) ([]singbox.SingBoxOut, error) {
-	p.Tls = true
-	tls(p, s)
+	tls(p, s, true)
 	s.UUID = p.Uuid
 	s.CongestionController = p.CongestionController
 	s.UdpRelayMode = p.UdpRelayMode
 	s.UdpOverStream = bool(p.UdpOverStream)
 	s.ZeroRttHandshake = bool(p.ReduceRtt)
 	if p.HeartbeatInterval != 0 {
-		s.Heartbeat = fmt.Sprintf("%vms", p.HeartbeatInterval)
+		s.Heartbeat = strconv.Itoa(int(p.HeartbeatInterval)) + "ms"
 	}
 	if p.IP != "" {
 		s.Server = p.IP

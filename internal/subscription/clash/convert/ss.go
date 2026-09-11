@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"gopkg.in/yaml.v3"
 	"node-box/internal/subscription/clash/model"
 	"node-box/internal/subscription/clash/model/clash"
 	"node-box/internal/subscription/clash/model/singbox"
-
-	"gopkg.in/yaml.v3"
 )
 
 func ss(p *clash.Proxies, s *singbox.SingBoxOut, _ model.SingBoxVer) ([]singbox.SingBoxOut, error) {
