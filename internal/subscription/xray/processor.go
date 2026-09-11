@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"node-box/internal/logger"
+	"node-box/internal/logx"
 )
 
 // XrayProcessor handles Xray/V2Ray subscription data processing.
@@ -34,7 +34,7 @@ func (xp *XrayProcessor) Process(data []byte) ([]map[string]any, error) {
 		node, err := parseLink(line)
 		if err != nil {
 			errs = append(errs, err.Error())
-			logger.Warn("Xray conversion skipped: %s", err)
+			logx.Warnf("Xray conversion skipped: %s", err)
 			continue
 		}
 		nodes = append(nodes, node)
