@@ -4,3 +4,5 @@ config.json
 test1/
 .kiro/
 test2/
+config.new.json
+node-box.json
