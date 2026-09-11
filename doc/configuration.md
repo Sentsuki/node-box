@@ -220,7 +220,7 @@ NODE_BOX_WEBHOOK_SECRET=<openssl rand -hex 32>
 | `via` | NodeSelector[] | ✅ | 模板节点，多个元素取**并集** |
 | `upstream` | NodeSelector[] | ✅ | 上游节点，多个元素取**并集** |
 
-生成的 tag 是 `{模板tag} → {上游tag}`，例如 `[RL] US → [airport-a] 🇺🇸 美国 01`。
+生成的 tag 是 `{模板tag} {上游tag}`，例如 `[RL] US [airport-a] 🇺🇸 美国 01`。
 
 **为什么是数组而不是单个选择**：上游经常是「A 机场的美国节点 + B 机场的香港节点」，
 这是**并集**。单个 `{from:["a","b"], include:["美国","香港"]}` 是**叉积**，会多出

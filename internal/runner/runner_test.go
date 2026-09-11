@@ -166,7 +166,7 @@ func TestRunner_FullPipeline(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"direct", "[RL] JP → [own] tokyo", "[own] tokyo", "[own] osaka"}
+	want := []string{"direct", "[RL] JP [own] tokyo", "[own] tokyo", "[own] osaka"}
 	if strings.Join(members, "|") != strings.Join(want, "|") {
 		t.Errorf("Proxy members:\n got %q\nwant %q", members, want)
 	}

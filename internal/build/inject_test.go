@@ -154,8 +154,8 @@ func TestInject_MembershipDrivesInsertion(t *testing.T) {
 	// nodes.relays order, then regular nodes in nodes.subscriptions order.
 	want := []string{
 		"direct",
-		"[RL] US → [hi] 🇺🇸 美国 01",
-		"[RL] US → [mj] 🇭🇰 香港 02",
+		"[RL] US [hi] 🇺🇸 美国 01",
+		"[RL] US [mj] 🇭🇰 香港 02",
 		"[A] node-1",
 		"[A] node-2",
 	}
@@ -164,7 +164,7 @@ func TestInject_MembershipDrivesInsertion(t *testing.T) {
 	}
 
 	// AI had no literal members and asks only for a relay.
-	if got := groupMembers(t, doc, "AI"); !slices.Equal(got, []string{"[RL] JP → [mj] 🇭🇰 香港 02"}) {
+	if got := groupMembers(t, doc, "AI"); !slices.Equal(got, []string{"[RL] JP [mj] 🇭🇰 香港 02"}) {
 		t.Errorf("AI members = %q", got)
 	}
 
@@ -201,8 +201,8 @@ func TestInject_RelayUnionIsNotACrossProduct(t *testing.T) {
 	// US upstream is (hi ∩ 美国) ∪ (mj ∩ 香港). A single selector over
 	// {hi,mj} × {美国,香港} would also produce [hi] 香港 and [mj] 美国.
 	want := []string{
-		"[RL] US → [hi] 🇺🇸 美国 01",
-		"[RL] US → [mj] 🇭🇰 香港 02",
+		"[RL] US [hi] 🇺🇸 美国 01",
+		"[RL] US [mj] 🇭🇰 香港 02",
 	}
 	if got := groupMembers(t, doc, "AI"); !slices.Equal(got, want) {
 		t.Errorf("US relay nodes:\n got %q\nwant %q", got, want)
@@ -221,7 +221,7 @@ func TestInject_OverlappingRelayDefinitionsShareNodes(t *testing.T) {
 	inserted := sectionTags(doc, "outbounds")
 	count := 0
 	for _, tag := range inserted {
-		if tag == "[RL] JP → [mj] 🇭🇰 香港 02" {
+		if tag == "[RL] JP [mj] 🇭🇰 香港 02" {
 			count++
 		}
 	}
@@ -229,7 +229,7 @@ func TestInject_OverlappingRelayDefinitionsShareNodes(t *testing.T) {
 		t.Errorf("the shared relay node appears %d times, want 1", count)
 	}
 
-	if got := groupMembers(t, doc, "AI"); !slices.Equal(got, []string{"[RL] JP → [mj] 🇭🇰 香港 02"}) {
+	if got := groupMembers(t, doc, "AI"); !slices.Equal(got, []string{"[RL] JP [mj] 🇭🇰 香港 02"}) {
 		t.Errorf("AI members = %q", got)
 	}
 	if got := len(groupMembers(t, doc, "Proxy")); got != 3 { // direct + 2 JP nodes
@@ -281,7 +281,7 @@ func TestInject_WireguardGoesToEndpoints(t *testing.T) {
 
 	// The WARP template is a wireguard node, so its generated relay belongs
 	// under endpoints while still being referenced from a selector.
-	wg := "[RL] WARP → [mj] 🇯🇵 日本 01"
+	wg := "[RL] WARP [mj] 🇯🇵 日本 01"
 	if got := sectionTags(doc, "endpoints"); !slices.Contains(got, wg) {
 		t.Errorf("endpoints = %q, want it to contain %q", got, wg)
 	}
@@ -416,10 +416,10 @@ func TestInject_OrderingRule(t *testing.T) {
 	want := []string{
 		"direct", // the module file's own member
 		// relays, in nodes.relays order: US before JP
-		"[RL] US → [hi] 🇺🇸 美国 01",
-		"[RL] US → [mj] 🇭🇰 香港 02",
-		"[RL] JP → [mj] 🇭🇰 香港 02",
-		"[RL] JP → [mj] 🇯🇵 日本 01",
+		"[RL] US [hi] 🇺🇸 美国 01",
+		"[RL] US [mj] 🇭🇰 香港 02",
+		"[RL] JP [mj] 🇭🇰 香港 02",
+		"[RL] JP [mj] 🇯🇵 日本 01",
 		// regular nodes, in nodes.subscriptions order: A before mj
 		"[A] node-1",
 		"[A] node-2",
@@ -477,7 +477,7 @@ func TestInject_OpenVPNGoesToEndpoints(t *testing.T) {
 	var doc map[string]any
 	json.Unmarshal(files[0].Content, &doc)
 
-	ovpn := "[RL] OVPN → [mj] 🇯🇵 日本 01"
+	ovpn := "[RL] OVPN [mj] 🇯🇵 日本 01"
 	if got := sectionTags(doc, "endpoints"); !slices.Contains(got, ovpn) {
 		t.Errorf("endpoints = %q, want it to contain %q", got, ovpn)
 	}

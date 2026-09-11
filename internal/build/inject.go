@@ -9,8 +9,8 @@ import (
 	"node-box/internal/textutil"
 )
 
-// relayArrow joins a relay template tag to its upstream tag.
-const relayArrow = " → "
+// relayTagSeparator joins a relay template tag to its upstream tag.
+const relayTagSeparator = " "
 
 // endpointTypes are node types that must live under "endpoints" rather than
 // "outbounds".
@@ -94,7 +94,7 @@ func (inj *injector) buildRelays() error {
 		seen := make(map[string]bool)
 		for _, tmpl := range templates {
 			for _, up := range upstreams {
-				tag := tmpl.Tag() + relayArrow + up.Tag()
+				tag := tmpl.Tag() + relayTagSeparator + up.Tag()
 				// Two definitions may overlap; a definition is a named
 				// selection over the template-upstream space, not a
 				// generation event, so identical pairs collapse.
