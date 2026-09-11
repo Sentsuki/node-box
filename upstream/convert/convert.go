@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"node-box/internal/subscription/clash/model"
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 var ErrNotSupportType = errors.New("不支持的类型")

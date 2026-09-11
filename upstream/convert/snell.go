@@ -3,9 +3,9 @@ package convert
 import (
 	"fmt"
 
-	"node-box/internal/subscription/clash/model"
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 func snell(p *clash.Proxies, s *singbox.SingBoxOut, _ model.SingBoxVer) ([]singbox.SingBoxOut, error) {

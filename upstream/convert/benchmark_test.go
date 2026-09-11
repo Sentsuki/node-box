@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model/singbox"
 )
 
 func benchmarkTemplateJSON(nodeCount int) []byte {

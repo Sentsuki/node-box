@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 // patchTemplate 以命令行版本（Patch）的选项对模板 tpl 打补丁，返回补丁后的模板。

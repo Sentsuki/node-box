@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
-	"node-box/internal/subscription/clash/model"
-	"node-box/internal/subscription/clash/model/clash"
+	"node-box/upstream/model"
+	"node-box/upstream/model/clash"
 )
 
 // FuzzParseURL 解析任意输入不应 panic；成功解析出的节点再进入转换链也不应崩溃。

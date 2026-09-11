@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
-	"node-box/internal/subscription/clash/model"
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 // --- openvpnEndpoint 细粒度 ---

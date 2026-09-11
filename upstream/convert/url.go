@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"node-box/internal/subscription/clash/model/clash"
+	"node-box/upstream/model/clash"
 )
 
 // ParseURL 把节点分享链接解析为 Clash 节点。

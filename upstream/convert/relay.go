@@ -1,7 +1,7 @@
 package convert
 
 import (
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model/singbox"
 )
 
 func relay(slm map[string]singbox.SingBoxOut, pl []string, name string) []singbox.SingBoxOut {

@@ -1,8 +1,8 @@
 package convert
 
 import (
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 func httpOpts(p *clash.Proxies, s *singbox.SingBoxOut) error {

@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 // Patch 把转换结果写进 JSON 模板 b，返回缩进格式的完整配置（命令行版本使用）。

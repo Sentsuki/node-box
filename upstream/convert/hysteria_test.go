@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
-	"node-box/internal/subscription/clash/model"
-	"node-box/internal/subscription/clash/model/clash"
+	"node-box/upstream/model"
+	"node-box/upstream/model/clash"
 )
 
 func Test_portsToPorts(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"cmp"
 	"fmt"
 
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 // tls 按 Clash 节点的 TLS / Reality 配置填充 s.TLS。

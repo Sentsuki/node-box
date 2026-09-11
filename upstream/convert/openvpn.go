@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"node-box/internal/subscription/clash/model/clash"
-	"node-box/internal/subscription/clash/model/singbox"
+	"node-box/upstream/model/clash"
+	"node-box/upstream/model/singbox"
 )
 
 func openvpnEndpoint(p *clash.Proxies) (*singbox.SingBoxEndpoint, error) {
