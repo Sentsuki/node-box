@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"testing"
 
+	"node-box/upstream/model/singbox"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"node-box/upstream/model/singbox"
 )
 
 func TestPatchMapFromMapMatchesByteEntry(t *testing.T) {

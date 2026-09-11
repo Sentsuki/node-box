@@ -4,12 +4,13 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 	"node-box/upstream/model"
 	"node-box/upstream/model/clash"
 	"node-box/upstream/model/singbox"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // --- Clash2sing / comm error 与分支 ---

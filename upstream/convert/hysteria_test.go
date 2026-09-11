@@ -3,10 +3,11 @@ package convert
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"gopkg.in/yaml.v3"
 	"node-box/upstream/model"
 	"node-box/upstream/model/clash"
+
+	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 )
 
 func Test_portsToPorts(t *testing.T) {

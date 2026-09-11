@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 
+	"node-box/upstream/model"
+	"node-box/upstream/model/clash"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
-	"node-box/upstream/model"
-	"node-box/upstream/model/clash"
 )
 
 func proxyFromYAML(t *testing.T, s string) clash.Proxies {
