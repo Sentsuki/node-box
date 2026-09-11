@@ -33,10 +33,6 @@ type Input struct {
 
 	// Outputs are the resolved absolute destinations for Config.Configs.
 	Outputs []model.ResolvedOutput
-
-	// Injector places subscription nodes into outbounds and endpoints.
-	// Nil means PassthroughInjector.
-	Injector NodeInjector
 }
 
 // Build assembles every configured output file.
@@ -47,9 +43,15 @@ func Build(in Input) ([]output.File, error) {
 	if in.Config == nil {
 		return nil, fmt.Errorf("config is required")
 	}
-	injector := in.Injector
-	if injector == nil {
-		injector = PassthroughInjector{}
+	if in.Config.Nodes == nil {
+		in.Config.Nodes = &model.NodesConfig{}
+	}
+
+	// The node pool and the relay nodes are derived once and shared by every
+	// output, which is why insertion clones before writing.
+	injector, err := newInjector(in.Config, in.Nodes)
+	if err != nil {
+		return nil, err
 	}
 
 	files := make([]output.File, 0, len(in.Outputs))
@@ -63,14 +65,14 @@ func Build(in Input) ([]output.File, error) {
 	return files, nil
 }
 
-func buildOne(out model.ResolvedOutput, in Input, injector NodeInjector) (output.File, error) {
+func buildOne(out model.ResolvedOutput, in Input, injector *injector) (output.File, error) {
 	doc, err := assemble(out.Config, in.Modules)
 	if err != nil {
 		return output.File{}, err
 	}
 
-	if err := injector.Inject(doc, out.Config, in.Nodes); err != nil {
-		return output.File{}, fmt.Errorf("inject nodes: %w", err)
+	if err := injector.inject(doc, out.Config); err != nil {
+		return output.File{}, err
 	}
 
 	if removed := removeEmptyTopLevel(doc); len(removed) > 0 {

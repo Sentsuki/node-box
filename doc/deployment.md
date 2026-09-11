@@ -298,11 +298,3 @@ tar -czf node-box-backup.tar.gz -C /opt node-box
 **唯一不可再生的是 `.env` 里的两个密钥**，单独记在密码管理器里。
 
 ---
-
-## 9. 【待定】
-
-以下内容随 outbounds / endpoints 定稿后补充：
-
-- 订阅节点注入与 selector 的配置方式
-- relay / 链式代理的部署说明
-- 产出配置的 tag 引用校验规则

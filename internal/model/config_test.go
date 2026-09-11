@@ -237,3 +237,100 @@ func TestResolveOutputs_RejectsWritingIntoSnapshots(t *testing.T) {
 	_, err := c.ResolveOutputs(b)
 	wantErr(t, err, "read-only snapshot")
 }
+
+// --- relays and selector rules ---
+
+func withRelays(c *Config) *Config {
+	c.Nodes.Subscriptions = append(c.Nodes.Subscriptions,
+		Subscription{Name: "RL", Path: "nodes/relay.json", Type: SubSingBox, Enable: true})
+	c.Nodes.Relays = []Relay{{
+		Name:     "US",
+		Via:      []NodeSelector{{From: []string{"RL"}, Include: []string{"US"}}},
+		Upstream: []NodeSelector{{From: []string{"airport-a"}, Include: []string{"美国"}}},
+	}}
+	return c
+}
+
+func TestConfig_RelaysValid(t *testing.T) {
+	if err := withRelays(validConfig()).Validate(); err != nil {
+		t.Fatalf("valid relay config rejected: %v", err)
+	}
+}
+
+func TestConfig_RelayDuplicateName(t *testing.T) {
+	c := withRelays(validConfig())
+	c.Nodes.Relays = append(c.Nodes.Relays, c.Nodes.Relays[0])
+	wantErr(t, c.Validate(), "duplicate name")
+}
+
+func TestConfig_RelayUnknownSubscription(t *testing.T) {
+	c := withRelays(validConfig())
+	c.Nodes.Relays[0].Upstream[0].From = []string{"typo"}
+	wantErr(t, c.Validate(), "unknown subscription")
+}
+
+func TestConfig_RelayNeedsViaAndUpstream(t *testing.T) {
+	t.Run("via missing", func(t *testing.T) {
+		c := withRelays(validConfig())
+		c.Nodes.Relays[0].Via = nil
+		wantErr(t, c.Validate(), "via cannot be empty")
+	})
+	t.Run("upstream without from", func(t *testing.T) {
+		// A selector with no "from" can only ever match nothing, which would
+		// silently drop the relay instead of reporting a mistake.
+		c := withRelays(validConfig())
+		c.Nodes.Relays[0].Upstream = []NodeSelector{{Include: []string{"美国"}}}
+		wantErr(t, c.Validate(), "at least one subscription")
+	})
+}
+
+func TestConfig_SelectorRules(t *testing.T) {
+	base := func() *Config {
+		c := withRelays(validConfig())
+		c.Modules[0].Selectors = []SelectorRule{
+			{Tag: "Proxy", NodeSelector: NodeSelector{From: []string{"airport-a"}}, Relays: []string{"US"}},
+		}
+		return c
+	}
+
+	t.Run("valid", func(t *testing.T) {
+		if err := base().Validate(); err != nil {
+			t.Fatalf("valid selector rejected: %v", err)
+		}
+	})
+	t.Run("empty tag", func(t *testing.T) {
+		c := base()
+		c.Modules[0].Selectors[0].Tag = ""
+		wantErr(t, c.Validate(), "tag cannot be empty")
+	})
+	t.Run("duplicate tag", func(t *testing.T) {
+		c := base()
+		c.Modules[0].Selectors = append(c.Modules[0].Selectors, c.Modules[0].Selectors[0])
+		wantErr(t, c.Validate(), "duplicate tag")
+	})
+	t.Run("unknown relay", func(t *testing.T) {
+		c := base()
+		c.Modules[0].Selectors[0].Relays = []string{"nope"}
+		wantErr(t, c.Validate(), "unknown relay")
+	})
+	t.Run("unknown subscription", func(t *testing.T) {
+		c := base()
+		c.Modules[0].Selectors[0].From = []string{"nope"}
+		wantErr(t, c.Validate(), "unknown subscription")
+	})
+	t.Run("selects nothing", func(t *testing.T) {
+		// No from and no relays: the rule cannot contribute anything, so it is
+		// a mistake rather than a no-op.
+		c := base()
+		c.Modules[0].Selectors[0] = SelectorRule{Tag: "Proxy"}
+		wantErr(t, c.Validate(), "selects nothing")
+	})
+}
+
+func TestConfig_RelayTypeIsGone(t *testing.T) {
+	// Relay-ness is no longer a property of a subscription: a template is just
+	// a node that some relay's "via" points at.
+	c := validConfig()
+	c.Nodes.Subscriptions[0].Type = "relay"
+	wantErr(t, c.Validate(), "unknown type")
+}

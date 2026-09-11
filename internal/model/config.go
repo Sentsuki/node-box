@@ -13,7 +13,6 @@ const (
 	SubSingBox = "singbox"
 	SubXray    = "xray"
 	SubV2Ray   = "v2ray"
-	SubRelay   = "relay" // TODO(outbounds): relay handling is not designed yet.
 )
 
 // Schedule types.
@@ -39,13 +38,64 @@ type OutputConfig struct {
 	Dir string `json:"dir,omitempty"`
 }
 
-// NodesConfig holds subscription sources and global filtering.
+// NodesConfig holds subscription sources, global filtering and relay definitions.
 type NodesConfig struct {
-	Subscriptions   []Subscription `json:"subscriptions"`
-	ExcludeKeywords []string       `json:"exclude_keywords,omitempty"`
+	Subscriptions []Subscription `json:"subscriptions"`
 
-	// TODO(outbounds): relay node generation rules, pending redesign.
-	RelayNodes []RelayRule `json:"relay_nodes,omitempty"`
+	// ExcludeKeywords drops nodes whose tag matches, at fetch time.
+	//
+	// This is source cleanup, not selection: subscriptions routinely carry
+	// entries that are not nodes at all ("套餐到期：...", "官网：..."). Those
+	// must never enter the node pool, and no per-selector rule can express
+	// that without repeating itself everywhere.
+	ExcludeKeywords []string `json:"exclude_keywords,omitempty"`
+
+	// Relays are named chained-proxy definitions.
+	Relays []Relay `json:"relays,omitempty"`
+}
+
+// NodeSelector picks a subset of the node pool.
+//
+// The same shape is used everywhere nodes are chosen: selector membership,
+// relay templates and relay upstreams.
+type NodeSelector struct {
+	// From lists subscription names. Empty means no regular nodes at all,
+	// which is how a selector says "chained proxies only".
+	From []string `json:"from,omitempty"`
+	// Include keeps only tags containing any of these. Empty keeps everything
+	// From matched. Comparison ignores emoji on both sides.
+	Include []string `json:"include,omitempty"`
+	// Exclude drops tags containing any of these.
+	Exclude []string `json:"exclude,omitempty"`
+}
+
+// IsEmpty reports whether the selector can never match anything.
+func (s NodeSelector) IsEmpty() bool { return len(s.From) == 0 }
+
+// Relay is a named set of chained proxies.
+//
+// Each template in Via is paired with each node in Upstream, producing one
+// node per pair whose detour points at the upstream. Both fields are lists of
+// selectors combined as a union, because an upstream set is often
+// "this subscription's US nodes plus that subscription's HK nodes" — which a
+// single selector would widen into a cross product.
+type Relay struct {
+	Name     string         `json:"name"`
+	Via      []NodeSelector `json:"via"`
+	Upstream []NodeSelector `json:"upstream"`
+}
+
+// SelectorRule fills in the members of one selector or urltest outbound.
+//
+// Membership is the single source of truth: a node is written to the generated
+// configuration exactly when some rule references it.
+type SelectorRule struct {
+	// Tag identifies the selector in the module file.
+	Tag string `json:"tag"`
+	// NodeSelector picks regular nodes. Its fields appear inline in JSON.
+	NodeSelector
+	// Relays names relay definitions whose nodes join this selector.
+	Relays []string `json:"relays,omitempty"`
 }
 
 // Subscription is a single subscription source.
@@ -60,24 +110,6 @@ type Subscription struct {
 	UserAgent      string   `json:"user_agent,omitempty"`
 }
 
-// RelayRule is a relay node generation rule.
-//
-// TODO(outbounds): pending redesign along with outbounds/endpoints.
-type RelayRule struct {
-	Tag      string   `json:"tag"`
-	Upstream []string `json:"upstream"`
-}
-
-// Selector describes how subscription nodes are inserted into a selector.
-//
-// TODO(outbounds): pending redesign along with outbounds/endpoints.
-type Selector struct {
-	InsertMarker      string   `json:"insert_marker"`
-	IncludeNodes      []string `json:"include_nodes,omitempty"`
-	ExcludeNodes      []string `json:"exclude_nodes,omitempty"`
-	IncludeRelayNodes []string `json:"include_relay_nodes,omitempty"`
-}
-
 // Module is one reusable configuration fragment. Exactly one of File, FromURL
 // or Path must be set.
 //
@@ -90,9 +122,9 @@ type Module struct {
 	FromURL string `json:"from_url,omitempty"` // externally maintained module
 	Path    string `json:"path,omitempty"`     // absolute path on the host, for local development
 
-	// TODO(outbounds): node injection rules, pending redesign.
-	Selectors     []Selector `json:"selectors,omitempty"`
-	Subscriptions []string   `json:"subscriptions,omitempty"`
+	// Selectors fills in selector membership for selectors declared in this
+	// module's file. The rules apply wherever the module is used.
+	Selectors []SelectorRule `json:"selectors,omitempty"`
 }
 
 // Source returns a human readable description of where the module comes from.
@@ -114,9 +146,6 @@ type ConfigFile struct {
 	Name    string   `json:"name"`
 	Path    string   `json:"path"`
 	Modules []string `json:"modules"`
-
-	// TODO(outbounds): output-level node filtering, pending redesign.
-	NoNeedNodes []string `json:"no_need_nodes,omitempty"`
 }
 
 // Schedule controls how often subscriptions are re-fetched. It is unrelated to
@@ -145,6 +174,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("nodes is required")
 	}
 	if err := c.validateSubscriptions(); err != nil {
+		return err
+	}
+	if err := c.validateRelays(); err != nil {
 		return err
 	}
 	if err := c.validateModules(); err != nil {
@@ -191,9 +223,75 @@ func (c *Config) validateSubscriptions() error {
 			}
 		}
 
-		valid := []string{SubClash, SubSingBox, SubXray, SubV2Ray, SubRelay}
+		valid := []string{SubClash, SubSingBox, SubXray, SubV2Ray}
 		if !slices.Contains(valid, strings.ToLower(s.Type)) {
 			return fmt.Errorf("%s (%s): unknown type %q (want one of %v)", where, s.Name, s.Type, valid)
+		}
+	}
+	return nil
+}
+
+// subscriptionNames returns the set of declared subscription names.
+func (c *Config) subscriptionNames() map[string]bool {
+	names := make(map[string]bool, len(c.Nodes.Subscriptions))
+	for _, s := range c.Nodes.Subscriptions {
+		names[s.Name] = true
+	}
+	return names
+}
+
+// RelayNames returns the set of declared relay names.
+func (c *Config) RelayNames() map[string]bool {
+	names := make(map[string]bool, len(c.Nodes.Relays))
+	for _, r := range c.Nodes.Relays {
+		names[r.Name] = true
+	}
+	return names
+}
+
+func (c *Config) validateRelays() error {
+	subs := c.subscriptionNames()
+	seen := make(map[string]int, len(c.Nodes.Relays))
+
+	for i, r := range c.Nodes.Relays {
+		where := fmt.Sprintf("nodes.relays[%d]", i)
+
+		if r.Name == "" {
+			return fmt.Errorf("%s: name cannot be empty", where)
+		}
+		if prev, dup := seen[r.Name]; dup {
+			return fmt.Errorf("%s: duplicate name %q (already used by nodes.relays[%d])", where, r.Name, prev)
+		}
+		seen[r.Name] = i
+
+		for _, f := range []struct {
+			field string
+			sels  []NodeSelector
+		}{{"via", r.Via}, {"upstream", r.Upstream}} {
+			if len(f.sels) == 0 {
+				return fmt.Errorf("%s (%s): %s cannot be empty", where, r.Name, f.field)
+			}
+			for j, sel := range f.sels {
+				if sel.IsEmpty() {
+					// A relay template or upstream with no source can only ever
+					// produce nothing, which would silently drop the relay.
+					return fmt.Errorf("%s (%s): %s[%d] must name at least one subscription in from",
+						where, r.Name, f.field, j)
+				}
+				if err := sel.validate(subs); err != nil {
+					return fmt.Errorf("%s (%s): %s[%d]: %w", where, r.Name, f.field, j, err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// validate checks that a selector references only declared subscriptions.
+func (s NodeSelector) validate(subs map[string]bool) error {
+	for _, name := range s.From {
+		if !subs[name] {
+			return fmt.Errorf("unknown subscription %q in from", name)
 		}
 	}
 	return nil
@@ -231,6 +329,42 @@ func (c *Config) validateModules() error {
 			if err := checkRepoRelPath(m.File); err != nil {
 				return fmt.Errorf("%s (%s): file %w", where, m.Name, err)
 			}
+		}
+		if err := c.validateSelectors(m, where); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Config) validateSelectors(m Module, where string) error {
+	subs := c.subscriptionNames()
+	relays := c.RelayNames()
+	seen := make(map[string]int, len(m.Selectors))
+
+	for i, rule := range m.Selectors {
+		at := fmt.Sprintf("%s (%s): selectors[%d]", where, m.Name, i)
+
+		if rule.Tag == "" {
+			return fmt.Errorf("%s: tag cannot be empty", at)
+		}
+		if prev, dup := seen[rule.Tag]; dup {
+			return fmt.Errorf("%s: duplicate tag %q (already used by selectors[%d])", at, rule.Tag, prev)
+		}
+		seen[rule.Tag] = i
+
+		if err := rule.NodeSelector.validate(subs); err != nil {
+			return fmt.Errorf("%s (%s): %w", at, rule.Tag, err)
+		}
+		for _, name := range rule.Relays {
+			if !relays[name] {
+				return fmt.Errorf("%s (%s): unknown relay %q", at, rule.Tag, name)
+			}
+		}
+		if rule.NodeSelector.IsEmpty() && len(rule.Relays) == 0 {
+			// Such a rule contributes nothing; the selector would end up with
+			// only whatever its module file already listed.
+			return fmt.Errorf("%s (%s): selects nothing; set from, relays, or remove the rule", at, rule.Tag)
 		}
 	}
 	return nil

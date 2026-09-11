@@ -1,7 +1,6 @@
 # 配置参考
 
 > 本文描述 node-box 重构后的配置格式。与旧版本**不兼容**，按全新安装编写。
-> outbounds / endpoints 相关字段标注为 **【待定】**，当前阶段不实现。
 
 ## 1. 两层配置
 
@@ -211,7 +210,7 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 | `name` | string | ✅ | 订阅名，唯一。节点 tag 会加 `[name] ` 前缀 |
 | `url` | string | ⚠️ | 远程订阅地址，与 `path` 二选一 |
 | `path` | string | ⚠️ | 本地订阅文件，与 `url` 二选一。相对路径相对快照根目录解析 |
-| `type` | string | ✅ | `clash` / `singbox` / `xray` / `v2ray` / `relay`【待定】 |
+| `type` | string | ✅ | `clash` / `singbox` / `xray` / `v2ray` |
 | `enable` | bool | ✅ | 是否启用 |
 | `emoji` | bool | ❌ | 不填：保留原样；`true`：按地区关键词重新分配；`false`：移除全部 emoji |
 | `remove_keywords` | string[] | ❌ | 从节点名中移除的关键词，支持 `*` 和 `?` 通配符 |
@@ -223,14 +222,68 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 - `name` 不能包含 `[` 或 `]`（会与 tag 前缀机制冲突）
 - `url` 与 `path` 必须且只能有一个
 
+没有「中继订阅」这种类型。一个订阅的节点成为中继模板，只因为某条 `relays` 的
+`via` 指向了它——身份来自引用，不来自声明。
+
 ### 3.3 `nodes.exclude_keywords`
 
 字符串数组。节点 tag 命中任一关键词则该节点被全局丢弃，不参与后续任何处理。
 比较时忽略双方的 emoji。
 
-### 3.4 `nodes.relay_nodes`【待定】
+### 3.4-0 NodeSelector — 节点选择的统一形状
 
-中继节点生成规则，随 outbounds 一并重新设计。
+同一个形状用在三处：selector 成员、relay 的 `via`、relay 的 `upstream`。
+
+| 字段 | 类型 | 说明 |
+|---|---|:---|
+| `from` | string[] | 订阅名。**留空 = 不要任何普通节点**（selector 用它表达「只要中继」） |
+| `include` | string[] | tag 含其中任一关键词才保留；留空 = `from` 命中的全要 |
+| `exclude` | string[] | tag 含其中任一关键词则丢弃 |
+
+`include` / `exclude` 比较时**忽略双方的 emoji**，所以 `"香港"` 能匹配
+`[mj] 🇭🇰 香港 02`。
+
+`from` 留空不等于「全部订阅」。这样加新订阅不会静默改变已有规则的含义，
+也让「模板节点」不需要任何特殊标记——没人 `from` 它，它就进不去产出。
+
+### 3.4 `nodes.relays` — 中继（链式代理）
+
+每条声明把 `via` 选出的**模板节点**与 `upstream` 选出的**上游节点**两两配对，
+每对生成一个节点，其 `detour` 指向上游。
+
+```json
+"relays": [
+  {
+    "name": "US",
+    "via":      [{ "from": ["RL"], "include": ["US"] }],
+    "upstream": [
+      { "from": ["hi"], "include": ["美国"] },
+      { "from": ["mj"], "include": ["香港"] }
+    ]
+  }
+]
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|:---:|---|
+| `name` | string | ✅ | 唯一标识，供 `selectors[].relays` 按名引用 |
+| `via` | NodeSelector[] | ✅ | 模板节点，多个元素取**并集** |
+| `upstream` | NodeSelector[] | ✅ | 上游节点，多个元素取**并集** |
+
+生成节点的 tag 是 `{模板tag} → {上游tag}`，例如
+`[RL] US → [hi] 🇺🇸 美国 01`。
+
+**为什么 `via` / `upstream` 是数组而不是单个选择**：上游经常是
+「A 机场的美国节点 + B 机场的香港节点」，这是**并集**。单个
+`{from:["hi","mj"], include:["美国","香港"]}` 是**叉积**，会多出
+`[hi] 香港` 和 `[mj] 美国` 两支。
+
+**生成是有界的**：只有被选中的模板和上游才会配对。不存在「先全量展开再过滤」，
+所以上游有几百个节点也不会先炸开。
+
+**声明可以重叠**：tag 由 (模板, 上游) 决定，与声明名无关。所以
+`JP`（日本+香港上游）和 `JP-HK`（仅香港上游）共有的那一对在文件里只出现一次。
+一条声明是对「模板 × 上游」空间的一次**命名选择**，不是一次生成。
 
 ---
 
@@ -248,8 +301,7 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 | `file` | string | ⚠️ | 仓库内相对路径，三选一 |
 | `from_url` | string | ⚠️ | 外部 JSON 地址，三选一。用于引用**他人维护的**模块 |
 | `path` | string | ⚠️ | 运行机器上的绝对路径，三选一。仅用于本地开发 |
-| `selectors` | array | ❌ | 【待定】节点注入规则 |
-| `subscriptions` | string[] | ❌ | 【待定】限定注入哪些订阅的节点 |
+| `selectors` | array | ❌ | selector 成员规则，见 3.6 |
 
 校验规则：
 
@@ -259,7 +311,50 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 
 ---
 
-### 3.6 `configs`
+### 3.6 `modules[].selectors` — selector 成员规则
+
+**selector 引用的节点是唯一真相。** 一个节点被写进产出配置，恰好因为某条规则
+引用了它；没有「先插入再减掉」这一步。
+
+```json
+{
+  "name": "sina_outbounds",
+  "file": "modules/my/sina/outbounds.json",
+  "selectors": [
+    { "tag": "Proxy", "from": ["BWG", "AWS"], "relays": ["US"] },
+    { "tag": "Game",  "from": ["hi", "mj"], "include": ["香港"], "relays": ["JP-HK"] },
+    { "tag": "AI",    "relays": ["US"] }
+  ]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|:---:|---|
+| `tag` | string | ✅ | 模块文件里那个 selector / urltest 的 tag |
+| `from` / `include` / `exclude` | — | ❌ | 内联的 NodeSelector，见 3.4-0 |
+| `relays` | string[] | ❌ | 按名引用的中继声明 |
+
+规则：
+
+- 规则挂在**模块**上，该模块被哪个产出引用，规则就在那个产出里生效
+- 模块文件里 selector 自带的成员（如 `["direct", "auto"]`）保持原位，
+  派生成员**追加在后面**
+- `from` 和 `relays` 至少要有一个，否则这条规则什么都不做，直接报错
+- `include` / `exclude` **只作用于 `from` 选出的普通节点，不过滤 `relays`**。
+  中继是按名精确引用的；想要子集就多声明一条更窄的中继（这正是 `JP-HK` 的用途），
+  而不是回到在拼接 tag 上做子串匹配
+- 引用的 `tag` 在组装后的文件里不存在 → 报错
+- 某条规则没匹配到任何节点 → 警告；如果该 selector 最终成员为空 → **报错**
+
+**自动带入 detour 依赖**：一条规则只引用了中继时，中继的上游节点也会被写进
+产出（但不会成为 selector 成员）。否则产出里会是一堆悬空的 detour。
+
+**`wireguard` / `tailscale` 类型的节点写入 `endpoints` 而不是 `outbounds`**，
+selector 仍然按 tag 引用它们。
+
+---
+
+### 3.7 `configs`
 
 每一项描述一个产出文件。
 
@@ -268,7 +363,6 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 | `name` | string | ✅ | 产出名，唯一，用于日志和错误信息 |
 | `path` | string | ✅ | 产出路径，解析规则见 3.1 |
 | `modules` | string[] | ✅ | 要组装的模块名，**按此顺序合并** |
-| `no_need_nodes` | string[] | ❌ | 【待定】产出级节点过滤 |
 
 校验规则：
 
@@ -277,7 +371,7 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 
 ---
 
-### 3.7 `update_schedule`
+### 3.8 `update_schedule`
 
 控制**定时重抓订阅**的周期。与 GitHub 配置变更的触发是两回事，详见 `architecture.md` 第 6 节。
 

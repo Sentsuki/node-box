@@ -1,7 +1,6 @@
 # 架构
 
-> 本文描述 node-box 重构后的架构。outbounds / endpoints 两个块的处理逻辑尚未定稿，
-> 文中相关位置标注为 **【待定】**。
+> 本文描述 node-box 重构后的架构。
 
 ## 1. 设计原则
 
@@ -58,7 +57,7 @@
 ④ 抓订阅        并发抓取，带 ctx 与响应体大小上限，解析成 map[订阅名][]Node
        ↓
 ⑤ 组装          Build(snapshot, nodes) —— 全内存，零磁盘 IO
-                合并模块 → 注入节点【待定】→ 序列化
+                合并模块 → 注入节点 → 序列化
        ↓
 ⑥ 校验          在内存里检查产出合法性，不合法就地失败，不写盘
        ↓
@@ -73,7 +72,15 @@
 doc := {}
 for each module in configs[].modules:
     把模块 JSON 的顶层键合并进 doc      # 键冲突 → 报错，见 configuration.md
-【待定】outbounds / endpoints 处理
+
+needed := {}
+for each selector 规则（来自本产出引用的模块）:
+    members := 解析规则                 # from/include/exclude + relays
+    doc 里那个 selector 的 outbounds = 自带成员 + members
+    needed |= members
+needed |= 每个 needed 节点的 detour 目标   # 传递闭包
+把 needed 写入 doc                        # wireguard/tailscale → endpoints
+
 删除所有值为 null / [] / {} 的顶层键
 json.MarshalIndent(doc, "", "  ") + 末尾换行
 ```
@@ -201,27 +208,57 @@ webhook 会丢：node-box 重启窗口、网络抖动、Action 排队超时。�
 ## 9. 包结构
 
 ```
-cmd/node-box/          main / 子命令 / 信号处理
+cmd/node-box/
+  main.go              子命令分发、全局参数、信号
+  commands.go          run / update / pull / build / validate / rollback / status
+  diff.go              build --diff 的行级 diff
+  init.go              配置仓库骨架
 internal/
-  model/               配置结构体 + Validate
+  logx/                分级日志（level 用 atomic，webhook 与 runner 并发写）
+  model/
+    bootstrap.go       node-box.json
+    config.go          仓库 config.json + 校验
+    paths.go           产出路径解析
+    duration.go        duration 字符串
+  fetch/
+    client.go          ctx / 代理 / 响应体上限 / ETag
+    retry.go           只重试真正瞬时的失败
+  textutil/            emoji 感知的字符串匹配
+  subscription/
+    node.go            Node 类型、深拷贝
+    processor.go       clash / singbox / xray 解析
+    fetcher.go         并发抓取 + 命名规则 + 全局 exclude
+    transform.go       emoji / remove_keywords / 前缀
+    xray/              分享链接解析
   source/
-    source.go          type Source interface { Fetch(ctx, ref) (*Snapshot, error) }
-    github.go          tarball + ETag + PAT
-    local.go           本地目录实现（开发 / 离线）
-    snapshot.go        Snapshot 类型
+    snapshot.go        Snapshot、Source 接口、Acquire、模块加载
     store.go           快照落盘 / current / last-good / GC
-  fetch/               HTTP client：ctx、并发、响应体上限、重试
-  subscription/        订阅解析 → []Node（含上游 clash/convert、clash/model）
+    github.go          tarball + ETag + PAT + 安全解压
+    local.go           本地目录（开发 / 离线）
   build/
-    build.go           Build(Snapshot, Nodes) ([]output.File, error)
-    assemble.go        模块合并
-    nodes.go           【待定】outbounds / endpoints 注入
+    build.go           Build(Input) ([]output.File, error) —— 纯函数
+    assemble.go        模块合并 + 键冲突检测
+    inject.go          节点池、中继生成、NodeSelector 解析
+    apply.go           selector 成员写入、detour 闭包、节点插入
     validate.go        产出校验
-  output/              File 类型、hash 短路、原子写
-  runner/              Trigger 管道 + 调度 + 一次性执行
-  webhook/             HTTP server
-  logger/
+  output/
+    file.go            File + 内容 hash
+    write.go           原子写、hash 短路、目标目录校验
+    state.go           state.json
+  runner/
+    runner.go          Trigger 管道 + BuildPlan + Execute
+    loops.go           定时与兜底轮询
+    trigger.go         Trigger 与合并
+    status.go          Status / Rollback / Validate
+  webhook/
+    server.go          HMAC 校验、优雅关闭
+    limiter.go         令牌桶
+upstream/              第三方 clash2singbox，只改过 import 路径
 ```
+
+`build` 不导入 `source`：它接受自己定义的 `build.Input`（配置 + 模块原始字节 +
+节点 + 已解析的产出路径），返回内存里的文件。这样「配置从哪来」和「怎么组装」
+彻底解耦，组装可以脱离网络和磁盘单测。
 
 ## 10. 原子写
 
@@ -238,30 +275,25 @@ tmp 文件必须和目标同目录（而不是统一放在某个 tmp 目录）�
 
 产出文件权限 `0600`。
 
-## 11. 【待定】outbounds / endpoints
+## 11. outbounds / endpoints
 
-以下逻辑尚未定稿，当前阶段不实现：
+**selector 引用的节点是唯一真相，插入由引用派生。** 详见 `configuration.md` 3.4 和 3.6。
 
-- 订阅节点如何注入 outbounds
-- selector / urltest 的成员如何计算（现有的 `include_nodes` / `exclude_nodes` 语义需要重新设计）
-- relay 节点的展开规则（现有的"全笛卡尔积再过滤"在节点多时会爆）
-- `wireguard` / `tailscale` 类型如何归入 endpoints
-- `no_need_nodes` 这类产出级过滤的位置
+这条反转消掉了旧实现里一整套机制：
 
-在 `build` 包中，这部分通过一个明确的接口留作插入点：
+| 旧机制 | 为什么不再需要 |
+|---|---|
+| `configs[].no_need_nodes` | 没有多余节点可删 |
+| `modules[].subscriptions` | 每条 selector 规则自己声明来源 |
+| `include_relay_nodes` | 并入 `relays`，按名引用 |
+| `nodes.relay_nodes` | 变成 `nodes.relays` 声明式定义 |
+| 订阅 `type: "relay"` | 模板身份来自被 `via` 引用，不来自声明 |
+| 「tag 含方括号」= 我生成的 | 全量重建，没有残留概念 |
+| 中继全笛卡尔积再过滤 | 生成在声明时就有界 |
 
-```go
-// nodes.go
-type NodeInjector interface {
-    Inject(doc map[string]any, cf *model.ConfigFile, nodes map[string][]Node) error
-}
-```
+产出校验（写盘前全在内存里完成）：
 
-在该接口定稿前，实现为 passthrough：模块里写了什么 outbounds / endpoints，产出里就是什么。
-
-定稿后需要补充的产出校验：
-
-- 每个 selector / urltest 的 `outbounds` 非空（不能是 `null` 或 `[]`）
-- selector 成员引用的 tag 在同一文件内真实存在（悬挂引用检查）
-- 全局 tag 唯一
-- 顶层 `outbounds` 非空
+- 每个 selector / urltest 的成员非空 —— 旧实现会写出 `"outbounds": null`
+- 成员和 `detour` 引用的 tag 必须在同一文件内存在 —— 悬挂引用
+- `outbounds` 与 `endpoints` 的 tag 全局唯一
+- 每个数组段都是对象数组

@@ -25,7 +25,7 @@ func ProcessorFor(subType string) (Processor, error) {
 	switch strings.ToLower(subType) {
 	case model.SubClash:
 		return clashProcessor{}, nil
-	case model.SubSingBox, model.SubRelay:
+	case model.SubSingBox:
 		return singboxProcessor{}, nil
 	case model.SubXray, model.SubV2Ray:
 		return xrayProcessor{}, nil
