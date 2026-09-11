@@ -1,0 +1,166 @@
+{
+  "output": {
+    "dir": "/etc/sing-box"
+  },
+
+  "nodes": {
+    "subscriptions": [
+      {
+        "name": "own",
+        "path": "nodes/own.json",
+        "type": "singbox",
+        "enable": true
+      },
+      {
+        "name": "RL",
+        "path": "nodes/relay.json",
+        "type": "singbox",
+        "enable": true
+      },
+      {
+        "name": "airport-a",
+        "url": "https://a.example.com/link/REPLACE-ME?clash=1",
+        "type": "clash",
+        "enable": true,
+        "emoji": true,
+        "user_agent": "Clash",
+        "remove_keywords": ["(*人)", "-优化"]
+      },
+      {
+        "name": "airport-b",
+        "url": "https://b.example.com/sub/REPLACE-ME",
+        "type": "singbox",
+        "enable": true,
+        "emoji": true
+      },
+      {
+        "name": "legacy",
+        "url": "https://c.example.com/link/REPLACE-ME",
+        "type": "xray",
+        "enable": false,
+        "user_agent": "v2rayN"
+      }
+    ],
+
+    "exclude_keywords": [
+      "剩余流量",
+      "套餐到期",
+      "官网",
+      "过期时间",
+      "更新时间"
+    ],
+
+    "relays": [
+      {
+        "name": "us",
+        "via": [{ "from": ["RL"], "include": ["US"] }],
+        "upstream": [
+          { "from": ["airport-a"], "include": ["美国"] },
+          { "from": ["airport-b"], "include": ["香港"] }
+        ]
+      },
+      {
+        "name": "jp",
+        "via": [{ "from": ["RL"], "include": ["JP"] }],
+        "upstream": [
+          { "from": ["airport-a"], "include": ["日本", "香港"], "exclude": ["中转"] }
+        ]
+      },
+      {
+        "name": "jp-hk",
+        "via": [{ "from": ["RL"], "include": ["JP"] }],
+        "upstream": [
+          { "from": ["airport-a"], "include": ["香港"], "exclude": ["中转"] }
+        ]
+      },
+      {
+        "name": "warp",
+        "via": [{ "from": ["RL"], "include": ["WARP"] }],
+        "upstream": [{ "from": ["airport-a"], "include": ["日本"] }]
+      }
+    ]
+  },
+
+  "modules": [
+    { "name": "log", "file": "modules/log.json" },
+    { "name": "dns", "file": "modules/dns.json" },
+    { "name": "ntp", "file": "modules/ntp.json" },
+    { "name": "certificate", "file": "modules/certificate.json" },
+    { "name": "endpoints", "file": "modules/endpoints.json" },
+    { "name": "inbounds", "file": "modules/inbounds.json" },
+    { "name": "inbounds-tun", "file": "modules/inbounds-tun.json" },
+    { "name": "route", "file": "modules/route.json" },
+    { "name": "experimental", "file": "modules/experimental.json" },
+    { "name": "geo", "from_url": "https://example.com/shared/geo.json" },
+
+    {
+      "name": "outbounds",
+      "file": "modules/outbounds.json",
+      "selectors": [
+        {
+          "tag": "Proxy",
+          "from": ["own", "airport-a", "airport-b"],
+          "relays": ["us", "jp"]
+        },
+        {
+          "tag": "Auto",
+          "from": ["airport-a", "airport-b"],
+          "exclude": ["Anytls", "Reality"]
+        },
+        {
+          "tag": "Game",
+          "from": ["airport-a", "airport-b"],
+          "include": ["香港", "日本", "韩国"],
+          "relays": ["jp-hk"]
+        },
+        {
+          "tag": "AI",
+          "from": ["own"],
+          "relays": ["us"]
+        },
+        {
+          "tag": "Restricted",
+          "relays": ["warp"]
+        }
+      ]
+    }
+  ],
+
+  "configs": [
+    {
+      "name": "main",
+      "path": "config.json",
+      "modules": [
+        "log",
+        "dns",
+        "ntp",
+        "certificate",
+        "endpoints",
+        "inbounds",
+        "outbounds",
+        "route",
+        "experimental"
+      ]
+    },
+    {
+      "name": "tun",
+      "path": "config-tun.json",
+      "modules": [
+        "log",
+        "dns",
+        "certificate",
+        "inbounds-tun",
+        "outbounds",
+        "route",
+        "geo"
+      ]
+    }
+  ],
+
+  "update_schedule": {
+    "type": "interval",
+    "every": "6h"
+  },
+
+  "user_agent": "sing-box"
+}
