@@ -47,7 +47,7 @@ func commands() []command {
 		{"pull", "refresh the snapshot without generating output", cmdPull},
 		{"build", "assemble without writing; --diff shows what would change", cmdBuild},
 		{"validate", "check that a snapshot assembles into valid configuration", cmdValidate},
-		{"rollback", "regenerate output from the last-good snapshot", cmdRollback},
+		{"rollback", "regenerate output from the previously applied snapshot", cmdRollback},
 		{"status", "report the current ref, last update and last error", cmdStatus},
 		{"init", "write a starter configuration repository", cmdInit},
 	}

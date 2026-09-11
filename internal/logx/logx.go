@@ -7,7 +7,6 @@ package logx
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -64,25 +63,13 @@ func ParseLevel(s string) (Level, error) {
 
 var (
 	level atomic.Int32
-
-	mu  sync.Mutex
-	out io.Writer = os.Stderr
+	mu    sync.Mutex
 )
 
 func init() { level.Store(int32(Info)) }
 
 // SetLevel sets the global log level.
 func SetLevel(l Level) { level.Store(int32(l)) }
-
-// CurrentLevel reports the global log level.
-func CurrentLevel() Level { return Level(level.Load()) }
-
-// SetOutput redirects log output. Used by tests.
-func SetOutput(w io.Writer) {
-	mu.Lock()
-	defer mu.Unlock()
-	out = w
-}
 
 func logf(l Level, format string, args ...any) {
 	if Level(level.Load()) < l {
@@ -91,7 +78,7 @@ func logf(l Level, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	mu.Lock()
 	defer mu.Unlock()
-	fmt.Fprintf(out, "[%s] %s\n", l, msg)
+	fmt.Fprintf(os.Stderr, "[%s] %s\n", l, msg)
 }
 
 // Errorf logs at error level.

@@ -100,9 +100,8 @@ type Request struct {
 
 // Response is a completed GET.
 type Response struct {
-	Body   []byte
-	Status int
-	ETag   string
+	Body []byte
+	ETag string
 }
 
 // Get performs one GET with no retries.
@@ -151,7 +150,7 @@ func (c *Client) Get(ctx context.Context, r Request) (*Response, error) {
 		return nil, fmt.Errorf("%w: %s exceeds %d bytes", ErrTooLarge, r.URL, limit)
 	}
 
-	return &Response{Body: body, Status: resp.StatusCode, ETag: resp.Header.Get("ETag")}, nil
+	return &Response{Body: body, ETag: resp.Header.Get("ETag")}, nil
 }
 
 // StatusError reports a non-2xx response.

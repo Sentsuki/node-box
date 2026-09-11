@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,21 +59,24 @@ type Result struct {
 	Skipped []string // paths whose hash matched the previous run
 }
 
-// Write persists files, skipping any whose hash matches prev.
+// Write persists files, skipping any whose content already matches on disk.
 //
-// It returns the new hash map for every file regardless of whether it was
-// written, so callers can persist it as the next run's baseline. Each file is
-// independently atomic: if one write fails the earlier ones stay committed and
-// the error names the file that failed.
-func Write(files []File, prev map[string]string, force bool) (Result, map[string]string, error) {
+// The comparison is against the file itself rather than a remembered hash, so
+// the decision cannot drift from reality: a deleted or hand-edited output is
+// restored on the next run, and a lost state file costs nothing.
+//
+// It returns the hash of every file regardless of whether it was written, so
+// callers can record what they are managing. Each file is independently
+// atomic: if one write fails the earlier ones stay committed and the error
+// names the file that failed.
+func Write(files []File, force bool) (Result, map[string]string, error) {
 	var res Result
 	hashes := make(map[string]string, len(files))
 
 	for _, f := range files {
-		h := f.Hash()
-		hashes[f.Path] = h
+		hashes[f.Path] = f.Hash()
 
-		if !force && prev[f.Path] == h && exists(f.Path) {
+		if !force && matchesDisk(f) {
 			res.Skipped = append(res.Skipped, f.Path)
 			logx.Debugf("output %s unchanged, skipping write", f.Path)
 			continue
@@ -84,6 +88,13 @@ func Write(files []File, prev map[string]string, force bool) (Result, map[string
 		logx.Debugf("wrote %s (%d bytes)", f.Path, len(f.Content))
 	}
 	return res, hashes, nil
+}
+
+// matchesDisk reports whether the destination already holds exactly this
+// content. Any read error counts as a mismatch so the file gets written.
+func matchesDisk(f File) bool {
+	existing, err := os.ReadFile(f.Path)
+	return err == nil && bytes.Equal(existing, f.Content)
 }
 
 // EnsureDirs prepares destination directories before any build work happens, so
@@ -128,11 +139,6 @@ func checkWritable(dir string) error {
 	name := f.Name()
 	f.Close()
 	return os.Remove(name)
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // within reports whether p is dir itself or lies inside it.

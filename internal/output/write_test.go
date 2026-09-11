@@ -100,8 +100,8 @@ func TestWrite_SkipsUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	f := File{Name: "main", Path: filepath.Join(dir, "main.json"), Content: []byte("{}\n")}
 
-	// First run: nothing known, so it writes.
-	res, hashes, err := Write([]File{f}, nil, false)
+	// First run: the file does not exist, so it writes.
+	res, _, err := Write([]File{f}, false)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestWrite_SkipsUnchanged(t *testing.T) {
 	}
 
 	// Second run with the same content: skipped.
-	res, _, err = Write([]File{f}, hashes, false)
+	res, _, err = Write([]File{f}, false)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestWrite_SkipsUnchanged(t *testing.T) {
 
 	// Changed content: written again.
 	f.Content = []byte(`{"log":{}}` + "\n")
-	res, _, err = Write([]File{f}, hashes, false)
+	res, _, err = Write([]File{f}, false)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -133,11 +133,11 @@ func TestWrite_ForceIgnoresHash(t *testing.T) {
 	dir := t.TempDir()
 	f := File{Name: "main", Path: filepath.Join(dir, "main.json"), Content: []byte("{}\n")}
 
-	_, hashes, err := Write([]File{f}, nil, false)
+	_, _, err := Write([]File{f}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, _, err := Write([]File{f}, hashes, true)
+	res, _, err := Write([]File{f}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,16 +151,15 @@ func TestWrite_RewritesWhenFileVanished(t *testing.T) {
 	path := filepath.Join(dir, "main.json")
 	f := File{Name: "main", Path: path, Content: []byte("{}\n")}
 
-	_, hashes, err := Write([]File{f}, nil, false)
+	_, _, err := Write([]File{f}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A matching hash must not be trusted when the file is gone: someone
-	// deleted it, and the state file should not keep us from restoring it.
+	// Comparing against the file itself means a deleted output is restored.
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	res, _, err := Write([]File{f}, hashes, false)
+	res, _, err := Write([]File{f}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,5 +261,30 @@ func TestState_CorruptFileStartsOver(t *testing.T) {
 	}
 	if s.Ref != "" || s.Outputs == nil {
 		t.Errorf("want a usable empty state, got %+v", s)
+	}
+}
+
+func TestWrite_RestoresHandEditedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.json")
+	f := File{Name: "main", Path: path, Content: []byte("{}\n")}
+
+	if _, _, err := Write([]File{f}, false); err != nil {
+		t.Fatal(err)
+	}
+	// Someone edits the generated file by hand. Comparing against the file
+	// rather than a remembered hash means the next run puts it back.
+	if err := os.WriteFile(path, []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, _, err := Write([]File{f}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Written) != 1 {
+		t.Fatalf("a hand-edited output should be rewritten, got %v", res)
+	}
+	if got := read(t, path); got != "{}\n" {
+		t.Errorf("content = %q, want the generated content restored", got)
 	}
 }

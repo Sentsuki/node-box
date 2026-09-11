@@ -23,8 +23,14 @@ import (
 const (
 	// PointerCurrent names the most recently fetched snapshot.
 	PointerCurrent = "current"
-	// PointerLastGood names the most recent snapshot that produced output.
-	PointerLastGood = "last-good"
+	// PointerPrevious names the snapshot that produced the outputs before the
+	// current ones, which is what a rollback goes back to.
+	//
+	// It is deliberately not "the last snapshot that built successfully": that
+	// is always the one currently applied, so rolling back to it would be a
+	// no-op for exactly the case rollback exists for — a change that builds
+	// fine but turns out to be wrong.
+	PointerPrevious = "previous"
 )
 
 // DefaultKeep is how many snapshots are retained by GC.
@@ -32,7 +38,7 @@ const DefaultKeep = 10
 
 // Store manages the snapshots directory.
 //
-// current and last-good are plain text files holding a ref, not symlinks:
+// current and previous are plain text files holding a ref, not symlinks:
 // a pointer file is replaced atomically by the same rename used everywhere
 // else, and works identically on every platform.
 type Store struct {
@@ -161,7 +167,7 @@ func (s *Store) List() ([]string, error) {
 	return out, nil
 }
 
-// GC removes all but the newest keep snapshots. Whatever current and last-good
+// GC removes all but the newest keep snapshots. Whatever current and previous
 // point at is always retained, however old it is.
 func (s *Store) GC(keep int) error {
 	if keep <= 0 {
@@ -176,7 +182,7 @@ func (s *Store) GC(keep int) error {
 	}
 
 	pinned := map[string]bool{}
-	for _, name := range []string{PointerCurrent, PointerLastGood} {
+	for _, name := range []string{PointerCurrent, PointerPrevious} {
 		if ref, ok := s.Pointer(name); ok {
 			pinned[ref] = true
 		}

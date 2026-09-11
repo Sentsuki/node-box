@@ -239,7 +239,7 @@ func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) er
 	snap := plan.Snapshot
 
 	// 6. Write.
-	res, hashes, err := output.Write(plan.Files, state.Outputs, t.Force)
+	res, hashes, err := output.Write(plan.Files, t.Force)
 	if err != nil {
 		return err
 	}
@@ -248,14 +248,19 @@ func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) er
 		logx.Infof("  updated %s", p)
 	}
 
-	// 7. Record success. last-good moves only now, so rollback always targets
-	//    a snapshot that actually produced output.
+	// 7. Record success.
+	//
+	// "previous" moves only when the applied ref actually changes, and it takes
+	// the ref being replaced. Repeated runs of the same snapshot therefore do
+	// not erase the version a rollback would return to.
+	if applied := state.Ref; applied != "" && applied != snap.Ref {
+		if err := r.store.SetPointer(source.PointerPrevious, applied); err != nil {
+			logx.Debugf("could not record %s as the previous snapshot: %v", short(applied), err)
+		}
+	}
 	state.RecordSuccess(snap.Ref, hashes)
 	if err := state.Save(r.boot.StateFile()); err != nil {
 		logx.Warnf("could not save state: %v", err)
-	}
-	if err := r.store.SetPointer(source.PointerLastGood, snap.Ref); err != nil {
-		logx.Warnf("could not update the last-good pointer: %v", err)
 	}
 	if err := r.store.GC(source.DefaultKeep); err != nil {
 		logx.Warnf("snapshot cleanup failed: %v", err)

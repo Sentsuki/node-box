@@ -54,12 +54,3 @@ func cloneValue(v any) any {
 		return v
 	}
 }
-
-// CloneAll returns a deep copy of a node slice.
-func CloneAll(nodes []Node) []Node {
-	out := make([]Node, len(nodes))
-	for i, n := range nodes {
-		out[i] = n.Clone()
-	}
-	return out
-}

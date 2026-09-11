@@ -25,7 +25,7 @@ const (
 	MaxArchiveFiles = 5000
 )
 
-const apiBase = "https://api.github.com"
+const defaultAPIBase = "https://api.github.com"
 
 // GitHub reads the configuration from a GitHub repository.
 //
@@ -39,6 +39,8 @@ type GitHub struct {
 	repo   string
 	branch string
 	token  string
+	// apiBase is overridden by tests; production always uses the real API.
+	apiBase string
 
 	// mu guards the conditional-request cache, which Resolve reads and writes
 	// from both the runner and the poller.
@@ -56,7 +58,14 @@ func NewGitHub(client *fetch.Client, repo, branch, token string) (*GitHub, error
 	if branch == "" {
 		branch = "main"
 	}
-	return &GitHub{client: client, owner: owner, repo: name, branch: branch, token: token}, nil
+	return &GitHub{
+		client:  client,
+		owner:   owner,
+		repo:    name,
+		branch:  branch,
+		token:   token,
+		apiBase: defaultAPIBase,
+	}, nil
 }
 
 // Describe names the source.
@@ -86,7 +95,7 @@ func (g *GitHub) Resolve(ctx context.Context) (string, error) {
 	etag, cached := g.etag, g.cachedSHA
 	g.mu.Unlock()
 
-	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", apiBase, g.owner, g.repo, g.branch)
+	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", g.apiBase, g.owner, g.repo, g.branch)
 	resp, err := g.client.GetWithRetry(ctx, fetch.Request{
 		URL:      url,
 		Headers:  g.headers("application/vnd.github.sha"),
@@ -119,7 +128,7 @@ func (g *GitHub) Resolve(ctx context.Context) (string, error) {
 }
 
 func (g *GitHub) resolveUnconditional(ctx context.Context) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", apiBase, g.owner, g.repo, g.branch)
+	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", g.apiBase, g.owner, g.repo, g.branch)
 	resp, err := g.client.GetWithRetry(ctx, fetch.Request{
 		URL:      url,
 		Headers:  g.headers("application/vnd.github.sha"),
@@ -144,7 +153,7 @@ func (g *GitHub) Materialize(ctx context.Context, ref, destDir string) error {
 		return fmt.Errorf("invalid ref %q", ref)
 	}
 
-	url := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", apiBase, g.owner, g.repo, ref)
+	url := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", g.apiBase, g.owner, g.repo, ref)
 	resp, err := g.client.GetWithRetry(ctx, fetch.Request{
 		URL:      url,
 		Headers:  g.headers("application/vnd.github+json"),

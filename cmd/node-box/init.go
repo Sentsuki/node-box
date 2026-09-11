@@ -20,7 +20,7 @@ var starterFiles = map[string]string{
         "name": "airport-a",
         "url": "https://example.com/link/REPLACE-ME?clash=1",
         "type": "clash",
-        "enable": true,
+        "enable": false,
         "emoji": true,
         "remove_keywords": ["(*人)"]
       }
@@ -171,7 +171,9 @@ func cmdInit(_ context.Context, env *env, args []string) error {
 
 	fmt.Printf(`
 Next steps:
-  1. Edit config.json: replace the example subscription with a real one.
+  1. Edit config.json: replace the example subscription URL with a real one,
+     then set its "enable" to true. It ships disabled so the first
+     "validate" succeeds against the placeholder.
   2. Commit this directory to a private GitHub repository.
   3. Copy node-box.json.example to the node-box host as node-box.json and
      fill in the repository name.

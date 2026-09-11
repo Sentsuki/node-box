@@ -23,21 +23,28 @@
 ├── snapshots/
 │   ├── a1b2c3d.../             # 不可变快照，按 commit sha 命名
 │   ├── d4e5f6a.../
-│   ├── current                 # 文本文件，内容是最近一次成功拉取的 ref
-│   └── last-good               # 文本文件，内容是最近一次成功产出的 ref
+│   ├── current                 # 文本文件，最近一次成功拉取的 ref
+│   └── previous                # 文本文件，产出当前文件之前所应用的 ref
 ├── state/
-│   └── state.json              # 上次 ref、各产出文件的 hash、上次错误
+│   └── state.json              # 当前应用的 ref、各产出文件的 hash、上次错误
 ├── out/                        # 默认输出目录，可被 output.dir 覆盖
 │   ├── main.json
 │   └── gaming.json
 └── logs/                       # 可选；默认直接走 stdout / journald
 ```
 
-`current` 与 `last-good` 是**纯文本指针文件**而不是软链：指针文件用和别处一样的
+`current` 与 `previous` 是**纯文本指针文件**而不是软链：指针文件用和别处一样的
 `tmp + rename` 原子替换，不需要创建软链的权限，各平台行为一致，整个目录也可以整体移动。
 指向一个已被删除的快照时读作「未设置」，而不是交回一个打不开的 ref。
 
-快照保留最近 10 个，超出的按时间从旧到新删除；`current` 和 `last-good` 指向的永不删除。
+「当前被应用的 ref」记在 `state.json` 里，不需要单独的指针。`previous` 只在被应用的
+ref **真的发生变化**时前进，并且取被替换掉的那个——所以反复跑同一个快照（比如定时重抓订阅）
+不会把回滚目标冲掉。
+
+刻意**不是**「最近一次构建成功的快照」：那永远等于当前已应用的那个，回滚到它是空操作，
+而回滚存在的意义恰恰是撤销「构建没问题但结果不对」的改动。
+
+快照保留最近 10 个，超出的按时间从旧到新删除；`current` 和 `previous` 指向的永不删除。
 被中断的拉取会在 `snapshots/.incoming-*` 留下临时目录，进程启动时清理。
 
 ## 3. 运行流程
@@ -61,9 +68,9 @@
        ↓
 ⑥ 校验          在内存里检查产出合法性，不合法就地失败，不写盘
        ↓
-⑦ 写盘          逐文件比对 hash：未变则跳过；已变则 tmp → fsync → rename
+⑦ 写盘          逐文件与磁盘上的内容比对：相同则跳过；不同则 tmp → fsync → rename
        ↓
-⑧ 收尾          更新 state.json，last-good 指向本次 sha
+⑧ 收尾          previous ← 旧的 applied ref，state.json ← 本次 sha
 ```
 
 ### ⑤ 组装的内部顺序
@@ -115,7 +122,7 @@ json.MarshalIndent(doc, "", "  ") + 末尾换行
 | 组装失败 | 结束，不写任何文件 |
 | 产出校验失败 | 结束，不写任何文件，错误写入 `state.json` |
 | 写盘中途失败 | 已成功的文件保留，失败的保持旧内容（每个文件独立原子） |
-| 产出后发现有问题 | `node-box rollback` 切回 `last-good` 重新产出 |
+| 产出后发现有问题 | `node-box rollback` 回到 `previous` 重新产出 |
 
 关键点：**任何失败路径都不会产生半成品文件**。
 
@@ -247,7 +254,7 @@ internal/
     xray/              分享链接解析
   source/
     snapshot.go        Snapshot、Source 接口、Acquire、模块加载
-    store.go           快照落盘 / current / last-good / GC
+    store.go           快照落盘 / current / previous / GC
     github.go          tarball + ETag + PAT + 安全解压
     local.go           本地目录（开发 / 离线）
   build/
@@ -258,7 +265,7 @@ internal/
     validate.go        产出校验
   output/
     file.go            File + 内容 hash
-    write.go           原子写、hash 短路、目标目录校验
+    write.go           原子写、与磁盘内容比对、目标目录校验
     state.go           state.json
   runner/
     runner.go          Trigger 管道 + BuildPlan + Execute

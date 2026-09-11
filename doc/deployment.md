@@ -10,7 +10,7 @@ node-box update [--ref <sha>] [--force]  执行一次完整更新后退出
 node-box pull [--ref <sha>]           只刷新快照，不产出
 node-box build [--diff] [--ref <sha>] 只组装不写盘；--diff 打印与现有产出的差异
 node-box validate [--ref <sha>]       校验快照能否组装出合法配置
-node-box rollback                     切回 last-good 快照并重新产出
+node-box rollback                     回到上一个被应用的快照并重新产出
 node-box status [--json]              当前 ref / 上次产出 / 上次错误
 node-box init [目录] [--force]        生成配置仓库骨架
 ```
@@ -25,7 +25,7 @@ node-box init [目录] [--force]        生成配置仓库骨架
 引导配置路径解析顺序：`--config` > `NODE_BOX_CONFIG` > 二进制同目录的 `node-box.json`。
 显式给出的 `--config` 永远优先，不存在「显式路径输给环境变量」的情况。
 
-`build --dry-run --diff` 是改配置时最有用的一条：它把产出算出来但不写盘，直接打印和当前
+`build --diff` 是改配置时最有用的一条：它把产出算出来但不写盘，直接打印和当前
 文件的差异。这在旧版本里做不到，因为组装过程和磁盘写入是缠在一起的。
 
 ---
@@ -245,7 +245,7 @@ set -a; . ./.env; set +a
 
 ./node-box pull                  # 能不能拉到仓库
 ./node-box validate              # 配置能不能组装
-./node-box build --dry-run --diff  # 看看会产出什么
+./node-box build --diff          # 看看会产出什么
 ./node-box update                # 真的写一次
 ```
 
@@ -270,7 +270,7 @@ curl -s 127.0.0.1:8788/status | jq
 **产出有问题**：
 
 ```bash
-./node-box rollback     # 切回 last-good 并重新产出
+./node-box rollback     # 回到上一个被应用的快照并重新产出
 ```
 
 **临时停掉自动更新**：
@@ -296,5 +296,8 @@ tar -czf node-box-backup.tar.gz -C /opt node-box
 
 真要从零恢复也很快——`snapshots/` 是缓存，删掉之后下一次运行会重新从 GitHub 拉。
 **唯一不可再生的是 `.env` 里的两个密钥**，单独记在密码管理器里。
+
+注意删掉 `snapshots/` 会一起丢掉 `previous`，也就是丢掉回滚能力，直到下一次配置变更
+重新建立它。`state/state.json` 删掉只会多重写一次产出。
 
 ---

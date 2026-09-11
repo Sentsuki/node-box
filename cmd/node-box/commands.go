@@ -120,18 +120,15 @@ func cmdPull(ctx context.Context, env *env, args []string) error {
 	return nil
 }
 
-// cmdBuild assembles the configuration without writing it.
+// cmdBuild assembles the configuration without writing it. It never writes;
+// use update to apply changes.
 func cmdBuild(ctx context.Context, env *env, args []string) error {
 	fs := newFlagSet("build")
 	env.bind(fs)
 	ref := fs.String("ref", "", "snapshot to assemble (default: whatever the source points at)")
-	dryRun := fs.Bool("dry-run", true, "do not write anything (the only supported mode)")
 	showDiff := fs.Bool("diff", false, "show what would change in each output file")
 	if err := fs.Parse(args); err != nil {
 		return err
-	}
-	if !*dryRun {
-		return fmt.Errorf("build never writes; use `update` to apply changes")
 	}
 
 	r, err := newRunner(env)
@@ -186,7 +183,7 @@ func cmdValidate(ctx context.Context, env *env, args []string) error {
 	return nil
 }
 
-// cmdRollback regenerates output from the last-good snapshot.
+// cmdRollback regenerates output from the previously applied snapshot.
 func cmdRollback(ctx context.Context, env *env, args []string) error {
 	fs := newFlagSet("rollback")
 	env.bind(fs)
@@ -224,8 +221,8 @@ func cmdStatus(_ context.Context, env *env, args []string) error {
 
 	fmt.Printf("source:      %s\n", st.Source)
 	fmt.Printf("current:     %s\n", orNone(st.Current))
-	fmt.Printf("last-good:   %s\n", orNone(st.LastGood))
 	fmt.Printf("applied:     %s\n", orNone(st.AppliedRef))
+	fmt.Printf("previous:    %s\n", orNone(st.Previous))
 	if !st.UpdatedAt.IsZero() {
 		fmt.Printf("updated:     %s\n", st.UpdatedAt.Format("2006-01-02 15:04:05"))
 	}

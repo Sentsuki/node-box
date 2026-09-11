@@ -5,10 +5,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"node-box/internal/fetch"
 )
 
 // tarEntry is one file or directory to place in a test archive.
@@ -207,7 +212,7 @@ func TestStore_GCKeepsPinnedSnapshots(t *testing.T) {
 	}
 
 	// Pin the oldest, then keep only 2.
-	if err := store.SetPointer(PointerLastGood, "aaa"); err != nil {
+	if err := store.SetPointer(PointerPrevious, "aaa"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.GC(2); err != nil {
@@ -215,7 +220,7 @@ func TestStore_GCKeepsPinnedSnapshots(t *testing.T) {
 	}
 
 	if !store.Has("aaa") {
-		t.Error("the pinned last-good snapshot must survive GC however old it is")
+		t.Error("the pinned rollback target must survive GC however old it is")
 	}
 	if !store.Has("eee") {
 		t.Error("the newest snapshot should be kept")
@@ -304,5 +309,155 @@ func TestLocal_MaterializeSkipsGit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dst, ".git")); err == nil {
 		t.Error(".git should not be copied into a snapshot")
+	}
+}
+
+// --- GitHub source, against a stub API ---
+
+func newStubGitHub(t *testing.T, handler http.HandlerFunc) (*GitHub, *httptest.Server) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	client, err := fetch.New(fetch.Options{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewGitHub(client, "you/cfg", "main", "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.apiBase = srv.URL
+	return g, srv
+}
+
+func TestGitHub_ResolveSendsAuthAndAsksForBareSHA(t *testing.T) {
+	const sha = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+	var gotPath, gotAuth, gotAccept, gotVersion string
+
+	g, _ := newStubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+		gotAccept, gotVersion = r.Header.Get("Accept"), r.Header.Get("X-GitHub-Api-Version")
+		w.Header().Set("ETag", `W/"v1"`)
+		w.Write([]byte(sha + "\n"))
+	})
+
+	got, err := g.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got != sha {
+		t.Errorf("sha = %q, want %q", got, sha)
+	}
+	if gotPath != "/repos/you/cfg/commits/main" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if gotAuth != "Bearer tok" {
+		t.Errorf("Authorization = %q", gotAuth)
+	}
+	// Asking for the bare sha keeps the poll response tiny.
+	if gotAccept != "application/vnd.github.sha" {
+		t.Errorf("Accept = %q", gotAccept)
+	}
+	if gotVersion != "2022-11-28" {
+		t.Errorf("X-GitHub-Api-Version = %q", gotVersion)
+	}
+}
+
+func TestGitHub_ResolveUsesConditionalRequest(t *testing.T) {
+	const sha = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+	var calls int
+	var secondETag string
+
+	g, _ := newStubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("ETag", `W/"v1"`)
+			w.Write([]byte(sha))
+			return
+		}
+		secondETag = r.Header.Get("If-None-Match")
+		w.WriteHeader(http.StatusNotModified)
+	})
+
+	if _, err := g.Resolve(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The second call must be conditional and must resolve from the cache, not
+	// surface the 304 as an error. This is what makes the fallback poll free.
+	got, err := g.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("second Resolve: %v", err)
+	}
+	if got != sha {
+		t.Errorf("sha after 304 = %q, want the cached %q", got, sha)
+	}
+	if secondETag != `W/"v1"` {
+		t.Errorf("If-None-Match = %q, want the ETag from the first response", secondETag)
+	}
+}
+
+func TestGitHub_ResolveRejectsGarbageSHA(t *testing.T) {
+	g, _ := newStubGitHub(t, func(w http.ResponseWriter, _ *http.Request) {
+		// An HTML error page, which is what a misconfigured proxy would return.
+		w.Write([]byte("<html>not a sha</html>"))
+	})
+	if _, err := g.Resolve(context.Background()); err == nil {
+		t.Fatal("want an error for a response that is not a commit sha")
+	}
+}
+
+func TestGitHub_MaterializeExtractsTarball(t *testing.T) {
+	const sha = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+	archive := makeTarGz(t, []tarEntry{
+		{name: "you-cfg-a1b2c3d/", typeflag: tar.TypeDir},
+		{name: "you-cfg-a1b2c3d/config.json", body: `{"nodes":{}}`},
+		{name: "you-cfg-a1b2c3d/modules/dns.json", body: `{"dns":{}}`},
+	})
+
+	var gotPath string
+	g, _ := newStubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write(archive)
+	})
+
+	dir := t.TempDir()
+	if err := g.Materialize(context.Background(), sha, dir); err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+	if gotPath != "/repos/you/cfg/tarball/"+sha {
+		t.Errorf("path = %q", gotPath)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "config.json")); err != nil {
+		t.Errorf("config.json: %v", err)
+	} else if string(b) != `{"nodes":{}}` {
+		t.Errorf("config.json = %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "modules", "dns.json")); err != nil {
+		t.Errorf("modules/dns.json: %v", err)
+	}
+}
+
+func TestGitHub_MaterializeRejectsUnsafeRef(t *testing.T) {
+	g, _ := newStubGitHub(t, func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("the server should not have been contacted")
+	})
+	// A ref becomes part of the URL and a directory name, so it is validated
+	// before any request goes out.
+	if err := g.Materialize(context.Background(), "../../etc", t.TempDir()); err == nil {
+		t.Fatal("want an error for an unsafe ref")
+	}
+}
+
+func TestGitHub_RepoMustBeOwnerName(t *testing.T) {
+	client, err := fetch.New(fetch.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, repo := range []string{"noslash", "/name", "owner/", ""} {
+		if _, err := NewGitHub(client, repo, "main", "tok"); err == nil {
+			t.Errorf("repo %q should be rejected", repo)
+		}
 	}
 }

@@ -16,7 +16,7 @@ import (
 type Status struct {
 	Source      string            `json:"source"`
 	Current     string            `json:"current,omitempty"`
-	LastGood    string            `json:"last_good,omitempty"`
+	Previous    string            `json:"previous,omitempty"`
 	AppliedRef  string            `json:"applied_ref,omitempty"`
 	UpdatedAt   time.Time         `json:"updated_at,omitzero"`
 	LastError   string            `json:"last_error,omitempty"`
@@ -40,8 +40,8 @@ func (r *Runner) Status() Status {
 	if ref, ok := r.store.Pointer(source.PointerCurrent); ok {
 		s.Current = ref
 	}
-	if ref, ok := r.store.Pointer(source.PointerLastGood); ok {
-		s.LastGood = ref
+	if ref, ok := r.store.Pointer(source.PointerPrevious); ok {
+		s.Previous = ref
 	}
 	if state, err := output.LoadState(r.boot.StateFile()); err == nil {
 		s.AppliedRef = state.Ref
@@ -53,27 +53,25 @@ func (r *Runner) Status() Status {
 	return s
 }
 
-// Rollback regenerates the outputs from the last snapshot that produced them.
+// Rollback regenerates the outputs from the snapshot applied before the
+// current one.
 //
 // It is the escape hatch for a configuration that passed every check but turned
 // out to be wrong in practice, which no amount of validation can catch.
 func (r *Runner) Rollback(ctx context.Context) error {
-	ref, ok := r.store.Pointer(source.PointerLastGood)
+	ref, ok := r.store.Pointer(source.PointerPrevious)
 	if !ok {
-		return fmt.Errorf("no last-good snapshot to roll back to")
-	}
-	current, _ := r.store.Pointer(source.PointerCurrent)
-	if current == ref {
-		logx.Infof("already at the last-good snapshot %s; regenerating outputs", short(ref))
-	} else {
-		logx.Infof("rolling back from %s to %s", short(current), short(ref))
+		return fmt.Errorf("no previous snapshot to roll back to; only one version has ever been applied")
 	}
 
-	if err := r.store.SetPointer(source.PointerCurrent, ref); err != nil {
+	state, err := output.LoadState(r.boot.StateFile())
+	if err != nil {
 		return err
 	}
-	// Force, because the output hashes on record already match this snapshot
-	// and would otherwise skip every file.
+	logx.Infof("rolling back from %s to %s", short(state.Ref), short(ref))
+
+	// Force, because the outputs on disk already match the snapshot being
+	// replaced and a content comparison would skip every file.
 	return r.Execute(ctx, Trigger{Kind: KindManual, Ref: ref, Force: true})
 }
 
