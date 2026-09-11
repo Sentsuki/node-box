@@ -199,12 +199,22 @@ func (inj *injector) rulesFor(cf model.ConfigFile) []model.SelectorRule {
 	return rules
 }
 
-// members returns the nodes one rule puts into its selector, regular nodes
-// first and then each referenced relay in declaration order.
+// members returns the nodes one rule puts into its selector.
+//
+// Relays come first, ordered by their nodes.relays declaration rather than by
+// how the rule happens to list them, so the same set always appears in the
+// same order. Regular nodes follow in nodes.subscriptions order.
 func (inj *injector) members(rule model.SelectorRule) []subscription.Node {
-	out := inj.resolve(rule.NodeSelector)
+	wanted := make(map[string]bool, len(rule.Relays))
 	for _, name := range rule.Relays {
-		out = append(out, inj.relays[name]...)
+		wanted[name] = true
 	}
-	return out
+
+	var out []subscription.Node
+	for _, r := range inj.cfg.Nodes.Relays {
+		if wanted[r.Name] {
+			out = append(out, inj.relays[r.Name]...)
+		}
+	}
+	return append(out, inj.resolve(rule.NodeSelector)...)
 }

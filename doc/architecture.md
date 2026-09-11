@@ -85,6 +85,21 @@ needed |= 每个 needed 节点的 detour 目标   # 传递闭包
 json.MarshalIndent(doc, "", "  ") + 末尾换行
 ```
 
+### 排序规则
+
+`outbounds` 数组和每个 selector 的成员列表用**同一条规则**：
+
+```
+① 模块文件自带的条目        原位原序
+② Relay 链式节点            按 nodes.relays 的声明顺序
+③ 普通节点                  按 nodes.subscriptions 的声明顺序
+```
+
+②③用的都是**声明顺序**，与规则里 `relays` / `from` 的书写顺序无关。所以同一批
+节点在任何 selector 里顺序都一致，调整某条规则的书写也不会让产出重排。
+
+同一条 relay 声明内部按「模板 × 上游」展开，两者都按节点池顺序。
+
 产出是确定性的：Go 的 `encoding/json` 对 map 键按字典序排序，数组保序。
 
 ## 4. 容错规则

@@ -150,13 +150,14 @@ func TestInject_MembershipDrivesInsertion(t *testing.T) {
 		{Tag: "AI", Relays: []string{"JP-HK"}},
 	})
 
-	// Proxy keeps its literal member first, then regular nodes, then relays.
+	// One ordering rule everywhere: the module's own entries, then relays in
+	// nodes.relays order, then regular nodes in nodes.subscriptions order.
 	want := []string{
 		"direct",
-		"[A] node-1",
-		"[A] node-2",
 		"[RL] US → [hi] 🇺🇸 美国 01",
 		"[RL] US → [mj] 🇭🇰 香港 02",
+		"[A] node-1",
+		"[A] node-2",
 	}
 	if got := groupMembers(t, doc, "Proxy"); !slices.Equal(got, want) {
 		t.Errorf("Proxy members:\n got %q\nwant %q", got, want)
@@ -397,5 +398,50 @@ func TestInject_SharedModuleAcrossOutputs(t *testing.T) {
 	}
 	if string(files[0].Content) != string(files[1].Content) {
 		t.Errorf("two outputs from the same module diverged:\n%s\n---\n%s", files[0].Content, files[1].Content)
+	}
+}
+
+func TestInject_OrderingRule(t *testing.T) {
+	// The rule lists relays in the opposite order to nodes.relays and
+	// subscriptions out of declaration order; neither may affect the output.
+	doc := buildFixture(t, []model.SelectorRule{
+		{
+			Tag:          "Proxy",
+			NodeSelector: model.NodeSelector{From: []string{"mj", "A"}},
+			Relays:       []string{"JP", "US"},
+		},
+		{Tag: "AI", NodeSelector: sel("A")},
+	})
+
+	want := []string{
+		"direct", // the module file's own member
+		// relays, in nodes.relays order: US before JP
+		"[RL] US → [hi] 🇺🇸 美国 01",
+		"[RL] US → [mj] 🇭🇰 香港 02",
+		"[RL] JP → [mj] 🇭🇰 香港 02",
+		"[RL] JP → [mj] 🇯🇵 日本 01",
+		// regular nodes, in nodes.subscriptions order: A before mj
+		"[A] node-1",
+		"[A] node-2",
+		"[mj] 🇭🇰 香港 02",
+		"[mj] 🇯🇵 日本 01",
+	}
+	if got := groupMembers(t, doc, "Proxy"); !slices.Equal(got, want) {
+		t.Errorf("Proxy members:\n got %q\nwant %q", got, want)
+	}
+
+	// The outbounds array follows the same rule, after the module's entries.
+	tags := sectionTags(doc, "outbounds")
+	firstRelay, firstRegular := -1, -1
+	for i, tag := range tags {
+		if firstRelay < 0 && strings.HasPrefix(tag, "[RL] ") {
+			firstRelay = i
+		}
+		if firstRegular < 0 && strings.HasPrefix(tag, "[A] ") {
+			firstRegular = i
+		}
+	}
+	if firstRelay < 0 || firstRegular < 0 || firstRelay > firstRegular {
+		t.Errorf("relays must precede regular nodes in outbounds, got %q", tags)
 	}
 }

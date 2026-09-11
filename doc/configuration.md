@@ -337,8 +337,9 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 规则：
 
 - 规则挂在**模块**上，该模块被哪个产出引用，规则就在那个产出里生效
-- 模块文件里 selector 自带的成员（如 `["direct", "auto"]`）保持原位，
-  派生成员**追加在后面**
+- 成员顺序固定为：**模块文件自带的成员 → Relay 链式节点（按 `nodes.relays`
+  声明序）→ 普通节点（按 `nodes.subscriptions` 声明序）**。与本条规则里
+  `relays` / `from` 的书写顺序无关，`outbounds` 数组用同一条规则
 - `from` 和 `relays` 至少要有一个，否则这条规则什么都不做，直接报错
 - `include` / `exclude` **只作用于 `from` 选出的普通节点，不过滤 `relays`**。
   中继是按名精确引用的；想要子集就多声明一条更窄的中继（这正是 `JP-HK` 的用途），

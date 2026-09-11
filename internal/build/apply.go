@@ -90,8 +90,10 @@ func (inj *injector) closeOverDetours(needed map[string]bool, present map[string
 
 // insert writes the needed nodes into the document.
 //
-// Nodes are emitted in pool order followed by relay declaration order, so the
-// generated file is byte-identical across runs with the same inputs.
+// Emission follows the single ordering rule used everywhere: relay nodes
+// first in nodes.relays order, then regular nodes in nodes.subscriptions
+// order. Both are declaration orders, so the generated file is
+// byte-identical across runs with the same inputs.
 func (inj *injector) insert(doc map[string]any, needed, present map[string]bool) {
 	var addedOutbounds, addedEndpoints []any
 
@@ -121,14 +123,14 @@ func (inj *injector) insert(doc map[string]any, needed, present map[string]bool)
 	logx.Debugf("inserted %d outbound(s) and %d endpoint(s)", len(addedOutbounds), len(addedEndpoints))
 }
 
-// candidates returns every node that could be inserted, in a stable order.
+// candidates returns every node that could be inserted, in a stable order:
+// relays first, then regular nodes.
 func (inj *injector) candidates() []subscription.Node {
 	out := make([]subscription.Node, 0, len(inj.pool))
-	out = append(out, inj.pool...)
 	for _, r := range inj.cfg.Nodes.Relays {
 		out = append(out, inj.relays[r.Name]...)
 	}
-	return out
+	return append(out, inj.pool...)
 }
 
 // findByTag returns the object in outbounds carrying the given tag.
