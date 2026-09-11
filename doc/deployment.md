@@ -6,21 +6,24 @@
 
 ```
 node-box run                          常驻：定时 + webhook + 兜底轮询
-node-box update [--ref <sha>]         执行一次完整更新后退出
-node-box pull                         只刷新快照，不产出
-node-box build --dry-run [--diff]     只组装不写盘；--diff 打印与现有产出的差异
+node-box update [--ref <sha>] [--force]  执行一次完整更新后退出
+node-box pull [--ref <sha>]           只刷新快照，不产出
+node-box build [--diff] [--ref <sha>] 只组装不写盘；--diff 打印与现有产出的差异
 node-box validate [--ref <sha>]       校验快照能否组装出合法配置
 node-box rollback                     切回 last-good 快照并重新产出
-node-box status                       当前 ref / 上次产出 / 上次错误
-node-box init                         在当前目录生成配置仓库骨架
+node-box status [--json]              当前 ref / 上次产出 / 上次错误
+node-box init [目录] [--force]        生成配置仓库骨架
 ```
 
-全局参数：
+全局参数（每个子命令都接受）：
 
 | 参数 | 说明 |
 |---|---|
 | `--config <path>` | 引导配置路径，优先级高于 `NODE_BOX_CONFIG` |
 | `--log-level <lvl>` | 覆盖配置里的 `log_level` |
+
+引导配置路径解析顺序：`--config` > `NODE_BOX_CONFIG` > 二进制同目录的 `node-box.json`。
+显式给出的 `--config` 永远优先，不存在「显式路径输给环境变量」的情况。
 
 `build --dry-run --diff` 是改配置时最有用的一条：它把产出算出来但不写盘，直接打印和当前
 文件的差异。这在旧版本里做不到，因为组装过程和磁盘写入是缠在一起的。

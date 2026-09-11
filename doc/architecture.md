@@ -24,8 +24,8 @@
 ├── snapshots/
 │   ├── a1b2c3d.../             # 不可变快照，按 commit sha 命名
 │   ├── d4e5f6a.../
-│   ├── current    -> d4e5f6a...   # 最近一次成功拉取
-│   └── last-good  -> a1b2c3d...   # 最近一次成功产出
+│   ├── current                 # 文本文件，内容是最近一次成功拉取的 ref
+│   └── last-good               # 文本文件，内容是最近一次成功产出的 ref
 ├── state/
 │   └── state.json              # 上次 ref、各产出文件的 hash、上次错误
 ├── out/                        # 默认输出目录，可被 output.dir 覆盖
@@ -34,9 +34,12 @@
 └── logs/                       # 可选；默认直接走 stdout / journald
 ```
 
-`current` 与 `last-good` 是 `snapshots/` 内部的相对软链，所以整个目录可以整体移动。
+`current` 与 `last-good` 是**纯文本指针文件**而不是软链：指针文件用和别处一样的
+`tmp + rename` 原子替换，不需要创建软链的权限，各平台行为一致，整个目录也可以整体移动。
+指向一个已被删除的快照时读作「未设置」，而不是交回一个打不开的 ref。
 
 快照保留最近 10 个，超出的按时间从旧到新删除；`current` 和 `last-good` 指向的永不删除。
+被中断的拉取会在 `snapshots/.incoming-*` 留下临时目录，进程启动时清理。
 
 ## 3. 运行流程
 

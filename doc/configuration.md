@@ -55,6 +55,20 @@
 | `log_level` | string | ❌ | `info` | `silent` / `error` / `warn` / `info` / `debug` |
 | `source` | object | ✅ | — | 配置来源 |
 | `server` | object | ❌ | 不启用 | 内置 HTTP server |
+| `proxy` | object | ❌ | 直连 | 出站代理，对拉取配置仓库和拉取订阅都生效 |
+
+未知字段会直接报错而不是被忽略，所以键名写错（比如 `evrey`）会在启动时暴露，
+而不是让那条设置永远不生效。
+
+### `proxy`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|:---:|---|
+| `type` | string | ✅ | `http` / `https` / `socks5` |
+| `host` | string | ✅ | 代理地址 |
+| `port` | int | ✅ | 1–65535 |
+| `username` | string | ❌ | 认证用户名 |
+| `password` | string | ❌ | 认证密码 |
 
 ### `source`
 
@@ -78,7 +92,7 @@
 | 字段 | 类型 | 必填 | 默认 | 说明 |
 |---|---|:---:|---|---|
 | `enabled` | bool | ❌ | `false` | 是否启动内置 HTTP server |
-| `listen` | string | ⚠️ | `127.0.0.1:8788` | 监听地址。**应始终绑定回环地址**，TLS 交给前置反代 |
+| `listen` | string | ⚠️ | `127.0.0.1:8788` | 监听地址。**必须绑定回环地址**，TLS 交给前置反代；填 `0.0.0.0` 或 `::` 会被拒绝启动 |
 | `webhook_secret_env` | string | ⚠️ | — | `enabled=true` 时必填，HMAC 密钥的环境变量名 |
 
 ### `.env`
