@@ -12,11 +12,17 @@ import (
 // relayArrow joins a relay template tag to its upstream tag.
 const relayArrow = " → "
 
-// endpointTypes are sing-box outbound types that must live under "endpoints"
-// rather than "outbounds".
+// endpointTypes are node types that must live under "endpoints" rather than
+// "outbounds".
+//
+// This list has to cover everything the vendored Clash converter can emit as an
+// endpoint — see the typeMap in upstream/convert/convert.go, which turns Clash
+// "wireguard" into "wireguard" and Clash "openvpn" into "openvpn-client" —
+// plus the types a sing-box subscription can declare in its own endpoints array.
 var endpointTypes = map[string]bool{
-	"wireguard": true,
-	"tailscale": true,
+	"wireguard":      true,
+	"tailscale":      true,
+	"openvpn-client": true,
 }
 
 // injector turns selector rules into concrete configuration.

@@ -445,3 +445,71 @@ func TestInject_OrderingRule(t *testing.T) {
 		t.Errorf("relays must precede regular nodes in outbounds, got %q", tags)
 	}
 }
+
+func TestInject_OpenVPNGoesToEndpoints(t *testing.T) {
+	// The vendored Clash converter emits "openvpn-client" as an endpoint, so
+	// node-box must route it like wireguard. Both the old implementation and
+	// the first version of this one only knew about wireguard/tailscale.
+	nodes := fixtureNodes()
+	nodes["RL"] = append(nodes["RL"], subscription.Node{
+		"tag": "[RL] OVPN", "type": "openvpn-client", "server": "vpn.example.com",
+	})
+
+	cfg := fixtureConfig([]model.SelectorRule{
+		{Tag: "Proxy", NodeSelector: sel("A")},
+		{Tag: "AI", Relays: []string{"OVPN"}},
+	})
+	cfg.Nodes.Relays = append(cfg.Nodes.Relays, model.Relay{
+		Name:     "OVPN",
+		Via:      []model.NodeSelector{{From: []string{"RL"}, Include: []string{"OVPN"}}},
+		Upstream: []model.NodeSelector{{From: []string{"mj"}, Include: []string{"日本"}}},
+	})
+
+	files, err := Build(Input{
+		Config:  cfg,
+		Modules: mods(map[string]string{"out": moduleFile}),
+		Nodes:   nodes,
+		Outputs: outputs(model.ConfigFile{Name: "main", Modules: []string{"out"}}),
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var doc map[string]any
+	json.Unmarshal(files[0].Content, &doc)
+
+	ovpn := "[RL] OVPN → [mj] 🇯🇵 日本 01"
+	if got := sectionTags(doc, "endpoints"); !slices.Contains(got, ovpn) {
+		t.Errorf("endpoints = %q, want it to contain %q", got, ovpn)
+	}
+	if got := sectionTags(doc, "outbounds"); slices.Contains(got, ovpn) {
+		t.Error("an openvpn-client node must not stay in outbounds")
+	}
+}
+
+func TestValidate_RejectsEndpointTypeInOutbounds(t *testing.T) {
+	// A hand-written wireguard outbound in a module file. Derived nodes are
+	// routed by type, so this can only come from the module itself, and
+	// node-box reports it rather than quietly relocating it.
+	const bad = `{
+      "outbounds": [
+        { "type": "direct", "tag": "direct" },
+        { "type": "wireguard", "tag": "wg-manual", "address": ["10.0.0.2/32"] },
+        { "type": "selector", "tag": "Proxy", "outbounds": ["direct"] }
+      ]
+    }`
+
+	_, err := Build(Input{
+		Config:  fixtureConfig([]model.SelectorRule{{Tag: "Proxy", NodeSelector: sel("A")}}),
+		Modules: mods(map[string]string{"out": bad}),
+		Nodes:   fixtureNodes(),
+		Outputs: outputs(model.ConfigFile{Name: "main", Modules: []string{"out"}}),
+	})
+	if err == nil {
+		t.Fatal("want an error for a wireguard outbound")
+	}
+	for _, want := range []string{"wg-manual", "wireguard", "endpoints"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+}

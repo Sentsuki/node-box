@@ -306,9 +306,33 @@ tmp 文件必须和目标同目录（而不是统一放在某个 tmp 目录）�
 | 「tag 含方括号」= 我生成的 | 全量重建，没有残留概念 |
 | 中继全笛卡尔积再过滤 | 生成在声明时就有界 |
 
+### endpoints
+
+节点池里不区分 outbound 和 endpoint —— 只有「节点」，每个自带 `type`。
+去向在**插入的那一刻**按 `type` 决定：
+
+```go
+if endpointTypes[n.Type()] {   // wireguard / tailscale / openvpn-client
+    → doc["endpoints"]
+} else {
+    → doc["outbounds"]
+}
+```
+
+所以不存在「先放进 outbounds 再按 type 搬家」这个中间状态，也就没有旧实现里
+「清残留必须先于搬家」那条隐式顺序约束（`doc` 每次从模块内容现场构造，不可能有残留）。
+
+`endpointTypes` 必须覆盖 `upstream/convert` 能产出的全部 endpoint 类型：
+Clash 的 `wireguard` → `wireguard`，Clash 的 `openvpn` → `openvpn-client`。
+
+模块文件自己在 `outbounds` 里手写 endpoint 类型的节点 → **报错**，而不是悄悄搬走。
+派生节点按 type 路由，所以能出现在 outbounds 里的只可能是模块自己写的，
+报错能直接指出该改哪个文件。
+
 产出校验（写盘前全在内存里完成）：
 
 - 每个 selector / urltest 的成员非空 —— 旧实现会写出 `"outbounds": null`
 - 成员和 `detour` 引用的 tag 必须在同一文件内存在 —— 悬挂引用
 - `outbounds` 与 `endpoints` 的 tag 全局唯一
+- `outbounds` 里不含 endpoint 专属类型
 - 每个数组段都是对象数组

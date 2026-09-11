@@ -23,11 +23,41 @@ func validateDocument(doc map[string]any) error {
 			return err
 		}
 	}
+	if err := checkEndpointPlacement(doc); err != nil {
+		return err
+	}
+
 	tags, err := collectTags(doc)
 	if err != nil {
 		return err
 	}
 	return checkReferences(doc, tags)
+}
+
+// checkEndpointPlacement rejects endpoint-only types sitting in outbounds.
+//
+// Derived nodes are routed by type when they are inserted, so anything caught
+// here was written by hand in a module file. sing-box refuses to start on it,
+// and saying so now names the file to fix instead of leaving the operator with
+// a startup failure. Silently relocating it would be a hidden correction to
+// input that node-box otherwise passes through untouched.
+func checkEndpointPlacement(doc map[string]any) error {
+	arr, _ := doc["outbounds"].([]any)
+	for _, raw := range arr {
+		obj, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := obj["type"].(string)
+		if !endpointTypes[typ] {
+			continue
+		}
+		tag, _ := obj["tag"].(string)
+		return fmt.Errorf(
+			"outbound %q has type %q, which belongs in the endpoints section; move it there in the module file that declares it",
+			tag, typ)
+	}
+	return nil
 }
 
 // checkArraySection verifies that a section, if present, is an array of objects.
