@@ -1,19 +1,18 @@
 # 配置说明
 
-node-box 有两个配置文件：
+node-box 包含两个配置文件：
 
 | | 本地引导配置 | 仓库配置 |
 |---|---|---|
 | 文件名 | `node-box.json` | `config.json` |
-| 位置 | 运行 node-box 的机器上 | 配置仓库的根目录 |
-| 内容 | 去哪拿配置、监听什么、状态目录 | 订阅、模块、产出规则、更新周期 |
-| 变更频率 | 极少 | 经常，通过 git 管理 |
+| 位置 | 运行 node-box 的主机环境 | 配置仓库根目录 |
+| 内容 | 仓库来源、HTTP 监听、状态目录 | 订阅源、模块、产出规则、更新周期 |
+| 变更频率 | 极少 | 经常（通过 Git 管理） |
 
-分两层是因为「怎么去 GitHub 拿配置」这件事本身不能放在 GitHub 上。
+完整示例可参考 [`example.json`](example.json)。
 
-完整示例见 [`example.json`](example.json)（那是仓库配置）。
-
-**所有配置文件都拒绝未知字段。** 键名写错会在启动时直接报错，不会被静默忽略。
+> [!IMPORTANT]
+> 所有配置文件均拒绝未知字段。键名错误会在解析时直接报错退出。
 
 ---
 
@@ -38,77 +37,65 @@ node-box 有两个配置文件：
 }
 ```
 
-路径解析顺序：`--config <路径>` > `NODE_BOX_CONFIG` 环境变量 > 二进制同目录的 `node-box.json`。
+配置文件路径优先级：`--config <路径>` > `NODE_BOX_CONFIG` 环境变量 > 程序同目录下的 `node-box.json`。
 
-## 顶层
+## 顶层字段
 
-| 字段 | 类型 | 必填 | 默认 | 说明 |
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|:---:|---|---|
-| `root` | string | ❌ | `node-box.json` 所在目录 | 状态根目录，`snapshots/`、`state/`、`out/` 都在其下 |
-| `log_level` | string | ❌ | `info` | `silent` / `error` / `warn` / `info` / `debug` |
-| `update_timeout` | duration | ❌ | `15m` | 单次更新的上限，超时则中止本次更新并记入 `state.json` |
-| `source` | object | ✅ | — | 配置来源 |
-| `server` | object | ❌ | 不启用 | 内置 HTTP server |
-| `proxy` | object | ❌ | 直连 | 出站代理，**对拉取配置仓库和拉取订阅都生效** |
+| `root` | string | ❌ | `node-box.json` 所在目录 | 状态根目录，包含 `snapshots/`、`state/`、`out/` |
+| `log_level` | string | ❌ | `info` | 日志级别：`silent` / `error` / `warn` / `info` / `debug` |
+| `update_timeout` | duration | ❌ | `15m` | 单次更新超时上限，超时则中止本次更新并记入 `state.json` |
+| `source` | object | ✅ | — | 配置来源设置 |
+| `server` | object | ❌ | 不启用 | 内置 HTTP 服务 |
+| `proxy` | object | ❌ | 直连 | 出站代理，对拉取配置仓库和拉取订阅均生效 |
 
 ## `source`
 
-| 字段 | 类型 | 必填 | 默认 | 说明 |
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|:---:|---|---|
 | `type` | string | ✅ | — | `github` 或 `local` |
-| `repo` | string | ⚠️ | — | `type=github` 必填，格式 `owner/name` |
+| `repo` | string | ⚠️ | — | `type=github` 必填，格式为 `owner/name` |
 | `branch` | string | ❌ | `main` | 分支名 |
-| `token_env` | string | ⚠️ | — | `type=github` 必填。**存的是环境变量名，不是 token 本身** |
-| `poll_interval` | string | ❌ | `10m` | 兜底轮询间隔，Go duration 格式。`"0"` 关闭（不建议） |
-| `dir` | string | ⚠️ | — | `type=local` 必填，本地配置目录 |
+| `token_env` | string | ⚠️ | — | `type=github` 必填，存储 GitHub Token 的环境变量名 |
+| `poll_interval` | string | ❌ | `10m` | 兜底轮询间隔（Go duration 格式），`"0"` 表示关闭 |
+| `dir` | string | ⚠️ | — | `type=local` 必填，本地配置目录路径 |
 
-GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: Read-only**。
-
-`type: "local"` 直接读一个目录、不走网络，用于开发调试。本地源只能快照「目录当前的
-内容」，所以 `--ref` 指定一个和当前内容哈希不符的 ref 会直接报错，而不是把当前内容存成
-那个 ref。它照样做快照和回滚，行为和
-`github` 完全一致，只是「版本」是目录内容的哈希而不是 commit sha。
-
-**为什么用仓库 tarball 而不是 raw 文件 URL**：`raw.githubusercontent.com` 有最长约
-5 分钟缓存，Action 触发后可能拉到旧内容且毫无提示；而 tarball 是单个 commit 的完整
-快照，不会出现「A 模块新版 + B 模块旧版」的组合。
+- **GitHub 权限**：Token 使用 Fine-grained PAT 时，仅需目标仓库的 **Contents: Read-only** 权限。
+- **本地源模式**：`type: "local"` 用于本地开发调试，直接读取目录内容，以内容哈希作为版本标识。
 
 ## `server`
 
-| 字段 | 类型 | 必填 | 默认 | 说明 |
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|:---:|---|---|
-| `enabled` | bool | ❌ | `false` | 是否启动内置 HTTP server |
-| `listen` | string | ❌ | `127.0.0.1:8788` | **必须绑定回环地址**，填 `0.0.0.0` / `::` 会被拒绝启动 |
+| `enabled` | bool | ❌ | `false` | 是否启用内置 HTTP 服务 |
+| `listen` | string | ❌ | `127.0.0.1:8788` | **仅允许绑定回环地址**，填 `0.0.0.0` 或 `::` 将拒绝启动 |
 | `webhook_secret_env` | string | ⚠️ | — | `enabled=true` 必填，HMAC 密钥的环境变量名 |
 
-TLS 交给前置的 Caddy / nginx，node-box 不管证书。三个端点：
+HTTP 端点列表：
 
-| 端点 | 鉴权 | 暴露的内容 |
+| 端点 | 鉴权 | 说明 |
 |---|---|---|
-| `POST /hooks/github` | HMAC-SHA256（`X-NodeBox-Signature-256`） | 唯一写入口。签名用 `webhook_secret_env` 指定的密钥，按**收到的原始字节**校验，比较是恒定时间的 |
-| `GET /healthz` | 无 | 只有 `{"status":"ok"}` |
-| `GET /status` | **无** | 当前 / 上一个 / 已应用的 ref、产出文件的**绝对路径**及其哈希、上次错误的**完整文本**、是否正在更新 |
+| `POST /hooks/github` | HMAC-SHA256 (`X-NodeBox-Signature-256`) | GitHub Webhook 触发入口，使用密钥恒定时间校验原始请求体 |
+| `GET /healthz` | 无 | 健康检查，返回 `{"status":"ok"}` |
+| `GET /status` | 无 | 返回当前/上一个快照 ref、产出路径及哈希、上次更新错误、运行状态 |
 
-**`/status` 没有鉴权，这是有意的取舍，但要知道它暴露什么。** 它会泄露主机上的绝对路径、
-仓库 commit sha，以及上次失败的完整错误信息（其中可能包含模块的 URL）。防线只有一条：
-`listen` 必须绑回环地址，填 `0.0.0.0` 或 `::` 会被**拒绝启动**，所以它默认不可能暴露到公网。
-
-如果这台机器上有不该看到这些的其他用户或进程，在前置的反向代理上给 `/status` 加一层
-basic auth 或 IP 白名单——`/hooks/github` 自带 HMAC，不需要额外处理。
+> [!NOTE]
+> node-box 不提供 TLS 及针对 `/status` 的二次鉴权。如需公网访问或权限隔离，请前置反向代理（如 Caddy/Nginx）。
 
 ## `proxy`
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
 | `type` | string | ✅ | `http` / `https` / `socks5` |
-| `host` | string | ✅ | 代理地址 |
-| `port` | int | ✅ | 1–65535 |
+| `host` | string | ✅ | 代理服务器地址 |
+| `port` | int | ✅ | 端口号 (1–65535) |
 | `username` | string | ❌ | 认证用户名 |
 | `password` | string | ❌ | 认证密码 |
 
-## 密钥
+## 环境变量凭据
 
-两个密钥放在 `.env`（权限 `0600`），由 systemd 的 `EnvironmentFile` 注入：
+敏感密钥推荐保存在权限为 `0600` 的 `.env` 文件中，通过 systemd `EnvironmentFile` 等机制注入：
 
 ```sh
 NODE_BOX_GH_TOKEN=github_pat_xxxxxxxxxxxx
@@ -119,40 +106,30 @@ NODE_BOX_WEBHOOK_SECRET=<openssl rand -hex 32>
 
 # 二、仓库配置 `config.json`
 
-## 顶层
+## 顶层字段
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
-| `output` | object | ❌ | 产出路径设置 |
-| `nodes` | object | ✅ | 订阅源、全局过滤、中继定义 |
-| `modules` | array | ✅ | 模块列表（扁平，不按类型分组） |
-| `configs` | array | ✅ | 产出文件的组装规则 |
-| `update_schedule` | object | ✅ | 定时重抓订阅的周期 |
-| `user_agent` | string | ❌ | 全局默认 User-Agent，默认 `sing-box` |
+| `output` | object | ❌ | 产出路径配置 |
+| `nodes` | object | ✅ | 订阅源、全局过滤与中继规则 |
+| `modules` | array | ✅ | 模块列表 |
+| `configs` | array | ✅ | 产出文件组装定义 |
+| `update_schedule` | object | ✅ | 定时重抓订阅周期 |
+| `user_agent` | string | ❌ | 全局默认 User-Agent，默认为 `sing-box` |
 
 ---
 
 ## `output`
 
-| 字段 | 类型 | 必填 | 默认 | 说明 |
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|:---:|---|---|
-| `dir` | string | ❌ | `<root>/out` | 产出根目录。相对路径相对 `root` 解析 |
+| `dir` | string | ❌ | `<root>/out` | 产出根目录；相对路径相对于 `root` 解析 |
 
-`configs[].path` 的解析规则：
-
-- **绝对路径** → 直接使用，忽略 `output.dir`
-- **相对路径** → 相对 `output.dir` 解析
-
-启动时就校验，不等到写盘才失败：
-
-- `output.dir` 下的目标目录不存在 → 自动创建
-- **绝对路径**的目标目录不存在 → **报错，不自动创建**（路径打错默默造出垃圾目录比报错难查）
-- 目标目录不可写 → 报错
-- 两个 `configs` 解析到同一个文件 → 报错
-- 产出路径落在 `snapshots/` 内 → 报错（会污染只读快照）
-
-产出文件权限 `0600`。写入是原子的（同目录 tmp + `rename`），并且**先与磁盘上的
-内容比对**，相同就跳过——所以手改过或被删掉的产出文件，下次运行会被恢复。
+路径解析与校验规则：
+- **绝对路径**：直接使用，忽略 `output.dir`。
+- **相对路径**：相对于 `output.dir` 解析。
+- **目录校验**：`output.dir` 目录不存在会自动创建；绝对路径的目标目录若不存在则直接报错；目标目录不可写或两个产出路径冲突均直接报错；产出路径禁止落在 `snapshots/` 内。
+- **写入行为**：文件权限为 `0600`，采用原子写入（临时文件 + 重命名），写入前比对内容，一致则跳过。
 
 ---
 
@@ -160,39 +137,29 @@ NODE_BOX_WEBHOOK_SECRET=<openssl rand -hex 32>
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
-| `name` | string | ✅ | 订阅名，唯一。节点 tag 会加 `[name] ` 前缀 |
-| `url` | string | ⚠️ | 远程地址，与 `path` 二选一 |
+| `name` | string | ✅ | 订阅唯一标识，节点 tag 会添加 `[name] ` 前缀（不能包含 `[` 或 `]`） |
+| `url` | string | ⚠️ | 远程订阅地址，与 `path` 二选一 |
 | `path` | string | ⚠️ | 仓库内相对路径，与 `url` 二选一 |
-| `type` | string | ✅ | `clash` / `singbox` / `xray` / `v2ray` |
+| `type` | string | ✅ | 格式类型：`clash` / `singbox` / `xray` / `v2ray` |
 | `enable` | bool | ✅ | 是否启用 |
-| `emoji` | bool | ❌ | 不填：保留原样；`true`：**移除原有 emoji 再按地区关键词重新分配**；`false`：只移除 |
-| `remove_keywords` | string[] | ❌ | 从节点名中移除的关键词，支持 `*` 和 `?` 通配符 |
-| `user_agent` | string | ❌ | 该订阅专用 UA，优先级高于全局 `user_agent` |
+| `emoji` | bool | ❌ | 不填保留原样；`true` 移除原有并按地区关键词重分；`false` 仅移除 |
+| `remove_keywords` | string[] | ❌ | 从节点名移除的关键词（支持 `*` 和 `?` 通配符） |
+| `user_agent` | string | ❌ | 该订阅专用的 User-Agent（优先于全局配置） |
 
-处理顺序：解析 → `remove_keywords` → `emoji` → 加 `[name] ` 前缀 → `exclude_keywords`。
+- **处理顺序**：解析 → `remove_keywords` → `emoji` → 添加 `[name] ` 前缀 → `exclude_keywords`。
+- **Endpoint 节点**：`clash` 订阅中的 WireGuard / OpenVPN 节点将转换为 endpoint 并自动归入产出的 `endpoints` 段；`singbox` 订阅会同时读取 `outbounds` 与 `endpoints`。
 
-`clash` 订阅里的 WireGuard / OpenVPN 节点会被转换成 endpoint 类型，产出时自动写入
-`endpoints` 段。`singbox` 订阅的 `outbounds` 和 `endpoints` **两个数组都会读取**。
-
-校验：`name` 不能为空、不能重复、不能包含 `[` 或 `]`；`url` 与 `path` 必须且只能有一个。
-
-**没有「中继订阅」这种类型。** 一个订阅的节点成为中继模板，只因为某条 `relays` 的
-`via` 指向了它——身份来自引用，不来自声明。
+---
 
 ## `nodes.exclude_keywords`
 
-字符串数组。节点 tag 命中任一关键词则**在抓取时就被丢弃**，不进入节点池，后续任何
-步骤都碰不到它。比较时忽略双方的 emoji。
-
-这是**源头清洗**，不是选择：机场常把 `剩余流量：128GB`、`套餐到期：...` 这类东西当成
-真节点塞在订阅里，它们根本不该成为节点。而「这个组不要某些节点」是 selector 规则的事。
+字符串数组。节点 tag 命中任意关键词则在抓取阶段直接丢弃（常用于清洗流量信息、到期提醒等非节点条目）。匹配时忽略两端 emoji。
 
 ---
 
 ## `nodes.emoji_overrides`
 
-订阅设了 `emoji: true` 时，node-box 会按节点名里的地区关键词重新贴国旗。内置表覆盖了机场
-常卖的地区，这里可以**增加**没覆盖到的，或**覆盖**内置的判断：
+自定义地区国旗匹配规则，优先级高于内置映射表：
 
 ```json
 "nodes": {
@@ -205,40 +172,31 @@ NODE_BOX_WEBHOOK_SECRET=<openssl rand -hex 32>
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
-| `emoji` | string | ✅ | 命中后贴的 emoji |
-| `keywords` | string[] | ✅ | 地区关键词，至少一个，不区分大小写 |
+| `emoji` | string | ✅ | 匹配后赋予的 emoji |
+| `keywords` | string[] | ✅ | 地区关键词列表（不区分大小写，整词匹配） |
 
-规则**按顺序匹配，第一个命中的生效**，而这里的条目排在内置表前面——所以写一条
-`{"emoji": "🏴", "keywords": ["英国","UK"]}` 就能把内置的 🇬🇧 换掉。都没命中则贴 🇺🇳。
-
-关键词按**整词**匹配，不是子串：中文关键词以非汉字为边界，ASCII 关键词以非字母为边界。
-所以 `UK` 能命中 `UK3` 但不会命中 `UKRAINE`，`IN`（印度）也不会把 `China` 误判成印度。
+- 按列表顺序优先匹配，首个命中生效；未命中任何规则默认贴 🇺🇳。
+- 关键词按整词匹配（中文以非汉字为界，英文以非字母为界）。
 
 ---
 
-## NodeSelector — 节点选择的统一形状
+## NodeSelector（节点选择器）
 
-同一个形状用在三处：selector 成员、中继的 `via`、中继的 `upstream`。
+统一用于 selector 成员配置及中继的 `via` / `upstream`：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `from` | string[] | 订阅名。**留空 = 不要任何普通节点** |
-| `include` | string[] | tag 含其中任一关键词才保留；留空 = `from` 命中的全要 |
-| `exclude` | string[] | tag 含其中任一关键词则丢弃 |
+| `from` | string[] | 订阅名称列表。**留空表示不选取任何普通节点** |
+| `include` | string[] | 节点 tag 包含任一关键词才保留；留空表示保留全部 |
+| `exclude` | string[] | 节点 tag 包含任一关键词则丢弃 |
 
-`include` / `exclude` 比较时**忽略双方的 emoji**，所以 `"香港"` 能匹配
-`[mj] 🇭🇰 香港 02`。
-
-`from` 留空**不等于「全部订阅」**。这样加新订阅不会静默改变已有规则的含义，也让中继
-模板不需要任何特殊标记——没人 `from` 它，它就进不去产出。selector 用 `from` 留空来
-表达「只要中继」。
+- `include` / `exclude` 匹配时均忽略 emoji。
 
 ---
 
-## `nodes.relays` — 中继（链式代理）
+## `nodes.relays`（中继节点）
 
-每条声明把 `via` 选出的**模板节点**与 `upstream` 选出的**上游节点**两两配对，每对
-生成一个节点，其 `detour` 指向上游。
+将 `via`（模板节点）与 `upstream`（上游节点）两两组合，生成 `detour` 指向上游的中继节点。
 
 ```json
 {
@@ -253,70 +211,43 @@ NODE_BOX_WEBHOOK_SECRET=<openssl rand -hex 32>
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
-| `name` | string | ✅ | 唯一标识，供 `selectors[].relays` 按名引用 |
-| `via` | NodeSelector[] | ✅ | 模板节点，多个元素取**并集** |
-| `upstream` | NodeSelector[] | ✅ | 上游节点，多个元素取**并集** |
+| `name` | string | ✅ | 唯一标识，供 `selectors[].relays` 引用 |
+| `via` | NodeSelector[] | ✅ | 模板节点选择器，数组元素间取并集 |
+| `upstream` | NodeSelector[] | ✅ | 上游节点选择器，数组元素间取并集 |
 
-生成的 tag 是 `{模板tag} {上游tag}`，例如 `[RL] US [airport-a] 🇺🇸 美国 01`。
-
-**为什么是数组而不是单个选择**：上游经常是「A 机场的美国节点 + B 机场的香港节点」，
-这是**并集**。单个 `{from:["a","b"], include:["美国","香港"]}` 是**叉积**，会多出
-「A 的香港」和「B 的美国」两支。
-
-**生成是有界的**：只有被选中的模板和上游才会配对，不存在「先全量展开再过滤」。上游有
-几百个节点也不会先炸开。
-
-**声明之间互不影响，可以重叠**：tag 由 (模板, 上游) 决定，与声明名无关。所以
-`jp`（日本+香港上游）和 `jp-hk`（仅香港上游）共有的那一对在产出里只出现一次，位置归
-**声明更早**的那条。一条声明是对「模板 × 上游」空间的一次**命名选择**，不是一次生成。
-`jp-hk` 不会继承 `jp` 的 `exclude`，要一样就各写一遍。
-
-`via` 或 `upstream` 匹配到 0 个节点 → **报错**。静默产出一条空中继，等于让你以为链式
-代理在跑而其实没有。
+- 生成的节点 tag 格式为 `{模板tag} {上游tag}`。
+- `via` 或 `upstream` 匹配结果为 0 时将报错。
+- 重复配对自动去重，保留声明靠前的位置。
 
 ---
 
 ## `modules`
 
-**扁平列表，不按 sing-box 的段分组。** 一个模块贡献哪些段，由文件内容的顶层键决定。
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|:---:|---|
-| `name` | string | ✅ | 唯一标识，供 `configs[].modules` 引用 |
-| `file` | string | ⚠️ | 仓库内相对路径，三选一 |
-| `from_url` | string | ⚠️ | 外部 JSON 地址，三选一。用于引用**他人维护的**模块 |
-| `path` | string | ⚠️ | 运行机器上的绝对路径，三选一。仅用于本地开发 |
-| `selectors` | array | ❌ | selector 成员规则，见下节 |
-
-模块文件必须是一个 **JSON 对象**，顶层键会被直接合并进产出配置：
+定义可复用的 sing-box JSON 配置片段：
 
 ```json
 { "log": { "level": "info", "timestamp": true } }
 ```
 
-一个文件里可以定义多个顶层键。合并规则：
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|:---:|---|
+| `name` | string | ✅ | 唯一标识，供 `configs[].modules` 引用 |
+| `file` | string | ⚠️ | 仓库内相对路径，三选一 |
+| `from_url` | string | ⚠️ | 外部 JSON URL，三选一 |
+| `path` | string | ⚠️ | 本机绝对路径（本地调试使用），三选一 |
+| `selectors` | array | ❌ | 节点注入规则 |
 
-1. 按 `configs[].modules` 列出的**顺序**依次合并
-2. 只合并**顶层键**，不做深合并
-3. **顶层键冲突 → 报错**，错误信息会点出是哪两个模块争抢哪个键
-
-第 3 条容易踩到的是 `route.json` 里顺手写了 `outbounds`（比如放个 `direct`），和真正
-的 outbounds 模块撞车。检查方法：
-
-```bash
-for f in $(find modules -name '*.json'); do echo "$f: $(jq -r 'keys|join(", ")' $f)"; done
-```
-
-同一个 `configs[].modules` 列表里，所有模块的键加起来不能有重复。
-
-序列化之前，删除所有值为 `null`、`[]`、`{}` 的顶层键。单个模块文件上限 8 MB。
+合并规则：
+1. 模块文件必须为 JSON 对象。
+2. 按照 `configs[].modules` 中声明的顺序合并顶层键（仅顶层合并，不做深合并）。
+3. **顶层键冲突将直接报错**。
+4. 序列化前自动移除值为 `null`、`[]`、`{}` 的顶层键；单模块大小上限 8 MB。
 
 ---
 
-## `modules[].selectors` — selector 成员规则
+## `modules[].selectors`
 
-**selector 引用的节点是唯一真相。** 一个节点被写进产出，恰好因为某条规则引用了它；
-没有「先插入再减掉」这一步。
+将节点注入到模块预先定义的 selector / urltest outbound 中：
 
 ```json
 "selectors": [
@@ -328,146 +259,84 @@ for f in $(find modules -name '*.json'); do echo "$f: $(jq -r 'keys|join(", ")' 
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
-| `tag` | string | ✅ | 模块文件里那个 selector / urltest 的 tag |
-| `from` / `include` / `exclude` | — | ❌ | 内联的 NodeSelector |
-| `relays` | string[] | ❌ | 按名引用的中继声明 |
+| `tag` | string | ✅ | 模块内目标 selector / urltest 的 tag |
+| `from` / `include` / `exclude` | — | ❌ | 内联 NodeSelector |
+| `relays` | string[] | ❌ | 引用的中继名称列表 |
 
-规则：
+- `from` 与 `relays` 至少填写一项。
+- `include` / `exclude` 仅作用于 `from` 选出的普通节点，不过滤 `relays`。
+- 被引用的中继上游依赖节点会自动写入产出（但不作为 selector 成员）。
+- `wireguard` / `tailscale` / `openvpn-client` 节点自动归入 `endpoints`；模块自写上述类型进 `outbounds` 将报错。
+- 校验：引用的 `tag` 必须存在；规则未匹配到节点将发出警告；若 selector 最终成员为空则报错。
 
-- 规则挂在**模块**上。该模块被哪个产出引用，规则就在那个产出里生效
-- `from` 和 `relays` 至少要有一个，否则这条规则什么都不做 → 报错
-- `include` / `exclude` **只作用于 `from` 选出的普通节点，不过滤 `relays`**。
-  中继是按名精确引用的；想要子集就多声明一条更窄的中继
-- 引用的 `tag` 在组装后的文件里不存在 → 报错
-- 某条规则没匹配到任何节点 → 警告；该 selector 最终成员为空 → **报错**
+### 节点排序规则
 
-**自动带入 detour 依赖**：一条规则只引用中继时，中继的上游节点也会被写进产出（但不会
-成为 selector 成员）。否则产出里会是一堆悬空的 detour。
-
-**`wireguard` / `tailscale` / `openvpn-client` 类型的节点写入 `endpoints`**，selector
-仍然按 tag 引用它们。反过来，模块文件自己在 `outbounds` 里手写这些类型 → **报错**，
-而不是悄悄搬走（派生节点按 type 路由，所以出现在 outbounds 里的只可能是模块自己写的，
-报错能直接指出该改哪个文件）。
-
-### 排序
-
-`outbounds` 数组和每个 selector 的成员列表用**同一条规则**：
-
-```
-① 模块文件自带的条目      原位原序
-② 中继节点                按 nodes.relays 的声明顺序
-③ 普通节点                按 nodes.subscriptions 的声明顺序
-```
-
-②③用的都是**声明顺序**，与规则里 `relays` / `from` 的书写顺序无关。所以同一批节点在
-任何 selector 里顺序都一致，调整某条规则的书写不会让产出重排。
-
-同一条中继声明内部按「模板 × 上游」展开，模板在外层、上游在内层，两者都按节点池顺序
-（= 订阅声明序 → 该订阅源文件内的出现序）。所以 `include: ["香港"]` 命中 3 个节点时，
-产出的 3 个中继顺序就是这 3 个节点在机场订阅文件里的相对顺序，不排序。
+`outbounds` 数组与 selector 成员列表采用一致的排序策略：
+1. 模块文件自带的原始条目（保留原序）
+2. 中继节点（按 `nodes.relays` 声明顺序）
+3. 普通节点（按 `nodes.subscriptions` 声明顺序）
 
 ---
 
 ## `configs`
 
-每一项描述一个产出文件。
+产出文件定义：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
-| `name` | string | ✅ | 产出名，唯一，用于日志和错误信息 |
-| `path` | string | ✅ | 产出路径，解析规则见 `output` |
-| `modules` | string[] | ✅ | 要组装的模块名，**按此顺序合并** |
+| `name` | string | ✅ | 产出名称（唯一） |
+| `path` | string | ✅ | 产出路径（遵循 `output` 解析规则） |
+| `modules` | string[] | ✅ | 引用的模块列表（按书写顺序合并） |
 
-校验：`name` 不能重复；`modules` 不能为空、每一项必须存在、不能重复列同一个模块。
+校验：`name` 不可重复；`modules` 不可为空、不可重复引用、所引用的模块必须存在。
 
 ---
 
 ## `update_schedule`
 
-控制**定时重抓订阅**的周期。
-
-```json
-{ "type": "interval", "every": "6h" }
-{ "type": "hourly" }
-```
+配置定时重新抓取订阅节点的调度周期（与配置仓库的变更检测相互独立）：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|:---:|---|
-| `type` | string | ✅ | `interval` 或 `hourly` |
-| `every` | string | ⚠️ | `type=interval` 必填。Go duration：`"30m"` / `"6h"` / `"24h"` |
-
-- `interval` —— 每隔 `every` 一次，从进程启动开始计时
-- `hourly` —— 每个整点
-
-**它和 GitHub 的配置变更触发是两件不同的事**：
-
-- `update_schedule` 管「**订阅内容**可能变了」。机场节点会增删改，即使你的配置一个字
-  没动，也需要定期重抓
-- webhook / 兜底轮询管「**你的配置**变了」
-
-两者独立，都会触发一次完整的产出流程。
+| `type` | string | ✅ | `interval`（按间隔）或 `hourly`（每整点） |
+| `every` | string | ⚠️ | `type=interval` 必填，Go duration 格式（如 `"30m"`、`"6h"`） |
 
 ---
 
 # 三、产出校验
 
-写盘之前全部在内存里完成，任何一条不过就不写任何文件——现有产出保持原样：
+写盘前在内存中统一执行以下校验，任一项不满足均放弃写盘：
+- 每个 selector / urltest 的成员非空。
+- 成员与 `detour` 引用的 tag 必须在同文件内存在。
+- `outbounds` 与 `endpoints` 的 tag 全局唯一。
+- `outbounds` 中不包含 endpoint 专属类型。
+- 每个数组段均为对象数组。
+- 产出内容非空。
 
-- 每个 selector / urltest 的成员非空
-- 成员和 `detour` 引用的 tag 必须在同一文件内存在（悬挂引用）
-- `outbounds` 与 `endpoints` 的 tag 全局唯一
-- `outbounds` 里不含 endpoint 专属类型
-- 每个数组段都是对象数组
-- 产出不能是空对象
+---
 
-# 四、失败时的行为
+# 四、异常处理策略
 
-| 情况 | 行为 |
+| 异常情况 | 处理行为 |
 |---|---|
-| 拉取配置仓库失败，且**没有**指定 ref | 回退到上一次成功产出所用的快照继续跑，WARN 记录 |
-| 拉取配置仓库失败，且**指定了** ref | 结束报错，绝不改用别的快照 |
-| 快照解析 / 校验失败 | 结束，不写任何文件 |
-| 部分订阅抓取失败 | WARN 记录，用成功的那些继续 |
-| **全部**订阅抓取失败 | 结束，不写任何文件（否则会产出没有节点的配置） |
-| 组装或产出校验失败 | 结束，不写任何文件，错误记入 `state.json` |
-| 单次更新超过 `update_timeout` | 中止本次更新，不写任何文件，错误记入 `state.json` |
-| 写盘中途失败 | 已成功的保留，失败的保持旧内容（每个文件独立原子） |
-| 产出后发现不对 | `node-box rollback` 回到上一个被应用的快照重新产出 |
+| 拉取配置仓库失败（未指定 ref） | 回退至上一次成功产出的快照继续执行，并记录 WARN |
+| 拉取配置仓库失败（指定了 ref） | 报错中止，不使用其他快照 |
+| 快照解析 / 校验失败 | 报错中止，不修改任何文件 |
+| 部分订阅抓取失败 | 记录 WARN，使用成功的订阅继续构建 |
+| 全部订阅抓取失败 | 报错中止，不修改任何文件 |
+| 组装或产出校验失败 | 报错中止，不修改任何文件，错误记入 `state.json` |
+| 更新超时 (`update_timeout`) | 中止本次更新，错误记入 `state.json` |
+| 写盘中途失败 | 已写入的保留，未完成的保留旧文件（单文件原子写入） |
 
-「指定了 ref」指 `update --ref`、`build --ref` 以及 `rollback`（它内部指定的是上一个被应用的
-快照）。这类请求问的是一个具体版本，静默换成别的版本会让 `rollback` 变成一个「报告成功但
-什么都没回滚」的空操作。
+---
 
-# 五、并发与快照指针
+# 五、并发与快照管理
 
-同一个 `root` 同时只允许一个会写东西的进程。守护进程启动时就拿住 `state/update.lock`，在
-它整个生命周期内都不放；`update`、`rollback` 也要这把锁，拿不到就报错退出，并提示改用
-SIGHUP 让在跑的守护进程立刻更新一次。锁由内核在进程退出时释放，进程被 `kill -9` 也不会留下
-需要手工清理的陈旧锁。
-
-`status`、`build`、`validate`、`pull` 完全不碰这把锁，随时可以和守护进程并行执行——它们不写
-任何文件、不建任何目录、也不移动任何快照指针（`pull` 会把快照下载到 `snapshots/` 下，这一步
-从任意多个进程同时做都是安全的）。
-
-`status` 更进一步：它只读 `state.json`、快照指针和这把锁，既不建 HTTP 客户端也不构造 source，
-所以**不需要 GitHub token** 也能跑。它报告的守护进程状态有三种：
-
-| 输出 | 含义 |
-|---|---|
-| `running, idle` | 锁被持有，没有更新在进行 |
-| `running, update in progress` | 锁被持有，且 `state.json` 记着一次未完成的更新 |
-| `not running; the last update was interrupted before it finished` | `state.json` 记着未完成的更新，但锁没人持有——上次更新是被杀掉的 |
-
-「是否存活」读自锁而不是文件：内核在进程退出时释放锁，所以这个判断不会像写在文件里的标志
-那样在进程被 `kill -9` 后继续骗人。
-
-`snapshots/` 下的两个指针文件含义是：
-
-| 指针 | 含义 |
-|---|---|
-| `current` | 产出当前这批文件所用的快照。**只在写盘成功之后**才前移 |
-| `previous` | 上一个被应用过的快照，也就是 `rollback` 的目标 |
-
-`current` 之所以不在拉取成功时就前移，是因为那样它可能指向一个根本构建不出来的快照：源不可
-达时的回退会据此恢复一个已知坏掉的版本，而变更轮询也会把这个失败的 revision 当成已经做完，
-再也不重试它。
+- **并发控制**：写操作（后台守护进程、`update`、`rollback`）通过 `state/update.lock` 文件排他锁实现互斥；只读命令（`status`、`build`、`validate`、`pull`）可与写操作并发执行。
+- **守护进程状态**（由 `status` 查看）：
+  - `running, idle`：正常运行且空闲。
+  - `running, update in progress`：正在执行更新。
+  - `not running; the last update was interrupted before it finished`：上次更新异常中断。
+- **快照指针**（位于 `snapshots/`）：
+  - `current`：当前产出文件所对应的快照（仅在成功写盘后更新）。
+  - `previous`：上一次生效的快照，用于 `rollback` 回滚。

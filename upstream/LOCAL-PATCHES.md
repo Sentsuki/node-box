@@ -1,70 +1,35 @@
-# upstream/ 的本地改动
+# upstream/ 本地改动
 
-这个目录是 [clash2singbox](https://github.com/xmdhs/clash2singbox) 的 vendored 副本，
-**不参与 node-box 自身的重构和审计**。
+该目录为 [clash2singbox](https://github.com/xmdhs/clash2singbox) 的 vendored 副本。从上游同步后需重新应用以下改动：
 
-但它不是原样照搬——下面两处改动是 node-box 需要的，
-**每次从上游同步都会被覆盖，必须重新打一遍**。
+## 1. 改写 import 路径
 
-升级完记得对照本文件核对一遍，然后跑 `go test ./upstream/...` 和 `go build ./...`。
-
----
-
-## 1. import 路径改写
-
-上游用的是它自己的 module path，vendored 进来之后要改成 `node-box/upstream/...`。
-
-涉及 **53 行 / 33 个文件**，三种形态：
-
-```
-node-box/upstream/model
-node-box/upstream/model/clash
-node-box/upstream/model/singbox
-```
-
-同步后重新改写（把 `<上游原路径>` 换成上游实际的 module path）：
+将上游 module path 替换为 `node-box/upstream/...`：
 
 ```bash
 find upstream -name '*.go' -exec sed -i \
-  -e 's#<上游原路径>/model/singbox#node-box/upstream/model/singbox#g' \
-  -e 's#<上游原路径>/model/clash#node-box/upstream/model/clash#g' \
-  -e 's#<上游原路径>/model#node-box/upstream/model#g' {} +
+  -e 's#github.com/xmdhs/clash2singbox/model/singbox#node-box/upstream/model/singbox#g' \
+  -e 's#github.com/xmdhs/clash2singbox/model/clash#node-box/upstream/model/clash#g' \
+  -e 's#github.com/xmdhs/clash2singbox/model#node-box/upstream/model#g' {} +
 ```
 
-顺序有讲究：**长路径必须先替换**，否则 `/model` 会先把 `/model/clash` 的前缀吃掉。
+## 2. `alter_id` 移除 `omitempty`
 
-验证没有漏网的：
+文件：`upstream/model/singbox/singbox.go`
+
+```diff
+- AlterID  int  `json:"alter_id,omitempty"`
++ AlterID  int  `json:"alter_id"`
+```
+
+## 3. 验证与注意事项
 
 ```bash
-grep -rn "<上游原路径>" upstream/ --include=*.go   # 应该为空
-```
-
----
-
-## 2. `alter_id` 去掉 `omitempty`
-
-`upstream/model/singbox/singbox.go`：
-
-```go
-// 上游原样
-AlterID  int  `json:"alter_id,omitempty"`
-
-// node-box 需要的
-AlterID  int  `json:"alter_id"`
-```
-
----
-
-## 同步后的检查清单
-
-```bash
-grep -rn "<上游原路径>" upstream/ --include=*.go        # 空
-grep -n "alter_id" upstream/model/singbox/singbox.go   # 不含 omitempty
-go build ./...
+grep -rn "github.com/xmdhs/clash2singbox" upstream/ --include=*.go  # 确认无残留引用
+grep -n "alter_id" upstream/model/singbox/singbox.go                # 确认不含 omitempty
 go test ./upstream/... ./internal/subscription/...
+go build ./...
 ```
 
-另外留意 `internal/build/inject.go` 里的 `endpointTypes`：它必须覆盖
-`upstream/convert/convert.go` 的 `typeMap` 能产出的全部 endpoint 类型
-（当前是 `wireguard` 和 `openvpn-client`）。上游新增 endpoint 协议时要同步加进去，
-否则那类节点会被错误地写进 `outbounds`，sing-box 启动会失败。
+> [!NOTE]
+> 检查 `internal/build/inject.go` 中的 `endpointTypes` 是否覆盖 `upstream/convert/convert.go`（`typeMap`）输出的全部 endpoint 类型（当前为 `wireguard` 和 `openvpn-client`）。若上游新增 endpoint 协议需在此同步补充。
