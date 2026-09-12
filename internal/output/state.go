@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"node-box/internal/fsx"
 )
 
 // State is what node-box remembers between runs. It is a cache, not a source of
@@ -23,6 +25,18 @@ type State struct {
 	LastError string `json:"last_error,omitempty"`
 	// LastErrorAt is when LastError was recorded.
 	LastErrorAt time.Time `json:"last_error_at,omitzero"`
+
+	// Updating marks a run that has started and not yet recorded an outcome.
+	//
+	// On its own this cannot distinguish "in progress" from "the process died
+	// halfway": a file cannot retract what it says. Paired with the update lock,
+	// which the kernel releases on exit, it distinguishes them exactly — which is
+	// why liveness is never read from here alone.
+	Updating bool `json:"updating,omitempty"`
+	// LastTrigger is what asked for the most recent run.
+	LastTrigger string `json:"last_trigger,omitempty"`
+	// StartedAt is when that run began.
+	StartedAt time.Time `json:"started_at,omitzero"`
 }
 
 // LoadState reads state from path. A missing file yields an empty state, which
@@ -58,11 +72,20 @@ func (s *State) Save(path string) error {
 		return fmt.Errorf("encode state: %w", err)
 	}
 	data = append(data, '\n')
-	return WriteAtomic(path, data, Perm)
+	return fsx.WriteAtomic(path, data, Perm)
+}
+
+// RecordStart marks a run as under way. Persisting this is what lets a separate
+// process — a CLI status invocation — see that the daemon is mid-update.
+func (s *State) RecordStart(trigger string) {
+	s.Updating = true
+	s.LastTrigger = trigger
+	s.StartedAt = time.Now()
 }
 
 // RecordSuccess updates the state after a successful run.
 func (s *State) RecordSuccess(ref string, hashes map[string]string) {
+	s.Updating = false
 	s.Ref = ref
 	s.Outputs = hashes
 	s.UpdatedAt = time.Now()
@@ -76,6 +99,7 @@ func (s *State) RecordFailure(err error) {
 	if err == nil {
 		return
 	}
+	s.Updating = false
 	s.LastError = err.Error()
 	s.LastErrorAt = time.Now()
 }

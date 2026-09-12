@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // starterFiles is the skeleton of a configuration repository.
@@ -153,7 +154,11 @@ func cmdInit(_ context.Context, env *env, args []string) error {
 		dir = fs.Arg(0)
 	}
 
-	for name, content := range starterFiles {
+	// Sorted, because ranging a map would print the created and skipped files in
+	// a different order every run, and this listing is what the operator reads to
+	// check that init did what they expected.
+	for _, name := range slices.Sorted(maps.Keys(starterFiles)) {
+		content := starterFiles[name]
 		path := filepath.Join(dir, filepath.FromSlash(name))
 		if !*force {
 			if _, err := os.Stat(path); err == nil {
@@ -183,13 +188,14 @@ Next steps:
 	return nil
 }
 
+// starterPerm keeps generated repository files readable. Unlike generated
+// configuration, nothing written by init contains a credential: the secrets go
+// in .env on the host, and node-box.json.example carries only variable names.
+const starterPerm = 0o644
+
 func writeStarter(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(content), starterPerm(path))
+	return os.WriteFile(path, []byte(content), starterPerm)
 }
-
-// starterPerm keeps generated repository files readable; nothing written here
-// contains a secret.
-func starterPerm(string) fs.FileMode { return 0o644 }

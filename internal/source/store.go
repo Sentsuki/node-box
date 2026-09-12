@@ -7,6 +7,7 @@
 package source
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -15,13 +16,17 @@ import (
 	"slices"
 	"strings"
 
+	"node-box/internal/fsx"
 	"node-box/internal/logx"
-	"node-box/internal/output"
 )
 
 // Pointer names kept alongside the snapshot directories.
 const (
-	// PointerCurrent names the most recently fetched snapshot.
+	// PointerCurrent names the snapshot that produced the files currently on
+	// disk. It advances only after a write has succeeded, never at fetch time:
+	// a pointer that could name a snapshot which failed to build would make the
+	// unreachable-source fallback restore something known to be broken, and
+	// would make the change poll believe a failed revision was already done.
 	PointerCurrent = "current"
 	// PointerPrevious names the snapshot that produced the outputs before the
 	// current ones, which is what a rollback goes back to.
@@ -52,6 +57,13 @@ func NewStore(dir string) (*Store, error) {
 	}
 	return &Store{dir: dir}, nil
 }
+
+// OpenStore addresses an existing snapshots directory without creating it.
+//
+// Reporting commands use this: creating directories is a side effect, and a
+// command that only answers questions should leave no trace. A missing directory
+// simply has no snapshots and no pointers, which every reader handles.
+func OpenStore(dir string) *Store { return &Store{dir: dir} }
 
 // Dir returns the directory a ref is stored in.
 func (s *Store) Dir(ref string) string { return filepath.Join(s.dir, ref) }
@@ -85,7 +97,7 @@ func (s *Store) SetPointer(name, ref string) error {
 		return fmt.Errorf("cannot point %s at unknown snapshot %q", name, ref)
 	}
 	path := filepath.Join(s.dir, name)
-	return output.WriteAtomic(path, []byte(ref+"\n"), 0o600)
+	return fsx.WriteAtomic(path, []byte(ref+"\n"), 0o600)
 }
 
 // Begin creates a scratch directory to build a snapshot in.
@@ -139,8 +151,8 @@ func (s *Store) List() ([]string, error) {
 	}
 
 	type entry struct {
-		ref    string
-		modSec int64
+		ref      string
+		modNanos int64
 	}
 	var refs []entry
 	for _, e := range entries {
@@ -153,9 +165,12 @@ func (s *Store) List() ([]string, error) {
 		}
 		refs = append(refs, entry{e.Name(), info.ModTime().UnixNano()})
 	}
+	// cmp.Compare rather than subtraction: the difference between two
+	// nanosecond timestamps overflows int on a 32-bit build, which would sort
+	// snapshots into an arbitrary order exactly where GC decides what to delete.
 	slices.SortFunc(refs, func(a, b entry) int {
-		if a.modSec != b.modSec {
-			return int(a.modSec - b.modSec)
+		if c := cmp.Compare(a.modNanos, b.modNanos); c != 0 {
+			return c
 		}
 		return strings.Compare(a.ref, b.ref)
 	})

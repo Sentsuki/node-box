@@ -52,6 +52,22 @@ type NodesConfig struct {
 
 	// Relays are named chained-proxy definitions.
 	Relays []Relay `json:"relays,omitempty"`
+
+	// EmojiOverrides extends and overrides the built-in region emoji table used
+	// when a subscription sets emoji: true.
+	//
+	// It is configuration rather than code because the set of regions an operator
+	// cares about changes with their providers, and needing a rebuild to tag a
+	// new country is the wrong trade. Entries are tried before the built-in ones,
+	// so naming a region that already exists replaces it.
+	EmojiOverrides []EmojiRule `json:"emoji_overrides,omitempty"`
+}
+
+// EmojiRule assigns one emoji to every node whose name contains any of the
+// keywords. Matching is whole-word and ignores case.
+type EmojiRule struct {
+	Emoji    string   `json:"emoji"`
+	Keywords []string `json:"keywords"`
 }
 
 // NodeSelector picks a subset of the node pool.
@@ -179,6 +195,9 @@ func (c *Config) Validate() error {
 	if err := c.validateRelays(); err != nil {
 		return err
 	}
+	if err := c.validateEmojiOverrides(); err != nil {
+		return err
+	}
 	if err := c.validateModules(); err != nil {
 		return err
 	}
@@ -292,6 +311,24 @@ func (s NodeSelector) validate(subs map[string]bool) error {
 	for _, name := range s.From {
 		if !subs[name] {
 			return fmt.Errorf("unknown subscription %q in from", name)
+		}
+	}
+	return nil
+}
+
+func (c *Config) validateEmojiOverrides() error {
+	for i, r := range c.Nodes.EmojiOverrides {
+		where := fmt.Sprintf("nodes.emoji_overrides[%d]", i)
+		if r.Emoji == "" {
+			return fmt.Errorf("%s: emoji cannot be empty", where)
+		}
+		if len(r.Keywords) == 0 {
+			return fmt.Errorf("%s (%s): keywords cannot be empty", where, r.Emoji)
+		}
+		for j, kw := range r.Keywords {
+			if kw == "" {
+				return fmt.Errorf("%s (%s): keywords[%d] cannot be empty", where, r.Emoji, j)
+			}
 		}
 	}
 	return nil

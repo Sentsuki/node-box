@@ -7,20 +7,20 @@ import (
 	"testing"
 	"time"
 
-	"node-box/internal/runner"
+	"node-box/internal/control"
 )
 
 var secret = []byte("test-secret")
 
 // fakeUpdater records what a handler queued.
-type fakeUpdater struct{ got []runner.Trigger }
+type fakeUpdater struct{ got []control.Trigger }
 
-func (f *fakeUpdater) Trigger(t runner.Trigger) bool {
+func (f *fakeUpdater) Trigger(t control.Trigger) bool {
 	f.got = append(f.got, t)
 	return true
 }
 
-func (f *fakeUpdater) Status() runner.Status { return runner.Status{} }
+func (f *fakeUpdater) Status() control.Status { return control.Status{} }
 
 // post sends a body to the hook handler. signature is used verbatim when
 // non-empty; pass signed to have the correct one computed instead.
@@ -62,7 +62,7 @@ func TestHandleHook_SignedRequestQueuesUpdate(t *testing.T) {
 	if len(up.got) != 1 {
 		t.Fatalf("queued %d updates, want 1", len(up.got))
 	}
-	if up.got[0].Ref != "abc123" || up.got[0].Kind != runner.KindWebhook {
+	if up.got[0].Ref != "abc123" || up.got[0].Kind != control.KindWebhook {
 		t.Errorf("trigger = %+v", up.got[0])
 	}
 }

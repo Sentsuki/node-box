@@ -5,7 +5,7 @@ import (
 
 	"node-box/internal/logx"
 	"node-box/internal/model"
-	"node-box/internal/subscription"
+	"node-box/internal/node"
 	"node-box/internal/textutil"
 )
 
@@ -35,20 +35,20 @@ type injector struct {
 
 	// pool holds every regular node in configuration order, which is what
 	// makes the generated member lists deterministic.
-	pool []subscription.Node
+	pool []node.Node
 	// relays maps a relay name to the nodes it generates.
-	relays map[string][]subscription.Node
+	relays map[string][]node.Node
 	// byTag indexes every candidate node, regular and generated alike.
-	byTag map[string]subscription.Node
+	byTag map[string]node.Node
 	// modules indexes modules by name so a config's rules can be found.
 	modules map[string]model.Module
 }
 
-func newInjector(cfg *model.Config, nodes map[string][]subscription.Node) (*injector, error) {
+func newInjector(cfg *model.Config, nodes map[string][]node.Node) (*injector, error) {
 	inj := &injector{
 		cfg:     cfg,
-		relays:  make(map[string][]subscription.Node),
-		byTag:   make(map[string]subscription.Node),
+		relays:  make(map[string][]node.Node),
+		byTag:   make(map[string]node.Node),
 		modules: make(map[string]model.Module, len(cfg.Modules)),
 	}
 	for _, m := range cfg.Modules {
@@ -56,16 +56,26 @@ func newInjector(cfg *model.Config, nodes map[string][]subscription.Node) (*inje
 	}
 
 	// Walk subscriptions in declaration order so the pool order is stable.
+	//
+	// A tag may only enter the pool once. Providers do ship the same name twice,
+	// and keeping both used to give two different answers to the same question:
+	// insertion emitted the first node while detour resolution looked up the
+	// last. One rule, applied here, is what keeps those consistent.
 	for _, sub := range cfg.Nodes.Subscriptions {
 		if !sub.Enable {
 			continue
 		}
 		for _, n := range nodes[sub.Name] {
-			if n.Tag() == "" {
+			tag := n.Tag()
+			if tag == "" {
+				continue
+			}
+			if _, dup := inj.byTag[tag]; dup {
+				logx.Warnf("subscription %q: dropping a second node tagged %q; keeping the first", sub.Name, tag)
 				continue
 			}
 			inj.pool = append(inj.pool, n)
-			inj.byTag[n.Tag()] = n
+			inj.byTag[tag] = n
 		}
 	}
 
@@ -90,7 +100,7 @@ func (inj *injector) buildRelays() error {
 			return fmt.Errorf("relay %q: upstream matched no nodes", r.Name)
 		}
 
-		var generated []subscription.Node
+		var generated []node.Node
 		seen := make(map[string]bool)
 		for _, tmpl := range templates {
 			for _, up := range upstreams {
@@ -122,7 +132,7 @@ func (inj *injector) buildRelays() error {
 
 // resolveUnion returns the union of several selectors, in pool order and
 // without duplicates.
-func (inj *injector) resolveUnion(sels []model.NodeSelector) []subscription.Node {
+func (inj *injector) resolveUnion(sels []model.NodeSelector) []node.Node {
 	matched := make(map[string]bool)
 	for _, sel := range sels {
 		for _, n := range inj.resolve(sel) {
@@ -131,7 +141,7 @@ func (inj *injector) resolveUnion(sels []model.NodeSelector) []subscription.Node
 	}
 	// Emit in pool order rather than match order so the result does not depend
 	// on how the selectors were written.
-	var out []subscription.Node
+	var out []node.Node
 	for _, n := range inj.pool {
 		if matched[n.Tag()] {
 			out = append(out, n)
@@ -141,7 +151,7 @@ func (inj *injector) resolveUnion(sels []model.NodeSelector) []subscription.Node
 }
 
 // resolve returns the nodes matching one selector.
-func (inj *injector) resolve(sel model.NodeSelector) []subscription.Node {
+func (inj *injector) resolve(sel model.NodeSelector) []node.Node {
 	if sel.IsEmpty() {
 		return nil
 	}
@@ -150,7 +160,7 @@ func (inj *injector) resolve(sel model.NodeSelector) []subscription.Node {
 		from[name] = true
 	}
 
-	var out []subscription.Node
+	var out []node.Node
 	for _, sub := range inj.cfg.Nodes.Subscriptions {
 		if !sub.Enable || !from[sub.Name] {
 			continue
@@ -210,13 +220,13 @@ func (inj *injector) rulesFor(cf model.ConfigFile) []model.SelectorRule {
 // Relays come first, ordered by their nodes.relays declaration rather than by
 // how the rule happens to list them, so the same set always appears in the
 // same order. Regular nodes follow in nodes.subscriptions order.
-func (inj *injector) members(rule model.SelectorRule) []subscription.Node {
+func (inj *injector) members(rule model.SelectorRule) []node.Node {
 	wanted := make(map[string]bool, len(rule.Relays))
 	for _, name := range rule.Relays {
 		wanted[name] = true
 	}
 
-	var out []subscription.Node
+	var out []node.Node
 	for _, r := range inj.cfg.Nodes.Relays {
 		if wanted[r.Name] {
 			out = append(out, inj.relays[r.Name]...)

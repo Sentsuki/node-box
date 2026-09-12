@@ -1,19 +1,16 @@
-// Package utils provides shared utility functions for node-box.
+// Package textutil compares and cleans the human-written names that arrive in
+// subscriptions.
+//
+// Those names are full of emoji, and the same node is "🇺🇸 美国 01" from one
+// provider and "美国 01" from the next. Every keyword comparison in node-box
+// therefore has to ignore emoji on both sides, and it has to do it the same way
+// everywhere — which is why the detector lives here rather than in each caller.
 package textutil
 
 import (
 	"strings"
 	"unicode"
 )
-
-// CloneMap creates a shallow copy of a map[string]any.
-func CloneMap(m map[string]any) map[string]any {
-	c := make(map[string]any, len(m))
-	for k, v := range m {
-		c[k] = v
-	}
-	return c
-}
 
 // stripEmoji removes all emoji (Symbol, Other category) and regional indicator
 // symbols from s, then collapses runs of whitespace into a single space and

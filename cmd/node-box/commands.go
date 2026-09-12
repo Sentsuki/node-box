@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	"node-box/internal/control"
 	"node-box/internal/logx"
 	"node-box/internal/runner"
 	"node-box/internal/source"
@@ -28,10 +29,11 @@ func cmdRun(ctx context.Context, env *env, args []string) error {
 	if err != nil {
 		return err
 	}
-	r, err := runner.New(boot)
+	r, err := runner.New(boot, runner.Writable)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
 
 	// SIGHUP asks for an immediate update without restarting anything.
 	hup := make(chan os.Signal, 1)
@@ -44,7 +46,7 @@ func cmdRun(ctx context.Context, env *env, args []string) error {
 				return
 			case <-hup:
 				logx.Infof("SIGHUP received, updating")
-				r.Trigger(runner.Trigger{Kind: runner.KindSignal})
+				r.Trigger(control.Trigger{Kind: control.KindSignal})
 			}
 		}
 	}()
@@ -88,11 +90,13 @@ func cmdUpdate(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.Writable)
 	if err != nil {
 		return err
 	}
-	return r.Execute(ctx, runner.Trigger{Kind: runner.KindManual, Ref: *ref, Force: *force})
+	defer r.Close()
+
+	return r.Execute(ctx, control.Trigger{Kind: control.KindManual, Ref: *ref, Force: *force})
 }
 
 // cmdPull refreshes the snapshot without generating anything.
@@ -104,16 +108,17 @@ func cmdPull(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.ReadOnly)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
 
+	// No pointer moves here. The pointers describe what has been applied, and
+	// pulling applies nothing. Having the snapshot on disk is the whole payload:
+	// the next update finds it there instead of downloading it again.
 	snap, err := source.Acquire(ctx, r.Source(), r.Store(), *ref)
 	if err != nil {
-		return err
-	}
-	if err := r.Store().SetPointer(source.PointerCurrent, snap.Ref); err != nil {
 		return err
 	}
 	fmt.Printf("snapshot %s ready at %s\n", snap.Ref, snap.Dir)
@@ -131,10 +136,12 @@ func cmdBuild(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.ReadOnly)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	plan, err := r.BuildPlan(ctx, *ref)
 	if err != nil {
 		return err
@@ -168,10 +175,12 @@ func cmdValidate(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.ReadOnly)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	plan, err := r.Validate(ctx, *ref)
 	if err != nil {
 		return err
@@ -191,10 +200,12 @@ func cmdRollback(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.Writable)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	return r.Rollback(ctx)
 }
 
@@ -207,11 +218,13 @@ func cmdStatus(_ context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	// No runner: status answers from the state file, the snapshot pointers and
+	// the update lock, so it needs neither the repository token nor the lock.
+	boot, err := env.loadBootstrap()
 	if err != nil {
 		return err
 	}
-	st := r.Status()
+	st := runner.ReadStatus(boot)
 
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -220,9 +233,21 @@ func cmdStatus(_ context.Context, env *env, args []string) error {
 	}
 
 	fmt.Printf("source:      %s\n", st.Source)
-	fmt.Printf("current:     %s\n", orNone(st.Current))
 	fmt.Printf("applied:     %s\n", orNone(st.AppliedRef))
 	fmt.Printf("previous:    %s\n", orNone(st.Previous))
+	if st.Current != "" && st.Current != st.AppliedRef {
+		// The two normally agree by construction, so a difference means the state
+		// file was lost or hand-edited and is worth showing.
+		fmt.Printf("pointer:     %s\n", st.Current)
+	}
+	fmt.Printf("daemon:      %s\n", daemonState(st))
+	if st.LastTrigger != "" {
+		fmt.Printf("last run:    %s", st.LastTrigger)
+		if !st.StartedAt.IsZero() {
+			fmt.Printf(" at %s", st.StartedAt.Format("2006-01-02 15:04:05"))
+		}
+		fmt.Println()
+	}
 	if !st.UpdatedAt.IsZero() {
 		fmt.Printf("updated:     %s\n", st.UpdatedAt.Format("2006-01-02 15:04:05"))
 	}
@@ -238,12 +263,32 @@ func cmdStatus(_ context.Context, env *env, args []string) error {
 	return nil
 }
 
-func newRunner(env *env) (*runner.Runner, error) {
+// daemonState renders the three things the lock and the state file can say
+// together.
+func daemonState(st control.Status) string {
+	switch {
+	case st.Updating:
+		return "running, update in progress"
+	case st.Interrupted:
+		return "not running; the last update was interrupted before it finished"
+	case st.DaemonActive:
+		return "running, idle"
+	default:
+		return "not running"
+	}
+}
+
+// newRunner loads the bootstrap configuration and wires up a runner.
+//
+// The mode is not a detail: a Writable runner takes the root's lock, so a
+// command that only reports must ask for ReadOnly or it would refuse to run
+// while the daemon is up.
+func newRunner(env *env, mode runner.Mode) (*runner.Runner, error) {
 	boot, err := env.loadBootstrap()
 	if err != nil {
 		return nil, err
 	}
-	return runner.New(boot)
+	return runner.New(boot, mode)
 }
 
 func orNone(s string) string {

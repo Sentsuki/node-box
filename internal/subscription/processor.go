@@ -7,6 +7,7 @@ import (
 
 	"node-box/internal/logx"
 	"node-box/internal/model"
+	"node-box/internal/node"
 	"node-box/internal/subscription/xray"
 	"node-box/upstream/convert"
 	upstreammodel "node-box/upstream/model"
@@ -17,7 +18,7 @@ import (
 
 // Processor parses one subscription format into nodes.
 type Processor interface {
-	Process(data []byte) ([]Node, error)
+	Process(data []byte) ([]node.Node, error)
 }
 
 // ProcessorFor returns the processor for a subscription type.
@@ -28,7 +29,7 @@ func ProcessorFor(subType string) (Processor, error) {
 	case model.SubSingBox:
 		return singboxProcessor{}, nil
 	case model.SubXray, model.SubV2Ray:
-		return xrayProcessor{}, nil
+		return xray.Processor{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported subscription type %q", subType)
 	}
@@ -38,7 +39,7 @@ func ProcessorFor(subType string) (Processor, error) {
 // clash2singbox conversion in upstream/.
 type clashProcessor struct{}
 
-func (clashProcessor) Process(data []byte) ([]Node, error) {
+func (clashProcessor) Process(data []byte) ([]node.Node, error) {
 	var cfg clashmodel.Clash
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse clash yaml: %w", err)
@@ -56,7 +57,7 @@ func (clashProcessor) Process(data []byte) ([]Node, error) {
 		}
 	}
 
-	nodes := make([]Node, 0, len(outbounds)+len(endpoints))
+	nodes := make([]node.Node, 0, len(outbounds)+len(endpoints))
 	for _, ob := range outbounds {
 		if ob.Ignored {
 			continue
@@ -80,12 +81,12 @@ func (clashProcessor) Process(data []byte) ([]Node, error) {
 }
 
 // toNode round-trips a typed upstream struct through JSON into a generic node.
-func toNode(v any) (Node, error) {
+func toNode(v any) (node.Node, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil, fmt.Errorf("encode: %w", err)
 	}
-	var n Node
+	var n node.Node
 	if err := json.Unmarshal(data, &n); err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
@@ -105,13 +106,13 @@ var nonProxyTypes = map[string]bool{
 	"dns":      true,
 }
 
-func (singboxProcessor) Process(data []byte) ([]Node, error) {
+func (singboxProcessor) Process(data []byte) ([]node.Node, error) {
 	var cfg map[string]any
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse sing-box json: %w", err)
 	}
 
-	var nodes []Node
+	var nodes []node.Node
 	for _, section := range []string{"outbounds", "endpoints"} {
 		raw, ok := cfg[section]
 		if !ok {
@@ -126,7 +127,7 @@ func (singboxProcessor) Process(data []byte) ([]Node, error) {
 			if !ok {
 				continue
 			}
-			n := Node(m)
+			n := node.Node(m)
 			if t := n.Type(); t == "" || nonProxyTypes[t] {
 				continue
 			}
@@ -140,17 +141,5 @@ func (singboxProcessor) Process(data []byte) ([]Node, error) {
 	return nodes, nil
 }
 
-// xrayProcessor parses base64-encoded sharing links (vmess/vless/ss/trojan).
-type xrayProcessor struct{}
-
-func (xrayProcessor) Process(data []byte) ([]Node, error) {
-	raw, err := xray.NewXrayProcessor().Process(data)
-	if err != nil {
-		return nil, err
-	}
-	nodes := make([]Node, len(raw))
-	for i, m := range raw {
-		nodes[i] = Node(m)
-	}
-	return nodes, nil
-}
+// The xray package implements Processor itself, so there is nothing to wrap.
+var _ Processor = xray.Processor{}

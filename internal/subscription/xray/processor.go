@@ -1,3 +1,6 @@
+// Package xray parses Xray/V2Ray subscriptions: base64-wrapped lists of
+// sharing links (vmess://, vless://, ss://, trojan://) converted to sing-box
+// nodes.
 package xray
 
 import (
@@ -5,44 +8,42 @@ import (
 	"strings"
 
 	"node-box/internal/logx"
+	"node-box/internal/node"
 )
 
-// XrayProcessor handles Xray/V2Ray subscription data processing.
-// It decodes base64 subscription content and converts standard
-// sharing links (vmess://, vless://, ss://, trojan://) to SingBox outbound nodes.
-type XrayProcessor struct{}
+// Processor parses an Xray/V2Ray subscription.
+//
+// It satisfies subscription.Processor directly. Returning bare maps for the
+// caller to convert one by one, as this used to, made the node representation
+// something two packages each defined for themselves.
+type Processor struct{}
 
-// NewXrayProcessor creates a new Xray processor instance.
-func NewXrayProcessor() *XrayProcessor {
-	return &XrayProcessor{}
-}
-
-// Process handles Xray subscription data and converts to unified Node format.
-// It auto-detects base64 encoding, splits lines, and converts each sharing link.
-func (xp *XrayProcessor) Process(data []byte) ([]map[string]any, error) {
-	decoded := decodeSubscription(data)
-	lines := splitLines(decoded)
-
+// Process decodes the subscription and converts every sharing link it holds.
+//
+// A link that cannot be parsed is logged and skipped; only a subscription where
+// nothing at all converted is an error, since a provider adding one unsupported
+// protocol should not cost the operator every other node.
+func (Processor) Process(data []byte) ([]node.Node, error) {
+	lines := splitLines(decodeSubscription(data))
 	if len(lines) == 0 {
-		return nil, fmt.Errorf("xray: no valid links found in subscription data")
+		return nil, fmt.Errorf("no valid links found in subscription data")
 	}
 
-	var nodes []map[string]any
+	var nodes []node.Node
 	var errs []string
 
 	for _, line := range lines {
-		node, err := parseLink(line)
+		n, err := parseLink(line)
 		if err != nil {
 			errs = append(errs, err.Error())
-			logx.Warnf("Xray conversion skipped: %s", err)
+			logx.Warnf("xray: skipped a link: %s", err)
 			continue
 		}
-		nodes = append(nodes, node)
+		nodes = append(nodes, node.Node(n))
 	}
 
 	if len(nodes) == 0 && len(errs) > 0 {
-		return nil, fmt.Errorf("xray: all links failed to convert: %s", strings.Join(errs, "; "))
+		return nil, fmt.Errorf("all links failed to convert: %s", strings.Join(errs, "; "))
 	}
-
 	return nodes, nil
 }

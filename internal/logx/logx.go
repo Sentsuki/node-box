@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Level controls how much is logged. Higher values are more verbose.
@@ -64,7 +65,20 @@ func ParseLevel(s string) (Level, error) {
 var (
 	level atomic.Int32
 	mu    sync.Mutex
+
+	// stamped reports whether each line should carry its own timestamp.
+	//
+	// systemd sets JOURNAL_STREAM when stderr is the journal, and the journal
+	// already records the time of every line, so stamping there would only
+	// duplicate it. Everywhere else — stderr redirected to a file, a container
+	// log, a terminal — nothing else records when something happened, and a log
+	// without times is close to useless for working out what a daemon did.
+	stamped = os.Getenv("JOURNAL_STREAM") == ""
 )
+
+// timeFormat matches the format the status command prints, so timestamps from
+// the log and from `node-box status` can be compared directly.
+const timeFormat = "2006-01-02 15:04:05"
 
 func init() { level.Store(int32(Info)) }
 
@@ -76,8 +90,13 @@ func logf(l Level, format string, args ...any) {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
+
 	mu.Lock()
 	defer mu.Unlock()
+	if stamped {
+		fmt.Fprintf(os.Stderr, "%s [%s] %s\n", time.Now().Format(timeFormat), l, msg)
+		return
+	}
 	fmt.Fprintf(os.Stderr, "[%s] %s\n", l, msg)
 }
 

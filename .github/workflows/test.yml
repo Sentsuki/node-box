@@ -20,9 +20,7 @@ jobs:
 
       - name: Verify formatting
         run: |
-          # Skip _old/, the pre-rewrite reference tree that the Go toolchain
-          # already ignores because of its leading underscore.
-          unformatted=$(find . -name '*.go' -not -path './_old/*' -exec gofmt -l {} +)
+          unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"
             echo "$unformatted"

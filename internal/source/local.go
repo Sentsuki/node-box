@@ -73,7 +73,24 @@ func (l *Local) Resolve(ctx context.Context) (string, error) {
 }
 
 // Materialize copies the directory into destDir.
+//
+// The ref is checked rather than ignored. A local snapshot can only ever be
+// taken of what the directory holds right now, so a request for any other ref
+// cannot be served — and silently storing current content under the requested
+// name would make `update --ref` apply something that is not that ref at all.
+// Refusing also catches the narrower case of the directory changing between
+// being resolved and being copied.
 func (l *Local) Materialize(ctx context.Context, ref, destDir string) error {
+	current, err := l.Resolve(ctx)
+	if err != nil {
+		return err
+	}
+	if ref != current {
+		return fmt.Errorf(
+			"%s currently hashes to %s, not %s; a local source can only snapshot its present contents",
+			l.dir, current, ref)
+	}
+
 	return filepath.WalkDir(l.dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

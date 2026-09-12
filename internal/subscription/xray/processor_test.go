@@ -11,7 +11,7 @@ import (
 )
 
 func TestProcessor_Process_VMess(t *testing.T) {
-	xp := NewXrayProcessor()
+	xp := Processor{}
 
 	// Normal VMess JSON
 	vmessData := map[string]any{
@@ -51,7 +51,7 @@ func TestProcessor_Process_VMess(t *testing.T) {
 }
 
 func TestProcessor_Process_VLESS(t *testing.T) {
-	xp := NewXrayProcessor()
+	xp := Processor{}
 
 	link := "vless://uuid-test@1.2.3.4:443?type=grpc&serviceName=test-grpc&security=reality&pbk=public-key&sid=short-id&sni=example.com#test-vless"
 
@@ -95,7 +95,7 @@ func TestProcessor_Process_VLESS(t *testing.T) {
 }
 
 func TestProcessor_Process_Shadowsocks(t *testing.T) {
-	xp := NewXrayProcessor()
+	xp := Processor{}
 
 	// SIP002 format
 	methodPass := base64.URLEncoding.EncodeToString([]byte("aes-256-gcm:password-test"))
@@ -118,7 +118,7 @@ func TestProcessor_Process_Shadowsocks(t *testing.T) {
 }
 
 func TestProcessor_Process_Trojan(t *testing.T) {
-	xp := NewXrayProcessor()
+	xp := Processor{}
 
 	link := "trojan://password-test@1.2.3.4:443?security=tls&sni=example.com&type=ws&path=/trojan#test-trojan"
 
@@ -147,7 +147,7 @@ func TestProcessor_Process_Trojan(t *testing.T) {
 }
 
 func TestProcessor_Process_Base64Subscription(t *testing.T) {
-	xp := NewXrayProcessor()
+	xp := Processor{}
 
 	links := []string{
 		"vless://uuid1@1.1.1.1:443?security=tls#node1",
@@ -185,7 +185,7 @@ func TestProcessor_Manual(t *testing.T) {
 		t.Skip("Skipping manual test: test_data.txt is empty.")
 	}
 
-	xp := NewXrayProcessor()
+	xp := Processor{}
 	nodes, err := xp.Process([]byte(content))
 	if err != nil {
 		t.Fatalf("Manual process failed: %v", err)

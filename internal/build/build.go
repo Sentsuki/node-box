@@ -15,8 +15,8 @@ import (
 
 	"node-box/internal/logx"
 	"node-box/internal/model"
+	"node-box/internal/node"
 	"node-box/internal/output"
-	"node-box/internal/subscription"
 )
 
 // Input is everything needed to produce the output files.
@@ -29,10 +29,10 @@ type Input struct {
 
 	// Nodes maps subscription name to its parsed nodes, already named and
 	// filtered by the subscription layer.
-	Nodes map[string][]subscription.Node
+	Nodes map[string][]node.Node
 
 	// Outputs are the resolved absolute destinations for Config.Configs.
-	Outputs []model.ResolvedOutput
+	Outputs []output.Target
 }
 
 // Build assembles every configured output file.
@@ -65,7 +65,7 @@ func Build(in Input) ([]output.File, error) {
 	return files, nil
 }
 
-func buildOne(out model.ResolvedOutput, in Input, injector *injector) (output.File, error) {
+func buildOne(out output.Target, in Input, injector *injector) (output.File, error) {
 	doc, err := assemble(out.Config, in.Modules)
 	if err != nil {
 		return output.File{}, err

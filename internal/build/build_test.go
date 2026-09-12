@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"node-box/internal/model"
+	"node-box/internal/output"
 )
 
 func mods(m map[string]string) map[string]json.RawMessage {
@@ -16,10 +17,10 @@ func mods(m map[string]string) map[string]json.RawMessage {
 	return out
 }
 
-func outputs(cfs ...model.ConfigFile) []model.ResolvedOutput {
-	var res []model.ResolvedOutput
+func outputs(cfs ...model.ConfigFile) []output.Target {
+	var res []output.Target
 	for _, cf := range cfs {
-		res = append(res, model.ResolvedOutput{Config: cf, Path: "/out/" + cf.Name + ".json"})
+		res = append(res, output.Target{Config: cf, Path: "/out/" + cf.Name + ".json"})
 	}
 	return res
 }

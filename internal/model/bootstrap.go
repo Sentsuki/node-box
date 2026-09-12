@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +25,10 @@ const (
 	DefaultBranch       = "main"
 	DefaultPollInterval = Duration(10 * time.Minute)
 	DefaultListen       = "127.0.0.1:8788"
+	// DefaultUpdateTimeout bounds one update. It is generous because a run
+	// legitimately fetches many subscriptions with retries; it exists to catch a
+	// run that has stopped making progress, not to hurry a slow one.
+	DefaultUpdateTimeout = Duration(15 * time.Minute)
 )
 
 // Bootstrap is the local configuration file (node-box.json). It describes where
@@ -30,11 +36,13 @@ const (
 // lives in the config repository, because it is what tells node-box how to reach
 // that repository in the first place.
 type Bootstrap struct {
-	Root     string        `json:"root,omitempty"`
-	LogLevel string        `json:"log_level,omitempty"`
-	Source   *SourceConfig `json:"source"`
-	Server   *ServerConfig `json:"server,omitempty"`
-	Proxy    *ProxyConfig  `json:"proxy,omitempty"`
+	Root     string `json:"root,omitempty"`
+	LogLevel string `json:"log_level,omitempty"`
+	// UpdateTimeout bounds a single update. Defaults to DefaultUpdateTimeout.
+	UpdateTimeout Duration      `json:"update_timeout,omitempty"`
+	Source        *SourceConfig `json:"source"`
+	Server        *ServerConfig `json:"server,omitempty"`
+	Proxy         *ProxyConfig  `json:"proxy,omitempty"`
 }
 
 // SourceConfig describes where the configuration snapshot comes from.
@@ -101,6 +109,9 @@ func (b *Bootstrap) applyDefaults(baseDir string) {
 	if b.LogLevel == "" {
 		b.LogLevel = "info"
 	}
+	if b.UpdateTimeout.IsZero() {
+		b.UpdateTimeout = DefaultUpdateTimeout
+	}
 	if b.Source != nil {
 		if b.Source.Branch == "" {
 			b.Source.Branch = DefaultBranch
@@ -135,7 +146,30 @@ func (b *Bootstrap) Validate() error {
 			return fmt.Errorf("proxy: %w", err)
 		}
 	}
+	// There is deliberately no way to disable the bound. An unbounded update is
+	// the failure this exists to prevent; an operator who needs longer raises the
+	// number.
+	if b.UpdateTimeout.Duration() <= 0 {
+		return fmt.Errorf("update_timeout must be positive, got %s", b.UpdateTimeout)
+	}
 	return nil
+}
+
+// Describe names the source for logs and status output.
+//
+// It produces the same string the corresponding source implementation does, so
+// a reporting command that has only the bootstrap configuration in hand does not
+// have to construct a source (and therefore does not need its credentials) just
+// to say where the configuration comes from.
+func (s *SourceConfig) Describe() string {
+	switch s.Type {
+	case SourceGitHub:
+		return "github:" + s.Repo + "@" + s.Branch
+	case SourceLocal:
+		return "local:" + s.Dir
+	default:
+		return s.Type
+	}
 }
 
 func (s *SourceConfig) validate() error {
@@ -191,6 +225,24 @@ func (s *ServerConfig) validate() error {
 	return nil
 }
 
+// URL renders the proxy as a URL for an HTTP transport.
+//
+// The conversion lives here rather than in the fetch package so that the HTTP
+// client does not have to know what a node-box configuration file looks like.
+func (p *ProxyConfig) URL() *url.URL {
+	if p == nil {
+		return nil
+	}
+	u := &url.URL{
+		Scheme: strings.ToLower(p.Type),
+		Host:   net.JoinHostPort(p.Host, strconv.Itoa(p.Port)),
+	}
+	if p.Username != "" {
+		u.User = url.UserPassword(p.Username, p.Password)
+	}
+	return u
+}
+
 func (p *ProxyConfig) validate() error {
 	if p.Host == "" {
 		return fmt.Errorf("host cannot be empty")
@@ -213,6 +265,12 @@ func (b *Bootstrap) StateDir() string { return filepath.Join(b.Root, "state") }
 
 // StateFile is the path of the persisted run state.
 func (b *Bootstrap) StateFile() string { return filepath.Join(b.StateDir(), "state.json") }
+
+// LockFile is the single-writer lock guarding this root. Everything that
+// mutates state below Root — snapshots, pointers, state.json and the generated
+// files — is serialised through it, so a daemon and a one-shot CLI invocation
+// cannot walk over each other.
+func (b *Bootstrap) LockFile() string { return filepath.Join(b.StateDir(), "update.lock") }
 
 // DefaultOutputDir is used when the repo config does not set output.dir.
 func (b *Bootstrap) DefaultOutputDir() string { return filepath.Join(b.Root, "out") }

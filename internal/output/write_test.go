@@ -3,7 +3,6 @@ package output
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -33,67 +32,6 @@ func leftovers(t *testing.T, dir string) []string {
 		}
 	}
 	return found
-}
-
-func TestWriteAtomic_CreatesFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	if err := WriteAtomic(path, []byte("hello"), Perm); err != nil {
-		t.Fatalf("WriteAtomic: %v", err)
-	}
-	if got := read(t, path); got != "hello" {
-		t.Errorf("content = %q, want %q", got, "hello")
-	}
-	if extra := leftovers(t, dir); len(extra) > 0 {
-		t.Errorf("temp files left behind: %v", extra)
-	}
-
-	// Windows does not model POSIX permission bits.
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := info.Mode().Perm(); got != Perm {
-			t.Errorf("mode = %o, want %o", got, Perm)
-		}
-	}
-}
-
-func TestWriteAtomic_ReplacesExisting(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	if err := os.WriteFile(path, []byte("old content that is longer"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteAtomic(path, []byte("new"), Perm); err != nil {
-		t.Fatalf("WriteAtomic: %v", err)
-	}
-	if got := read(t, path); got != "new" {
-		t.Errorf("content = %q, want %q", got, "new")
-	}
-	if extra := leftovers(t, dir); len(extra) > 0 {
-		t.Errorf("temp files left behind: %v", extra)
-	}
-}
-
-func TestWriteAtomic_FailureLeavesNoTempFile(t *testing.T) {
-	dir := t.TempDir()
-	// A directory where the target name already exists as a directory makes
-	// the final rename fail, exercising the cleanup path.
-	path := filepath.Join(dir, "target")
-	if err := os.Mkdir(path, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := WriteAtomic(path, []byte("data"), Perm); err == nil {
-		t.Fatal("want an error when the destination is a directory")
-	}
-	if extra := leftovers(t, dir); len(extra) > 0 {
-		t.Errorf("temp files left behind after failure: %v", extra)
-	}
 }
 
 func TestWrite_SkipsUnchanged(t *testing.T) {
@@ -176,7 +114,7 @@ func TestEnsureDirs(t *testing.T) {
 	}
 
 	t.Run("creates nested dirs under output dir", func(t *testing.T) {
-		outs := []model.ResolvedOutput{{
+		outs := []Target{{
 			Config: model.ConfigFile{Name: "nested"},
 			Path:   filepath.Join(outDir, "a", "b", "main.json"),
 		}}
@@ -189,7 +127,7 @@ func TestEnsureDirs(t *testing.T) {
 	})
 
 	t.Run("refuses to create dirs outside output dir", func(t *testing.T) {
-		outs := []model.ResolvedOutput{{
+		outs := []Target{{
 			Config: model.ConfigFile{Name: "elsewhere"},
 			Path:   filepath.Join(root, "does-not-exist", "config.json"),
 		}}
@@ -207,7 +145,7 @@ func TestEnsureDirs(t *testing.T) {
 		if err := os.MkdirAll(other, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		outs := []model.ResolvedOutput{{
+		outs := []Target{{
 			Config: model.ConfigFile{Name: "etc"},
 			Path:   filepath.Join(other, "config.json"),
 		}}
