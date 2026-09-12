@@ -75,8 +75,8 @@ func (r *Runner) Rollback(ctx context.Context) error {
 	return r.Execute(ctx, Trigger{Kind: KindManual, Ref: ref, Force: true})
 }
 
-// Validate checks that a snapshot can be assembled into valid configurations,
-// without writing anything.
+// Validate checks that a snapshot can be assembled into valid configurations.
+// It writes nothing.
 func (r *Runner) Validate(ctx context.Context, ref string) (*Plan, error) {
 	return r.BuildPlan(ctx, ref)
 }

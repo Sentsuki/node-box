@@ -82,6 +82,8 @@ func (r *Runner) pollOnce(ctx context.Context) {
 		}
 		return
 	}
+	// current names what was last applied successfully, so a revision whose
+	// build failed still looks new here and gets another attempt.
 	current, ok := r.store.Pointer(source.PointerCurrent)
 	if ok && current == ref {
 		return

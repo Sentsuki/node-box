@@ -1,9 +1,12 @@
 // Package runner orchestrates one update: acquire a snapshot, fetch
 // subscriptions, assemble, validate, write.
 //
-// Every trigger goes through a single serial loop. That is what keeps
+// Every trigger goes through a single serial loop, which is what keeps
 // concurrent updates, duplicate webhooks and overlapping timers from needing
-// any locking of their own.
+// any locking of their own inside one process. Across processes the same
+// guarantee comes from the lock a Writable runner holds for its whole lifetime:
+// a runner built ReadOnly cannot execute an update at all, so the serial loop
+// really is the only thing that ever writes.
 package runner
 
 import (
@@ -16,6 +19,7 @@ import (
 
 	"node-box/internal/build"
 	"node-box/internal/fetch"
+	"node-box/internal/lockfile"
 	"node-box/internal/logx"
 	"node-box/internal/model"
 	"node-box/internal/output"
@@ -27,12 +31,30 @@ import (
 // only hold triggers that are about to be merged anyway.
 const queueDepth = 8
 
+// Mode says whether a runner is allowed to change anything.
+type Mode int
+
+const (
+	// ReadOnly inspects what is already on disk. It takes no lock, so it is
+	// always safe to run alongside a daemon, and Execute refuses to run.
+	//
+	// Acquiring a snapshot is still permitted: scratch directories have unique
+	// names and committing one is idempotent, so fetching cannot disturb
+	// another process.
+	ReadOnly Mode = iota
+	// Writable may generate output. It holds the root's lock for its whole
+	// lifetime and must be closed.
+	Writable
+)
+
 // Runner owns the update pipeline.
 type Runner struct {
 	boot   *model.Bootstrap
 	src    source.Source
 	store  *source.Store
 	client *fetch.Client
+	mode   Mode
+	lock   *lockfile.Lock
 
 	triggers chan Trigger
 
@@ -43,7 +65,10 @@ type Runner struct {
 }
 
 // New wires up a runner from the bootstrap configuration.
-func New(boot *model.Bootstrap) (*Runner, error) {
+//
+// A Writable runner takes the root's lock before touching anything and the
+// caller must Close it. Pass ReadOnly for commands that only report.
+func New(boot *model.Bootstrap, mode Mode) (*Runner, error) {
 	client, err := fetch.New(fetch.Options{
 		Proxy:     boot.Proxy,
 		UserAgent: "node-box",
@@ -69,20 +94,46 @@ func New(boot *model.Bootstrap) (*Runner, error) {
 		return nil, fmt.Errorf("unknown source type %q", boot.Source.Type)
 	}
 
-	store, err := source.NewStore(boot.SnapshotsDir())
-	if err != nil {
-		return nil, err
-	}
-	store.CleanScratch()
-
-	return &Runner{
+	r := &Runner{
 		boot:     boot,
 		src:      src,
-		store:    store,
 		client:   client,
+		mode:     mode,
 		triggers: make(chan Trigger, queueDepth),
-	}, nil
+	}
+
+	if mode == Writable {
+		lock, err := lockfile.Acquire(boot.LockFile())
+		if err != nil {
+			if errors.Is(err, lockfile.ErrLocked) {
+				return nil, fmt.Errorf(
+					"another node-box process is already updating %s; "+
+						"send SIGHUP to the running daemon to make it update now, or stop it first", boot.Root)
+			}
+			return nil, err
+		}
+		r.lock = lock
+	}
+
+	store, err := source.NewStore(boot.SnapshotsDir())
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.store = store
+
+	// Only safe behind the lock: a scratch directory that looks abandoned may
+	// belong to a fetch another process is in the middle of.
+	if mode == Writable {
+		store.CleanScratch()
+	}
+
+	return r, nil
 }
+
+// Close releases the update lock. It is safe to call on a ReadOnly runner and
+// safe to call twice.
+func (r *Runner) Close() error { return r.lock.Release() }
 
 // Source returns the configured source, for commands that inspect it.
 func (r *Runner) Source() source.Source { return r.src }
@@ -136,6 +187,10 @@ func (r *Runner) Run(ctx context.Context) error {
 // Nothing is written until every step has succeeded, so any failure leaves the
 // previously generated files exactly as they were.
 func (r *Runner) Execute(ctx context.Context, t Trigger) error {
+	if r.mode != Writable {
+		return fmt.Errorf("this runner is read-only and cannot generate output")
+	}
+
 	r.setRunning(true, t.Kind)
 	defer r.setRunning(false, t.Kind)
 
@@ -164,43 +219,35 @@ func (r *Runner) Execute(ctx context.Context, t Trigger) error {
 type Plan struct {
 	Snapshot *source.Snapshot
 	Files    []output.File
+	// Outputs are the resolved destinations the files belong to, carried so the
+	// writing step does not have to resolve them a second time.
+	Outputs []model.ResolvedOutput
 }
 
 // BuildPlan runs the pipeline up to but not including writing.
 //
-// Exported so `build --dry-run` can show exactly what a real run would produce
-// without touching a single file.
+// It writes nothing at all — no files, no directories, no snapshot pointers —
+// so `build` and `validate` can show exactly what a real run would produce
+// without disturbing a daemon sharing the same root. Acquiring a snapshot may
+// still download one, which is safe from any number of processes.
 func (r *Runner) BuildPlan(ctx context.Context, ref string) (*Plan, error) {
-	// 1. Snapshot. A source that cannot be reached falls back to the last one
-	//    fetched rather than aborting: the outputs can still be regenerated
-	//    from it, which is the whole point of keeping snapshots.
-	snap, err := source.Acquire(ctx, r.src, r.store, ref)
+	// 1. Snapshot.
+	snap, err := r.acquire(ctx, ref)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, err
-		}
-		fallback, ok := r.store.Pointer(source.PointerCurrent)
-		if !ok {
-			return nil, fmt.Errorf("no snapshot available: %w", err)
-		}
-		logx.Warnf("could not fetch configuration (%v); falling back to snapshot %s", err, short(fallback))
-		snap, err = source.Open(r.store.Dir(fallback), fallback)
-		if err != nil {
-			return nil, fmt.Errorf("fallback snapshot %s is unusable: %w", short(fallback), err)
-		}
-	} else if err := r.store.SetPointer(source.PointerCurrent, snap.Ref); err != nil {
-		logx.Warnf("could not update the current pointer: %v", err)
+		return nil, err
 	}
 
 	r.setSchedule(snap.Config.UpdateSchedule)
 	logx.Debugf("using snapshot %s", short(snap.Ref))
 
-	// 2. Destinations. Checked before any fetching so a bad path fails fast.
+	// 2. Destinations. Inspected before any fetching so a bad path fails fast.
+	//    Only inspected: the directories are created by the writing step, which
+	//    is the first point at which creating them is warranted.
 	outs, err := snap.Config.ResolveOutputs(r.boot)
 	if err != nil {
 		return nil, err
 	}
-	if err := output.EnsureDirs(outs, snap.Config.OutputDir(r.boot)); err != nil {
+	if err := output.CheckDirs(outs, snap.Config.OutputDir(r.boot)); err != nil {
 		return nil, err
 	}
 
@@ -228,7 +275,42 @@ func (r *Runner) BuildPlan(ctx context.Context, ref string) (*Plan, error) {
 		return nil, err
 	}
 
-	return &Plan{Snapshot: snap, Files: files}, nil
+	return &Plan{Snapshot: snap, Files: files, Outputs: outs}, nil
+}
+
+// acquire returns the snapshot to build from.
+//
+// When no ref was asked for, a source that cannot be reached falls back to the
+// snapshot that produced the current outputs rather than aborting: those
+// outputs can still be regenerated from it, which is the whole point of keeping
+// snapshots.
+//
+// An explicit ref never falls back. Quietly building something else would turn
+// `update --ref` into a lie, and would reduce `rollback` — whose whole job is
+// to apply a ref other than the current one — to a no-op that reports success.
+func (r *Runner) acquire(ctx context.Context, ref string) (*source.Snapshot, error) {
+	snap, err := source.Acquire(ctx, r.src, r.store, ref)
+	if err == nil {
+		return snap, nil
+	}
+	if ctx.Err() != nil {
+		return nil, err
+	}
+	if ref != "" {
+		return nil, fmt.Errorf("snapshot %s was requested explicitly and is unavailable: %w", short(ref), err)
+	}
+
+	fallback, ok := r.store.Pointer(source.PointerCurrent)
+	if !ok {
+		return nil, fmt.Errorf("no snapshot available: %w", err)
+	}
+	logx.Warnf("could not fetch configuration (%v); falling back to snapshot %s", err, short(fallback))
+
+	snap, err = source.Open(r.store.Dir(fallback), fallback)
+	if err != nil {
+		return nil, fmt.Errorf("fallback snapshot %s is unusable: %w", short(fallback), err)
+	}
+	return snap, nil
 }
 
 func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) error {
@@ -238,7 +320,13 @@ func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) er
 	}
 	snap := plan.Snapshot
 
-	// 6. Write.
+	// 6. Prepare the destinations. This is the first step that changes anything
+	//    on disk, and it happens only once the whole build has succeeded.
+	if err := output.EnsureDirs(plan.Outputs, snap.Config.OutputDir(r.boot)); err != nil {
+		return err
+	}
+
+	// 7. Write.
 	res, hashes, err := output.Write(plan.Files, t.Force)
 	if err != nil {
 		return err
@@ -248,7 +336,7 @@ func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) er
 		logx.Infof("  updated %s", p)
 	}
 
-	// 7. Record success.
+	// 8. Record success.
 	//
 	// "previous" moves only when the applied ref actually changes, and it takes
 	// the ref being replaced. Repeated runs of the same snapshot therefore do
@@ -257,6 +345,13 @@ func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) er
 		if err := r.store.SetPointer(source.PointerPrevious, applied); err != nil {
 			logx.Debugf("could not record %s as the previous snapshot: %v", short(applied), err)
 		}
+	}
+	// "current" moves last, so it only ever names a snapshot that really did
+	// produce the files on disk. A snapshot that failed to build leaves it
+	// alone, which is what lets the fallback path trust it and the poll notice
+	// the same ref again and retry.
+	if err := r.store.SetPointer(source.PointerCurrent, snap.Ref); err != nil {
+		logx.Warnf("could not update the current pointer: %v", err)
 	}
 	state.RecordSuccess(snap.Ref, hashes)
 	if err := state.Save(r.boot.StateFile()); err != nil {

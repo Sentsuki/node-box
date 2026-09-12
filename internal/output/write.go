@@ -97,13 +97,41 @@ func matchesDisk(f File) bool {
 	return err == nil && bytes.Equal(existing, f.Content)
 }
 
-// EnsureDirs prepares destination directories before any build work happens, so
-// a bad path fails at startup rather than after a full fetch-and-assemble cycle.
+// CheckDirs reports whether the destinations look usable, without creating or
+// writing anything.
 //
-// Directories under outputDir are created on demand. A destination outside it is
-// required to exist already: silently creating directories from a mistyped
-// absolute path is far harder to diagnose than an error.
+// It exists so the pipeline can reject a mistyped path before it spends a full
+// fetch-and-assemble cycle, while leaving `build` and `validate` genuinely free
+// of side effects. A destination outside outputDir is required to exist
+// already: silently creating directories from a mistyped absolute path is far
+// harder to diagnose than an error. One inside it is accepted whether or not it
+// exists yet, because EnsureDirs will create it.
+func CheckDirs(outs []model.ResolvedOutput, outputDir string) error {
+	for _, o := range outs {
+		dir := filepath.Dir(o.Path)
+		if within(dir, outputDir) {
+			continue
+		}
+		info, err := os.Stat(dir)
+		if err != nil {
+			return fmt.Errorf("config %q: output directory %s must already exist: %w", o.Config.Name, dir, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("config %q: output path %s is not a directory", o.Config.Name, dir)
+		}
+	}
+	return nil
+}
+
+// EnsureDirs creates the destination directories under outputDir and verifies
+// that every destination can actually be written to.
+//
+// Unlike CheckDirs this changes the filesystem, so it belongs to the writing
+// step rather than to planning.
 func EnsureDirs(outs []model.ResolvedOutput, outputDir string) error {
+	if err := CheckDirs(outs, outputDir); err != nil {
+		return err
+	}
 	for _, o := range outs {
 		dir := filepath.Dir(o.Path)
 
@@ -111,16 +139,7 @@ func EnsureDirs(outs []model.ResolvedOutput, outputDir string) error {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return fmt.Errorf("config %q: create output directory %s: %w", o.Config.Name, dir, err)
 			}
-		} else {
-			info, err := os.Stat(dir)
-			if err != nil {
-				return fmt.Errorf("config %q: output directory %s must already exist: %w", o.Config.Name, dir, err)
-			}
-			if !info.IsDir() {
-				return fmt.Errorf("config %q: output path %s is not a directory", o.Config.Name, dir)
-			}
 		}
-
 		if err := checkWritable(dir); err != nil {
 			return fmt.Errorf("config %q: output directory %s is not writable: %w", o.Config.Name, dir, err)
 		}

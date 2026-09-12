@@ -96,13 +96,43 @@ func newEnv(t *testing.T) *env {
 	}
 }
 
+// runner builds a runner that may generate output. It holds the root's lock,
+// so a test wanting a second one must let this one go first.
 func (e *env) runner() *Runner {
 	e.t.Helper()
-	r, err := New(e.boot)
+	r, err := New(e.boot, Writable)
 	if err != nil {
 		e.t.Fatalf("New: %v", err)
 	}
+	e.t.Cleanup(func() { r.Close() })
 	return r
+}
+
+// reader builds a runner that only inspects, the way status and build do.
+func (e *env) reader() *Runner {
+	e.t.Helper()
+	r, err := New(e.boot, ReadOnly)
+	if err != nil {
+		e.t.Fatalf("New(ReadOnly): %v", err)
+	}
+	e.t.Cleanup(func() { r.Close() })
+	return r
+}
+
+// currentRef returns what the store believes produced the files on disk.
+func (e *env) currentRef() string {
+	e.t.Helper()
+	ref, _ := e.snapshotStore().Pointer(source.PointerCurrent)
+	return ref
+}
+
+func (e *env) snapshotStore() *source.Store {
+	e.t.Helper()
+	s, err := source.NewStore(e.boot.SnapshotsDir())
+	if err != nil {
+		e.t.Fatalf("NewStore: %v", err)
+	}
+	return s
 }
 
 // update runs one full update.
@@ -379,5 +409,188 @@ func TestRunner_RepeatedRunsKeepTheRollbackTarget(t *testing.T) {
 	}
 	if ref, _ := r.Store().Pointer(source.PointerPrevious); ref != first {
 		t.Errorf("previous = %q after repeated runs, want %q", ref, first)
+	}
+}
+
+// --- the update lock -------------------------------------------------------
+
+func TestRunner_ReadOnlyRunnerRefusesToExecute(t *testing.T) {
+	e := newEnv(t)
+	r := e.reader()
+
+	err := r.Execute(context.Background(), Trigger{Kind: KindManual})
+	if err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("want a read-only refusal, got %v", err)
+	}
+	if _, statErr := os.Stat(e.outputPath()); statErr == nil {
+		t.Error("a read-only runner produced output")
+	}
+}
+
+func TestRunner_SecondWriterIsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.runner() // holds the lock for the rest of the test
+
+	_, err := New(e.boot, Writable)
+	if err == nil {
+		t.Fatal("want a lock conflict for a second writable runner")
+	}
+	if !strings.Contains(err.Error(), "another node-box process") {
+		t.Errorf("the error should explain the conflict, got %v", err)
+	}
+}
+
+func TestRunner_ReadersRunAlongsideAWriter(t *testing.T) {
+	e := newEnv(t)
+	w := e.runner()
+	if err := e.update(w); err != nil {
+		t.Fatal(err)
+	}
+
+	// This is the case that used to corrupt an in-flight fetch: a reporting
+	// command starting while the daemon owns the root.
+	r, err := New(e.boot, ReadOnly)
+	if err != nil {
+		t.Fatalf("a read-only runner must not need the lock: %v", err)
+	}
+	defer r.Close()
+
+	if st := r.Status(); st.AppliedRef == "" {
+		t.Error("the reader could not see what the writer applied")
+	}
+}
+
+func TestRunner_WriterLockIsReusableAfterClose(t *testing.T) {
+	e := newEnv(t)
+
+	first, err := New(e.boot, Writable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	second, err := New(e.boot, Writable)
+	if err != nil {
+		t.Fatalf("the lock was not released: %v", err)
+	}
+	defer second.Close()
+}
+
+// --- an explicit ref is never substituted ---------------------------------
+
+func TestRunner_UnavailableExplicitRefIsAnError(t *testing.T) {
+	e := newEnv(t)
+	r := e.runner()
+
+	if err := e.update(r); err != nil {
+		t.Fatal(err)
+	}
+	good := e.readOutput()
+	appliedRef := e.state().Ref
+
+	// The same unreachable source that an empty ref is allowed to fall back
+	// from. Asking for a specific ref is a different question, and the honest
+	// answer is that it cannot be served: falling back would report success for
+	// a version that was never applied.
+	if err := os.RemoveAll(e.repo); err != nil {
+		t.Fatal(err)
+	}
+
+	err := r.Execute(context.Background(), Trigger{Kind: KindManual, Ref: "deadbeefdeadbeef"})
+	if err == nil {
+		t.Fatal("want an error for an unavailable explicit ref")
+	}
+	if !strings.Contains(err.Error(), "requested explicitly") {
+		t.Errorf("the error should say the ref was explicit, got %v", err)
+	}
+	if e.readOutput() != good {
+		t.Error("the failed run rewrote the output")
+	}
+	if got := e.state().Ref; got != appliedRef {
+		t.Errorf("applied ref moved to %q, want it to stay at %q", got, appliedRef)
+	}
+}
+
+func TestRunner_RollbackFailsLoudlyOnAnUnusablePrevious(t *testing.T) {
+	e := newEnv(t)
+	r := e.runner()
+
+	if err := e.update(r); err != nil {
+		t.Fatal(err)
+	}
+	e.writeRepo("modules/log.json", `{"log":{"level":"trace"}}`)
+	if err := e.update(r); err != nil {
+		t.Fatal(err)
+	}
+	latest := e.readOutput()
+
+	previous, ok := r.Store().Pointer(source.PointerPrevious)
+	if !ok {
+		t.Fatal("previous should be set after two different snapshots")
+	}
+	// Break the snapshot rollback is supposed to return to.
+	broken := filepath.Join(e.boot.SnapshotsDir(), previous, "config.json")
+	if err := os.WriteFile(broken, []byte("{ not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reporting success while leaving the unwanted version in place is the one
+	// outcome rollback must never produce.
+	err := r.Rollback(context.Background())
+	if err == nil {
+		t.Fatal("want an error when the rollback target cannot be read")
+	}
+	if e.readOutput() != latest {
+		t.Error("output changed even though the rollback failed")
+	}
+}
+
+// --- planning has no side effects ----------------------------------------
+
+func TestRunner_BuildPlanWritesNothing(t *testing.T) {
+	e := newEnv(t)
+	r := e.reader()
+
+	plan, err := r.BuildPlan(context.Background(), "")
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	if len(plan.Files) == 0 {
+		t.Fatal("the plan should contain the file it would write")
+	}
+
+	if _, err := os.Stat(filepath.Join(e.root, "out")); err == nil {
+		t.Error("planning created the output directory")
+	}
+	if _, err := os.Stat(e.boot.StateFile()); err == nil {
+		t.Error("planning wrote the state file")
+	}
+	if ref := e.currentRef(); ref != "" {
+		t.Errorf("planning moved the current pointer to %q", ref)
+	}
+}
+
+func TestRunner_CurrentPointerFollowsWhatWasWritten(t *testing.T) {
+	e := newEnv(t)
+	r := e.runner()
+
+	if err := e.update(r); err != nil {
+		t.Fatal(err)
+	}
+	applied := e.state().Ref
+	if got := e.currentRef(); got != applied {
+		t.Fatalf("current = %q after a successful run, want the applied ref %q", got, applied)
+	}
+
+	// A revision that cannot be built must not claim the pointer, or the
+	// fallback would restore it and the change poll would treat it as done.
+	e.writeRepo("modules/log.json", `{"outbounds":[{"type":"direct","tag":"clash"}]}`)
+	if err := e.update(r); err == nil {
+		t.Fatal("want an error for a repo with conflicting modules")
+	}
+	if got := e.currentRef(); got != applied {
+		t.Errorf("current = %q after a failed run, want it to stay at %q", got, applied)
 	}
 }

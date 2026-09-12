@@ -21,7 +21,11 @@ import (
 
 // Pointer names kept alongside the snapshot directories.
 const (
-	// PointerCurrent names the most recently fetched snapshot.
+	// PointerCurrent names the snapshot that produced the files currently on
+	// disk. It advances only after a write has succeeded, never at fetch time:
+	// a pointer that could name a snapshot which failed to build would make the
+	// unreachable-source fallback restore something known to be broken, and
+	// would make the change poll believe a failed revision was already done.
 	PointerCurrent = "current"
 	// PointerPrevious names the snapshot that produced the outputs before the
 	// current ones, which is what a rollback goes back to.

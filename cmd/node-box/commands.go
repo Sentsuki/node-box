@@ -28,10 +28,11 @@ func cmdRun(ctx context.Context, env *env, args []string) error {
 	if err != nil {
 		return err
 	}
-	r, err := runner.New(boot)
+	r, err := runner.New(boot, runner.Writable)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
 
 	// SIGHUP asks for an immediate update without restarting anything.
 	hup := make(chan os.Signal, 1)
@@ -88,10 +89,12 @@ func cmdUpdate(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.Writable)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	return r.Execute(ctx, runner.Trigger{Kind: runner.KindManual, Ref: *ref, Force: *force})
 }
 
@@ -104,16 +107,17 @@ func cmdPull(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.ReadOnly)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
 
+	// No pointer moves here. The pointers describe what has been applied, and
+	// pulling applies nothing. Having the snapshot on disk is the whole payload:
+	// the next update finds it there instead of downloading it again.
 	snap, err := source.Acquire(ctx, r.Source(), r.Store(), *ref)
 	if err != nil {
-		return err
-	}
-	if err := r.Store().SetPointer(source.PointerCurrent, snap.Ref); err != nil {
 		return err
 	}
 	fmt.Printf("snapshot %s ready at %s\n", snap.Ref, snap.Dir)
@@ -131,10 +135,12 @@ func cmdBuild(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.ReadOnly)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	plan, err := r.BuildPlan(ctx, *ref)
 	if err != nil {
 		return err
@@ -168,10 +174,12 @@ func cmdValidate(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.ReadOnly)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	plan, err := r.Validate(ctx, *ref)
 	if err != nil {
 		return err
@@ -191,10 +199,12 @@ func cmdRollback(ctx context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.Writable)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	return r.Rollback(ctx)
 }
 
@@ -207,10 +217,12 @@ func cmdStatus(_ context.Context, env *env, args []string) error {
 		return err
 	}
 
-	r, err := newRunner(env)
+	r, err := newRunner(env, runner.ReadOnly)
 	if err != nil {
 		return err
 	}
+	defer r.Close()
+
 	st := r.Status()
 
 	if *asJSON {
@@ -238,12 +250,17 @@ func cmdStatus(_ context.Context, env *env, args []string) error {
 	return nil
 }
 
-func newRunner(env *env) (*runner.Runner, error) {
+// newRunner loads the bootstrap configuration and wires up a runner.
+//
+// The mode is not a detail: a Writable runner takes the root's lock, so a
+// command that only reports must ask for ReadOnly or it would refuse to run
+// while the daemon is up.
+func newRunner(env *env, mode runner.Mode) (*runner.Runner, error) {
 	boot, err := env.loadBootstrap()
 	if err != nil {
 		return nil, err
 	}
-	return runner.New(boot)
+	return runner.New(boot, mode)
 }
 
 func orNone(s string) string {

@@ -214,6 +214,12 @@ func (b *Bootstrap) StateDir() string { return filepath.Join(b.Root, "state") }
 // StateFile is the path of the persisted run state.
 func (b *Bootstrap) StateFile() string { return filepath.Join(b.StateDir(), "state.json") }
 
+// LockFile is the single-writer lock guarding this root. Everything that
+// mutates state below Root — snapshots, pointers, state.json and the generated
+// files — is serialised through it, so a daemon and a one-shot CLI invocation
+// cannot walk over each other.
+func (b *Bootstrap) LockFile() string { return filepath.Join(b.StateDir(), "update.lock") }
+
 // DefaultOutputDir is used when the repo config does not set output.dir.
 func (b *Bootstrap) DefaultOutputDir() string { return filepath.Join(b.Root, "out") }
 
