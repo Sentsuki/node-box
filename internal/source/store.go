@@ -7,6 +7,7 @@
 package source
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -150,8 +151,8 @@ func (s *Store) List() ([]string, error) {
 	}
 
 	type entry struct {
-		ref    string
-		modSec int64
+		ref      string
+		modNanos int64
 	}
 	var refs []entry
 	for _, e := range entries {
@@ -164,9 +165,12 @@ func (s *Store) List() ([]string, error) {
 		}
 		refs = append(refs, entry{e.Name(), info.ModTime().UnixNano()})
 	}
+	// cmp.Compare rather than subtraction: the difference between two
+	// nanosecond timestamps overflows int on a 32-bit build, which would sort
+	// snapshots into an arbitrary order exactly where GC decides what to delete.
 	slices.SortFunc(refs, func(a, b entry) int {
-		if a.modSec != b.modSec {
-			return int(a.modSec - b.modSec)
+		if c := cmp.Compare(a.modNanos, b.modNanos); c != 0 {
+			return c
 		}
 		return strings.Compare(a.ref, b.ref)
 	})

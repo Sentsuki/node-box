@@ -83,11 +83,18 @@ GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: R
 
 TLS 交给前置的 Caddy / nginx，node-box 不管证书。三个端点：
 
-```
-POST /hooks/github     唯一写入口，需要 X-NodeBox-Signature-256
-GET  /healthz          存活探测
-GET  /status           当前 ref / 上次产出 / 上次错误 / 是否正在更新
-```
+| 端点 | 鉴权 | 暴露的内容 |
+|---|---|---|
+| `POST /hooks/github` | HMAC-SHA256（`X-NodeBox-Signature-256`） | 唯一写入口。签名用 `webhook_secret_env` 指定的密钥，按**收到的原始字节**校验，比较是恒定时间的 |
+| `GET /healthz` | 无 | 只有 `{"status":"ok"}` |
+| `GET /status` | **无** | 当前 / 上一个 / 已应用的 ref、产出文件的**绝对路径**及其哈希、上次错误的**完整文本**、是否正在更新 |
+
+**`/status` 没有鉴权，这是有意的取舍，但要知道它暴露什么。** 它会泄露主机上的绝对路径、
+仓库 commit sha，以及上次失败的完整错误信息（其中可能包含模块的 URL）。防线只有一条：
+`listen` 必须绑回环地址，填 `0.0.0.0` 或 `::` 会被**拒绝启动**，所以它默认不可能暴露到公网。
+
+如果这台机器上有不该看到这些的其他用户或进程，在前置的反向代理上给 `/status` 加一层
+basic auth 或 IP 白名单——`/hooks/github` 自带 HMAC，不需要额外处理。
 
 ## `proxy`
 
