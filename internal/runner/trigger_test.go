@@ -4,49 +4,50 @@ import (
 	"testing"
 	"time"
 
+	"node-box/internal/control"
 	"node-box/internal/model"
 )
 
 func TestCoalesce_MergesQueuedTriggers(t *testing.T) {
-	q := make(chan Trigger, 8)
-	q <- Trigger{Kind: KindWebhook, Ref: "aaa"}
-	q <- Trigger{Kind: KindWebhook, Ref: "bbb"}
+	q := make(chan control.Trigger, 8)
+	q <- control.Trigger{Kind: control.KindWebhook, Ref: "aaa"}
+	q <- control.Trigger{Kind: control.KindWebhook, Ref: "bbb"}
 
 	// A timer fired first, but two pushes arrived behind it. The newest ref is
 	// the one worth acting on, and the run should be attributed to the webhook.
-	got := coalesce(Trigger{Kind: KindSchedule}, q)
+	got := coalesce(control.Trigger{Kind: control.KindSchedule}, q)
 
 	if got.Ref != "bbb" {
 		t.Errorf("ref = %q, want the most recent (bbb)", got.Ref)
 	}
-	if got.Kind != KindWebhook {
+	if got.Kind != control.KindWebhook {
 		t.Errorf("kind = %q, want a specific request to outrank the timer", got.Kind)
 	}
 }
 
 func TestCoalesce_KeepsForce(t *testing.T) {
-	q := make(chan Trigger, 8)
-	q <- Trigger{Kind: KindSchedule}
+	q := make(chan control.Trigger, 8)
+	q <- control.Trigger{Kind: control.KindSchedule}
 
-	got := coalesce(Trigger{Kind: KindManual, Force: true}, q)
+	got := coalesce(control.Trigger{Kind: control.KindManual, Force: true}, q)
 	if !got.Force {
 		t.Error("force must survive coalescing, or an explicit rewrite is silently dropped")
 	}
 }
 
 func TestCoalesce_ManualKindIsNotDowngraded(t *testing.T) {
-	q := make(chan Trigger, 8)
-	q <- Trigger{Kind: KindSchedule}
+	q := make(chan control.Trigger, 8)
+	q <- control.Trigger{Kind: control.KindSchedule}
 
-	got := coalesce(Trigger{Kind: KindManual}, q)
-	if got.Kind != KindManual {
+	got := coalesce(control.Trigger{Kind: control.KindManual}, q)
+	if got.Kind != control.KindManual {
 		t.Errorf("kind = %q, want a timer not to override an explicit request", got.Kind)
 	}
 }
 
 func TestCoalesce_EmptyQueueIsUnchanged(t *testing.T) {
-	q := make(chan Trigger, 8)
-	in := Trigger{Kind: KindStartup, Ref: "abc"}
+	q := make(chan control.Trigger, 8)
+	in := control.Trigger{Kind: control.KindStartup, Ref: "abc"}
 	if got := coalesce(in, q); got != in {
 		t.Errorf("coalesce changed a lone trigger: %+v", got)
 	}

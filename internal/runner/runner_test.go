@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"node-box/internal/control"
 	"node-box/internal/model"
 	"node-box/internal/output"
 	"node-box/internal/source"
@@ -137,7 +138,7 @@ func (e *env) snapshotStore() *source.Store {
 
 // update runs one full update.
 func (e *env) update(r *Runner) error {
-	return r.Execute(context.Background(), Trigger{Kind: KindManual})
+	return r.Execute(context.Background(), control.Trigger{Kind: control.KindManual})
 }
 
 func (e *env) outputPath() string {
@@ -363,7 +364,7 @@ func TestRunner_FallsBackToCurrentSnapshotWhenSourceIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := r.Execute(context.Background(), Trigger{Kind: KindManual, Force: true}); err != nil {
+	if err := r.Execute(context.Background(), control.Trigger{Kind: control.KindManual, Force: true}); err != nil {
 		t.Fatalf("update with an unreachable source: %v", err)
 	}
 	if e.readOutput() != good {
@@ -418,7 +419,7 @@ func TestRunner_ReadOnlyRunnerRefusesToExecute(t *testing.T) {
 	e := newEnv(t)
 	r := e.reader()
 
-	err := r.Execute(context.Background(), Trigger{Kind: KindManual})
+	err := r.Execute(context.Background(), control.Trigger{Kind: control.KindManual})
 	if err == nil || !strings.Contains(err.Error(), "read-only") {
 		t.Fatalf("want a read-only refusal, got %v", err)
 	}
@@ -498,7 +499,7 @@ func TestRunner_UnavailableExplicitRefIsAnError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := r.Execute(context.Background(), Trigger{Kind: KindManual, Ref: "deadbeefdeadbeef"})
+	err := r.Execute(context.Background(), control.Trigger{Kind: control.KindManual, Ref: "deadbeefdeadbeef"})
 	if err == nil {
 		t.Fatal("want an error for an unavailable explicit ref")
 	}

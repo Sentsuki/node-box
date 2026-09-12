@@ -300,8 +300,14 @@ func TestLocal_MaterializeSkipsGit(t *testing.T) {
 	os.MkdirAll(filepath.Join(src, ".git"), 0o700)
 	os.WriteFile(filepath.Join(src, ".git", "HEAD"), []byte("ref: refs/heads/main"), 0o600)
 
+	local := NewLocal(src)
+	ref, err := local.Resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	dst := t.TempDir()
-	if err := NewLocal(src).Materialize(context.Background(), "ref", dst); err != nil {
+	if err := local.Materialize(context.Background(), ref, dst); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dst, "config.json")); err != nil {
@@ -309,6 +315,26 @@ func TestLocal_MaterializeSkipsGit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dst, ".git")); err == nil {
 		t.Error(".git should not be copied into a snapshot")
+	}
+}
+
+func TestLocal_MaterializeRefusesAnotherRef(t *testing.T) {
+	src := t.TempDir()
+	os.WriteFile(filepath.Join(src, "config.json"), []byte("{}"), 0o600)
+
+	// A local directory can only be snapshotted as it currently is. Storing its
+	// present contents under someone else's ref would make `update --ref` apply
+	// something that is not that ref.
+	dst := t.TempDir()
+	err := NewLocal(src).Materialize(context.Background(), "0123456789abcdef", dst)
+	if err == nil {
+		t.Fatal("want an error for a ref the directory does not hash to")
+	}
+	if !strings.Contains(err.Error(), "present contents") {
+		t.Errorf("error should explain why, got %v", err)
+	}
+	if entries, _ := os.ReadDir(dst); len(entries) != 0 {
+		t.Error("nothing should have been copied")
 	}
 }
 

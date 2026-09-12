@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"node-box/internal/build"
+	"node-box/internal/control"
 	"node-box/internal/fetch"
 	"node-box/internal/lockfile"
 	"node-box/internal/logx"
@@ -56,12 +57,10 @@ type Runner struct {
 	mode   Mode
 	lock   *lockfile.Lock
 
-	triggers chan Trigger
+	triggers chan control.Trigger
 
 	mu       sync.Mutex
 	schedule *model.Schedule
-	running  bool
-	lastKind Kind
 }
 
 // New wires up a runner from the bootstrap configuration.
@@ -70,7 +69,7 @@ type Runner struct {
 // caller must Close it. Pass ReadOnly for commands that only report.
 func New(boot *model.Bootstrap, mode Mode) (*Runner, error) {
 	client, err := fetch.New(fetch.Options{
-		Proxy:     boot.Proxy,
+		ProxyURL:  boot.Proxy.URL(),
 		UserAgent: "node-box",
 	})
 	if err != nil {
@@ -99,7 +98,7 @@ func New(boot *model.Bootstrap, mode Mode) (*Runner, error) {
 		src:      src,
 		client:   client,
 		mode:     mode,
-		triggers: make(chan Trigger, queueDepth),
+		triggers: make(chan control.Trigger, queueDepth),
 	}
 
 	if mode == Writable {
@@ -143,7 +142,7 @@ func (r *Runner) Store() *source.Store { return r.store }
 
 // Trigger queues an update. It never blocks: if the queue is full an update is
 // already pending, and that pending run will pick up the same work.
-func (r *Runner) Trigger(t Trigger) bool {
+func (r *Runner) Trigger(t control.Trigger) bool {
 	select {
 	case r.triggers <- t:
 		return true
@@ -156,7 +155,7 @@ func (r *Runner) Trigger(t Trigger) bool {
 // Run consumes triggers until the context is cancelled. It also starts the
 // schedule and fallback poll loops.
 func (r *Runner) Run(ctx context.Context) error {
-	r.Trigger(Trigger{Kind: KindStartup})
+	r.Trigger(control.Trigger{Kind: control.KindStartup})
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -186,13 +185,21 @@ func (r *Runner) Run(ctx context.Context) error {
 //
 // Nothing is written until every step has succeeded, so any failure leaves the
 // previously generated files exactly as they were.
-func (r *Runner) Execute(ctx context.Context, t Trigger) error {
+//
+// The run is bounded by update_timeout. Without one, a single stalled fetch
+// holds the serial trigger loop forever and the daemon stops updating with no
+// error to show for it — the HTTP client's per-request timeout does not bound a
+// run that keeps making progress slowly across many subscriptions.
+func (r *Runner) Execute(ctx context.Context, t control.Trigger) error {
 	if r.mode != Writable {
 		return fmt.Errorf("this runner is read-only and cannot generate output")
 	}
 
-	r.setRunning(true, t.Kind)
-	defer r.setRunning(false, t.Kind)
+	if limit := r.boot.UpdateTimeout.Duration(); limit > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, limit)
+		defer cancel()
+	}
 
 	started := time.Now()
 	logx.Infof("update started (%s)", t.Kind)
@@ -202,8 +209,18 @@ func (r *Runner) Execute(ctx context.Context, t Trigger) error {
 		return err
 	}
 
+	// Persist "a run is under way" before doing any of it, so a status command
+	// in another process can see it, and so a crash mid-run stays visible.
+	state.RecordStart(string(t.Kind))
+	if saveErr := state.Save(r.boot.StateFile()); saveErr != nil {
+		logx.Warnf("could not record the start of this run: %v", saveErr)
+	}
+
 	err = r.execute(ctx, t, state)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = fmt.Errorf("update exceeded update_timeout (%s): %w", r.boot.UpdateTimeout, err)
+		}
 		state.RecordFailure(err)
 		if saveErr := state.Save(r.boot.StateFile()); saveErr != nil {
 			logx.Warnf("could not record failure in state: %v", saveErr)
@@ -221,7 +238,7 @@ type Plan struct {
 	Files    []output.File
 	// Outputs are the resolved destinations the files belong to, carried so the
 	// writing step does not have to resolve them a second time.
-	Outputs []model.ResolvedOutput
+	Outputs []output.Target
 }
 
 // BuildPlan runs the pipeline up to but not including writing.
@@ -243,11 +260,11 @@ func (r *Runner) BuildPlan(ctx context.Context, ref string) (*Plan, error) {
 	// 2. Destinations. Inspected before any fetching so a bad path fails fast.
 	//    Only inspected: the directories are created by the writing step, which
 	//    is the first point at which creating them is warranted.
-	outs, err := snap.Config.ResolveOutputs(r.boot)
+	outs, err := output.Resolve(snap.Config, r.boot)
 	if err != nil {
 		return nil, err
 	}
-	if err := output.CheckDirs(outs, snap.Config.OutputDir(r.boot)); err != nil {
+	if err := output.CheckDirs(outs, output.BaseDir(snap.Config, r.boot)); err != nil {
 		return nil, err
 	}
 
@@ -313,7 +330,7 @@ func (r *Runner) acquire(ctx context.Context, ref string) (*source.Snapshot, err
 	return snap, nil
 }
 
-func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) error {
+func (r *Runner) execute(ctx context.Context, t control.Trigger, state *output.State) error {
 	plan, err := r.BuildPlan(ctx, t.Ref)
 	if err != nil {
 		return err
@@ -322,7 +339,7 @@ func (r *Runner) execute(ctx context.Context, t Trigger, state *output.State) er
 
 	// 6. Prepare the destinations. This is the first step that changes anything
 	//    on disk, and it happens only once the whole build has succeeded.
-	if err := output.EnsureDirs(plan.Outputs, snap.Config.OutputDir(r.boot)); err != nil {
+	if err := output.EnsureDirs(plan.Outputs, output.BaseDir(snap.Config, r.boot)); err != nil {
 		return err
 	}
 
@@ -373,13 +390,6 @@ func (r *Runner) currentSchedule() *model.Schedule {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.schedule
-}
-
-func (r *Runner) setRunning(running bool, kind Kind) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.running = running
-	r.lastKind = kind
 }
 
 func short(ref string) string {

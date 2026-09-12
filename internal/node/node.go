@@ -1,6 +1,12 @@
-// Package subscription turns raw subscription payloads into sing-box outbound
-// nodes and applies the per-subscription naming rules.
-package subscription
+// Package node holds the one representation of a sing-box proxy node that every
+// other package agrees on.
+//
+// It lives on its own so that the subscription parsers, the assembler and the
+// format-specific converters can all speak about nodes without depending on one
+// another. Before this package existed, the xray converter returned bare maps
+// and the subscription layer converted them one by one into its own identical
+// type, which is the kind of parallel abstraction that quietly drifts.
+package node
 
 // Node is a single sing-box outbound (or endpoint) as a generic JSON object.
 // Keeping it untyped means fields node-box does not know about survive a
@@ -21,6 +27,15 @@ func (n Node) Type() string {
 	t, _ := n["type"].(string)
 	return t
 }
+
+// Detour returns the tag this node chains through, or "" if it is direct.
+func (n Node) Detour() string {
+	d, _ := n["detour"].(string)
+	return d
+}
+
+// SetDetour points this node at an upstream node.
+func (n Node) SetDetour(tag string) { n["detour"] = tag }
 
 // Clone returns a deep copy of the node.
 //

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"node-box/internal/control"
 	"node-box/internal/logx"
 	"node-box/internal/model"
 	"node-box/internal/source"
@@ -26,7 +27,7 @@ func (r *Runner) scheduleLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(delay):
-			r.Trigger(Trigger{Kind: KindSchedule})
+			r.Trigger(control.Trigger{Kind: control.KindSchedule})
 		}
 	}
 }
@@ -89,5 +90,5 @@ func (r *Runner) pollOnce(ctx context.Context) {
 		return
 	}
 	logx.Infof("poll found a new revision %s", short(ref))
-	r.Trigger(Trigger{Kind: KindPoll, Ref: ref})
+	r.Trigger(control.Trigger{Kind: control.KindPoll, Ref: ref})
 }

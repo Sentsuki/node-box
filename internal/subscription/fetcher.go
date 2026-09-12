@@ -11,6 +11,7 @@ import (
 	"node-box/internal/fetch"
 	"node-box/internal/logx"
 	"node-box/internal/model"
+	"node-box/internal/node"
 )
 
 // DefaultParallel bounds concurrent subscription fetches. Fetching serially
@@ -37,7 +38,7 @@ func NewFetcher(client *fetch.Client, baseDir string) *Fetcher {
 // A subscription that fails is logged and skipped. An error is returned only
 // when every enabled subscription failed, because that is the case where
 // continuing would regenerate configurations with no nodes in them.
-func (f *Fetcher) FetchAll(ctx context.Context, cfg *model.Config) (map[string][]Node, error) {
+func (f *Fetcher) FetchAll(ctx context.Context, cfg *model.Config) (map[string][]node.Node, error) {
 	var enabled []model.Subscription
 	for _, s := range cfg.Nodes.Subscriptions {
 		if s.Enable {
@@ -46,13 +47,17 @@ func (f *Fetcher) FetchAll(ctx context.Context, cfg *model.Config) (map[string][
 	}
 	if len(enabled) == 0 {
 		logx.Debugf("no enabled subscriptions")
-		return map[string][]Node{}, nil
+		return map[string][]node.Node{}, nil
 	}
 
-	filter := NewFilter(cfg.Nodes.ExcludeKeywords)
+	naming := namingRules{
+		exclude:   cfg.Nodes.ExcludeKeywords,
+		defaultUA: cfg.UserAgent,
+		emoji:     newEmojiTable(cfg.Nodes.EmojiOverrides),
+	}
 
 	type result struct {
-		nodes []Node
+		nodes []node.Node
 		err   error
 	}
 	results := make([]result, len(enabled))
@@ -70,13 +75,13 @@ func (f *Fetcher) FetchAll(ctx context.Context, cfg *model.Config) (map[string][
 				results[i] = result{err: ctx.Err()}
 				return
 			}
-			nodes, err := f.fetchOne(ctx, sub, cfg.UserAgent, filter)
+			nodes, err := f.fetchOne(ctx, sub, naming)
 			results[i] = result{nodes: nodes, err: err}
 		}()
 	}
 	wg.Wait()
 
-	out := make(map[string][]Node, len(enabled))
+	out := make(map[string][]node.Node, len(enabled))
 	var failed []string
 	for i, sub := range enabled {
 		if err := results[i].err; err != nil {
@@ -100,9 +105,17 @@ func (f *Fetcher) FetchAll(ctx context.Context, cfg *model.Config) (map[string][
 	return out, nil
 }
 
+// namingRules is the configuration-wide half of the naming pipeline, prepared
+// once per run rather than per subscription.
+type namingRules struct {
+	exclude   []string
+	defaultUA string
+	emoji     emojiTable
+}
+
 // fetchOne retrieves one subscription and applies its naming rules.
-func (f *Fetcher) fetchOne(ctx context.Context, sub model.Subscription, defaultUA string, filter *Filter) ([]Node, error) {
-	data, err := f.read(ctx, sub, defaultUA)
+func (f *Fetcher) fetchOne(ctx context.Context, sub model.Subscription, naming namingRules) ([]node.Node, error) {
+	data, err := f.read(ctx, sub, naming.defaultUA)
 	if err != nil {
 		return nil, err
 	}
@@ -119,22 +132,22 @@ func (f *Fetcher) fetchOne(ctx context.Context, sub model.Subscription, defaultU
 	// Keyword removal runs before emoji handling so the keywords match against
 	// names that still have their original shape.
 	if len(sub.RemoveKeywords) > 0 {
-		nodes = RemoveKeywords(nodes, sub.RemoveKeywords)
+		nodes = removeKeywords(nodes, sub.RemoveKeywords)
 	}
 	if sub.Emoji != nil {
 		if *sub.Emoji {
-			nodes = AutoEmoji(nodes)
+			nodes = assignTagEmoji(nodes, naming.emoji)
 		} else {
-			nodes = RemoveEmoji(nodes)
+			nodes = stripTagEmoji(nodes)
 		}
 	}
 
-	nodes = AddSubscriptionPrefix(nodes, sub.Name)
+	nodes = prefixTags(nodes, sub.Name)
 
-	// Globally excluded nodes are dropped here so they take no part in any
-	// later step.
+	// Globally excluded nodes are dropped last, so the keywords match the final
+	// tag and the dropped nodes take no part in any later step.
 	before := len(nodes)
-	nodes = filter.FilterNodes(nodes)
+	nodes = dropExcluded(nodes, naming.exclude)
 	if dropped := before - len(nodes); dropped > 0 {
 		logx.Debugf("subscription %q: excluded %d nodes", sub.Name, dropped)
 	}

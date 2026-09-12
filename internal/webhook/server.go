@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"node-box/internal/control"
 	"node-box/internal/logx"
-	"node-box/internal/runner"
 )
 
 const (
@@ -34,8 +34,8 @@ const (
 // Updater is the part of the runner this server needs. Keeping it an interface
 // lets the handlers be tested without a real snapshot store behind them.
 type Updater interface {
-	Trigger(runner.Trigger) bool
-	Status() runner.Status
+	Trigger(control.Trigger) bool
+	Status() control.Status
 }
 
 // Server serves the webhook and status endpoints.
@@ -135,7 +135,7 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 	logx.Infof("webhook accepted for ref %s", shortRef(req.Ref))
 	// Queue and return immediately. The sender should not wait for a full
 	// update, and GitHub Actions has its own timeout to respect.
-	s.updater.Trigger(runner.Trigger{Kind: runner.KindWebhook, Ref: req.Ref})
+	s.updater.Trigger(control.Trigger{Kind: control.KindWebhook, Ref: req.Ref})
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 

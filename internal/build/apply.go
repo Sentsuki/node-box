@@ -5,7 +5,7 @@ import (
 
 	"node-box/internal/logx"
 	"node-box/internal/model"
-	"node-box/internal/subscription"
+	"node-box/internal/node"
 )
 
 // inject fills in selector membership for one output and writes the nodes
@@ -125,8 +125,8 @@ func (inj *injector) insert(doc map[string]any, needed, present map[string]bool)
 
 // candidates returns every node that could be inserted, in a stable order:
 // relays first, then regular nodes.
-func (inj *injector) candidates() []subscription.Node {
-	out := make([]subscription.Node, 0, len(inj.pool))
+func (inj *injector) candidates() []node.Node {
+	out := make([]node.Node, 0, len(inj.pool))
 	for _, r := range inj.cfg.Nodes.Relays {
 		out = append(out, inj.relays[r.Name]...)
 	}
@@ -150,7 +150,7 @@ func findByTag(outbounds []any, tag string) map[string]any {
 // addMembers appends node tags to a selector, after whatever the module file
 // listed itself. Literal entries keep their position and meaning; derived ones
 // follow in a predictable order.
-func addMembers(selector map[string]any, members []subscription.Node) {
+func addMembers(selector map[string]any, members []node.Node) {
 	existing, _ := selector["outbounds"].([]any)
 
 	listed := make(map[string]bool, len(existing))

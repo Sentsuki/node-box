@@ -2,312 +2,345 @@ package subscription
 
 import (
 	"fmt"
-	"node-box/internal/logx"
-	"node-box/internal/textutil"
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"node-box/internal/logx"
+	"node-box/internal/model"
+	"node-box/internal/node"
+	"node-box/internal/textutil"
 )
 
-// Filter provides node filtering functionality based on exclude keywords.
-// It can filter out nodes whose tags contain specified keywords.
-type Filter struct {
-	excludeKeywords []string
-}
+// The functions in this file are the naming pipeline applied to one
+// subscription's nodes, in the order fetchOne applies them.
+//
+// They all edit the nodes in place and return the slice for readability. That is
+// safe because a subscription's nodes are freshly parsed and owned by the
+// fetcher until they are handed to the assembler, and it avoids copying every
+// node four times for what amounts to four string edits. Nothing outside this
+// package calls them, which is why they are unexported: they are steps, not an
+// API.
 
-// NewFilter creates a new node filter with the specified exclude keywords.
-// The filter will remove nodes whose tags contain any of the provided keywords.
-func NewFilter(excludeKeywords []string) *Filter {
-	return &Filter{
-		excludeKeywords: excludeKeywords,
+// dropExcluded removes nodes whose tag matches any of the keywords.
+//
+// This is source cleanup rather than selection: subscriptions routinely carry
+// entries that are not nodes at all ("套餐到期：...", "官网：..."), and those must
+// never enter the pool. A node with no tag is kept, because the keywords have
+// nothing to match against and dropping it would be a guess.
+func dropExcluded(nodes []node.Node, keywords []string) []node.Node {
+	if len(keywords) == 0 {
+		return nodes
 	}
-}
 
-// FilterNodes filters out nodes that contain exclude keywords in their tags.
-// Nodes without a tag field are preserved as-is.
-func (f *Filter) FilterNodes(nodes []Node) []Node {
-	var filteredNodes []Node
-	excludedCount := 0
+	kept := make([]node.Node, 0, len(nodes))
+	dropped := 0
 
-	for _, node := range nodes {
-		tag, ok := node["tag"].(string)
-		if !ok {
-			// 没有 tag 字段的节点直接保留，不参与过滤
-			filteredNodes = append(filteredNodes, node)
+	for _, n := range nodes {
+		tag := n.Tag()
+		if tag == "" {
+			kept = append(kept, n)
 			continue
 		}
+		if matchesAny(tag, keywords) {
+			dropped++
+			continue
+		}
+		kept = append(kept, n)
+	}
 
-		shouldExclude := false
-		for _, keyword := range f.excludeKeywords {
-			if textutil.ContainsIgnoreEmoji(tag, keyword) {
-				shouldExclude = true
-				excludedCount++
-				break
+	if dropped > 0 {
+		logx.Debugf("excluded %d node(s) by keyword", dropped)
+	}
+	return kept
+}
+
+// matchesAny reports whether tag contains any of the keywords, ignoring emoji.
+func matchesAny(tag string, keywords []string) bool {
+	for _, kw := range keywords {
+		if textutil.ContainsIgnoreEmoji(tag, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// prefixTags marks every node with the subscription it came from, as
+// "[name] original".
+//
+// The prefix is what makes a tag unique across subscriptions and is how
+// selectors attribute a node to its source, which is why subscription names may
+// not contain brackets.
+func prefixTags(nodes []node.Node, subName string) []node.Node {
+	for _, n := range nodes {
+		if tag := n.Tag(); tag != "" {
+			n.SetTag(fmt.Sprintf("[%s] %s", subName, tag))
+		}
+	}
+	return nodes
+}
+
+// stripTagEmoji removes emoji from every tag.
+func stripTagEmoji(nodes []node.Node) []node.Node {
+	for _, n := range nodes {
+		if tag := n.Tag(); tag != "" {
+			n.SetTag(strings.TrimSpace(removeEmojiRunes(tag)))
+		}
+	}
+	return nodes
+}
+
+// assignTagEmoji replaces whatever emoji a tag carries with one chosen from the
+// node's name, so a mixed set of providers ends up with one consistent scheme.
+func assignTagEmoji(nodes []node.Node, table emojiTable) []node.Node {
+	for _, n := range nodes {
+		tag := n.Tag()
+		if tag == "" {
+			continue
+		}
+		clean := strings.TrimSpace(removeEmojiRunes(tag))
+		n.SetTag(table.forTag(clean) + " " + clean)
+	}
+	return nodes
+}
+
+// removeEmojiRunes drops every emoji code point, using the same detector the
+// keyword comparison uses so the two can never disagree about what an emoji is.
+func removeEmojiRunes(s string) string {
+	return strings.Map(func(r rune) rune {
+		if textutil.IsEmojiRune(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// removeKeywords deletes substrings from every tag.
+//
+// Patterns may use glob wildcards — * for any run of characters, ? for exactly
+// one — because the things worth deleting are usually templated rather than
+// fixed: "(123人)", "剩余 12.3GB", "到期 2026-01-01".
+func removeKeywords(nodes []node.Node, keywords []string) []node.Node {
+	matchers := compileRemovals(keywords)
+	if len(matchers) == 0 {
+		return nodes
+	}
+
+	for _, n := range nodes {
+		tag := n.Tag()
+		if tag == "" {
+			continue
+		}
+		for _, m := range matchers {
+			if m.re != nil {
+				tag = m.re.ReplaceAllString(tag, "")
+			} else {
+				tag = strings.ReplaceAll(tag, m.literal, "")
 			}
 		}
-		if !shouldExclude {
-			filteredNodes = append(filteredNodes, node)
-		}
-	}
-
-	if excludedCount > 0 {
-		logx.Debugf("排除节点: %d 个", excludedCount)
-	}
-
-	return filteredNodes
-}
-
-// AddSubscriptionPrefix adds subscription name prefix to node tags.
-// It modifies the tag field of each node to include the subscription name
-// in the format "[subscription_name] original_tag".
-func AddSubscriptionPrefix(nodes []Node, subName string) []Node {
-	for _, node := range nodes {
-		if tag, ok := node["tag"].(string); ok {
-			node["tag"] = fmt.Sprintf("[%s] %s", subName, tag)
-		}
+		n.SetTag(collapseSpaces(tag))
 	}
 	return nodes
 }
 
-// RemoveEmoji removes emojis from node tags.
-// Uses the same emoji detection logic as textutil.ContainsIgnoreEmoji for consistency.
-func RemoveEmoji(nodes []Node) []Node {
-	for _, node := range nodes {
-		if tag, ok := node["tag"].(string); ok {
-			newTag := strings.Map(func(r rune) rune {
-				if textutil.IsEmojiRune(r) {
-					return -1
-				}
-				return r
-			}, tag)
-			node["tag"] = strings.TrimSpace(newTag)
-		}
-	}
-	return nodes
+// removal is one compiled deletion pattern: either a literal or a glob.
+type removal struct {
+	literal string
+	re      *regexp.Regexp
 }
 
-// emojiMapping defines the mapping from keywords to emoji for auto-assignment.
-// Order matters: more specific patterns should come before general ones.
-var emojiMapping = []struct {
-	keywords []string
+func compileRemovals(keywords []string) []removal {
+	var out []removal
+	for _, kw := range keywords {
+		if kw == "" {
+			continue
+		}
+		if !strings.ContainsAny(kw, "*?") {
+			out = append(out, removal{literal: kw})
+			continue
+		}
+		re, err := globToRegexp(kw)
+		if err != nil {
+			// Fall back to a literal rather than dropping the rule: the operator
+			// asked for something to be removed, and removing it verbatim is
+			// closer to that than removing nothing.
+			logx.Warnf("remove_keywords pattern %q did not compile (%v); treating it as literal text", kw, err)
+			out = append(out, removal{literal: kw})
+			continue
+		}
+		out = append(out, removal{re: re})
+	}
+	return out
+}
+
+// globToRegexp converts a glob with * and ? into a regexp, escaping everything
+// else so a keyword containing regexp syntax means itself.
+func globToRegexp(pattern string) (*regexp.Regexp, error) {
+	var b strings.Builder
+	for _, ch := range pattern {
+		switch ch {
+		case '*':
+			b.WriteString(".*")
+		case '?':
+			b.WriteString(".")
+		default:
+			b.WriteString(regexp.QuoteMeta(string(ch)))
+		}
+	}
+	return regexp.Compile(b.String())
+}
+
+// collapseSpaces squeezes runs of spaces and trims the result, tidying the gaps
+// that deleting a substring leaves behind.
+func collapseSpaces(s string) string {
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	return strings.TrimSpace(s)
+}
+
+// --- region emoji ----------------------------------------------------------
+
+// emojiTable maps node names to a region emoji.
+//
+// Entries are tried in order and the first hit wins, so the table is a list
+// rather than a map. Operator-supplied entries are placed ahead of the built-in
+// ones, which is what lets a config both add regions and override them.
+type emojiTable []emojiRule
+
+type emojiRule struct {
 	emoji    string
-}{
-	{[]string{"阿根廷", "AR", "Argentina"}, "🇦🇷"},
-	{[]string{"澳大利亚", "澳洲", "AU", "Australia"}, "🇦🇺"},
-	{[]string{"奥地利", "AT", "Austria"}, "🇦🇹"},
-	{[]string{"孟加拉", "BD", "Bangladesh"}, "🇧🇩"},
-	{[]string{"比利时", "BE", "Belgium"}, "🇧🇪"},
-	{[]string{"巴西", "BR", "Brazil"}, "🇧🇷"},
-	{[]string{"加拿大", "CA", "Canada"}, "🇨🇦"},
-	{[]string{"智利", "CL", "Chile"}, "🇨🇱"},
-	{[]string{"哥伦比亚", "CO", "Colombia"}, "🇨🇴"},
-	{[]string{"捷克", "CZ", "Czech"}, "🇨🇿"},
-	{[]string{"丹麦", "DK", "Denmark"}, "🇩🇰"},
-	{[]string{"埃及", "EG", "Egypt"}, "🇪🇬"},
-	{[]string{"芬兰", "FI", "Finland"}, "🇫🇮"},
-	{[]string{"法国", "FR", "France"}, "🇫🇷"},
-	{[]string{"德国", "DE", "Germany"}, "🇩🇪"},
-	{[]string{"香港", "HK", "Hong Kong", "HongKong"}, "🇭🇰"},
-	{[]string{"匈牙利", "HU", "Hungary"}, "🇭🇺"},
-	{[]string{"冰岛", "IS", "Iceland"}, "🇮🇸"},
-	{[]string{"印度", "IN", "India"}, "🇮🇳"},
-	{[]string{"印尼", "印度尼西亚", "ID", "Indonesia"}, "🇮🇩"},
-	{[]string{"爱尔兰", "IE", "Ireland"}, "🇮🇪"},
-	{[]string{"以色列", "IL", "Israel"}, "🇮🇱"},
-	{[]string{"意大利", "IT", "Italy"}, "🇮🇹"},
-	{[]string{"日本", "JP", "Japan"}, "🇯🇵"},
-	{[]string{"哈萨克斯坦", "KZ", "Kazakhstan"}, "🇰🇿"},
-	{[]string{"肯尼亚", "KE", "Kenya"}, "🇰🇪"},
-	{[]string{"韩国", "KR", "Korea"}, "🇰🇷"},
-	{[]string{"马来西亚", "MY", "大马", "Malaysia"}, "🇲🇾"},
-	{[]string{"墨西哥", "MX", "Mexico"}, "🇲🇽"},
-	{[]string{"荷兰", "NL", "Netherlands"}, "🇳🇱"},
-	{[]string{"新西兰", "NZ", "New Zealand"}, "🇳🇿"},
-	{[]string{"尼日利亚", "NG", "Nigeria"}, "🇳🇬"},
-	{[]string{"挪威", "NO", "Norway"}, "🇳🇴"},
-	{[]string{"巴基斯坦", "PK", "Pakistan"}, "🇵🇰"},
-	{[]string{"菲律宾", "PH", "Philippines"}, "🇵🇭"},
-	{[]string{"波兰", "PL", "Poland"}, "🇵🇱"},
-	{[]string{"葡萄牙", "PT", "Portugal"}, "🇵🇹"},
-	{[]string{"罗马尼亚", "RO", "Romania"}, "🇷🇴"},
-	{[]string{"俄罗斯", "RU", "Russia"}, "🇷🇺"},
-	{[]string{"沙特", "SA", "Saudi"}, "🇸🇦"},
-	{[]string{"新加坡", "SG", "Singapore"}, "🇸🇬"},
-	{[]string{"南非", "ZA", "South Africa"}, "🇿🇦"},
-	{[]string{"西班牙", "ES", "Spain"}, "🇪🇸"},
-	{[]string{"瑞典", "SE", "Sweden"}, "🇸🇪"},
-	{[]string{"瑞士", "CH", "Switzerland"}, "🇨🇭"},
-	{[]string{"台湾", "TW", "Taiwan"}, "🇹🇼"},
-	{[]string{"泰国", "TH", "Thailand"}, "🇹🇭"},
-	{[]string{"土耳其", "TR", "Turkey", "Türkiye"}, "🇹🇷"},
-	{[]string{"阿联酋", "AE", "UAE", "Dubai", "迪拜"}, "🇦🇪"},
-	{[]string{"乌克兰", "UA", "Ukraine"}, "🇺🇦"},
-	{[]string{"英国", "UK", "GB", "United Kingdom", "Britain"}, "🇬🇧"},
-	{[]string{"美国", "US", "USA", "United States", "America"}, "🇺🇸"},
-	{[]string{"越南", "VN", "Vietnam"}, "🇻🇳"},
+	keywords []string
 }
 
-// matchEmoji returns the appropriate emoji for a given node tag based on keyword matching.
-// Returns "🇺🇳" if no specific region is matched.
-// Uses word-boundary-aware matching to avoid false positives like "China" matching "IN" (India).
-func matchEmoji(tag string) string {
-	upperTag := strings.ToUpper(tag)
-	for _, mapping := range emojiMapping {
-		for _, keyword := range mapping.keywords {
-			if containsWord(upperTag, strings.ToUpper(keyword)) {
-				return mapping.emoji
+// unknownRegionEmoji marks a node whose name matched nothing.
+const unknownRegionEmoji = "🇺🇳"
+
+// newEmojiTable builds the lookup table for one run.
+func newEmojiTable(overrides []model.EmojiRule) emojiTable {
+	table := make(emojiTable, 0, len(overrides)+len(builtinEmojiRules))
+	for _, o := range overrides {
+		table = append(table, emojiRule{emoji: o.Emoji, keywords: o.Keywords})
+	}
+	return append(table, builtinEmojiRules...)
+}
+
+// forTag returns the emoji for a node name.
+func (t emojiTable) forTag(tag string) string {
+	upper := strings.ToUpper(tag)
+	for _, rule := range t {
+		for _, kw := range rule.keywords {
+			if kw != "" && containsWord(upper, strings.ToUpper(kw)) {
+				return rule.emoji
 			}
 		}
 	}
-	return "🇺🇳"
+	return unknownRegionEmoji
 }
 
 // containsWord reports whether s contains keyword as a whole word.
-// Boundary rules differ by keyword type:
-//   - CJK keywords (e.g. "英国"): boundary is any non-CJK character (digits, letters, spaces all count)
-//   - ASCII keywords (e.g. "UK", "US"): boundary is any non-ASCII-letter character (digits are OK, so "UK3" matches "UK")
+//
+// Plain substring matching is not usable here: two-letter country codes appear
+// inside ordinary words constantly, so "IN" would tag every "China" node as
+// India. What counts as a boundary depends on the script:
+//   - a CJK keyword ("英国") is bounded by any non-CJK character, so digits and
+//     spaces both end it
+//   - an ASCII keyword ("UK") is bounded by any non-letter, so "UK3" still
+//     matches while "UKRAINE" does not
 func containsWord(s, keyword string) bool {
 	idx := strings.Index(s, keyword)
 	if idx == -1 {
 		return false
 	}
-	kLen := len(keyword)
 
-	// Determine if keyword is CJK-based (first rune decides)
-	firstRune, _ := utf8.DecodeRuneInString(keyword)
-	isCJKKeyword := isCJKRune(firstRune)
+	first, _ := utf8.DecodeRuneInString(keyword)
+	cjk := isCJKRune(first)
 
-	// Check left boundary
+	isBoundary := func(r rune) bool {
+		if cjk {
+			return !isCJKRune(r)
+		}
+		return !isASCIILetter(r)
+	}
+
 	if idx > 0 {
 		prev, _ := utf8.DecodeLastRuneInString(s[:idx])
-		if isCJKKeyword {
-			if isCJKRune(prev) {
-				return false
-			}
-		} else {
-			if isASCIILetter(prev) {
-				return false
-			}
+		if !isBoundary(prev) {
+			return false
 		}
 	}
-
-	// Check right boundary
-	end := idx + kLen
-	if end < len(s) {
+	if end := idx + len(keyword); end < len(s) {
 		next, _ := utf8.DecodeRuneInString(s[end:])
-		if isCJKKeyword {
-			if isCJKRune(next) {
-				return false
-			}
-		} else {
-			if isASCIILetter(next) {
-				return false
-			}
+		if !isBoundary(next) {
+			return false
 		}
 	}
-
 	return true
 }
 
 // isCJKRune reports whether r is a CJK Unified Ideograph.
-func isCJKRune(r rune) bool {
-	return r >= 0x4E00 && r <= 0x9FFF
-}
+func isCJKRune(r rune) bool { return r >= 0x4E00 && r <= 0x9FFF }
 
-// isASCIILetter reports whether r is an ASCII letter (A-Z or a-z).
+// isASCIILetter reports whether r is an ASCII letter.
 func isASCIILetter(r rune) bool {
 	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
 }
 
-// AutoEmoji removes existing emojis from node tags and adds appropriate emoji
-// based on geographic/keyword matching of the node name.
-// Uses the same emoji detection logic as textutil.ContainsIgnoreEmoji for consistency.
-func AutoEmoji(nodes []Node) []Node {
-	for _, node := range nodes {
-		if tag, ok := node["tag"].(string); ok {
-			// Step 1: Remove existing emojis using the shared IsEmojiRune detector
-			cleanTag := strings.Map(func(r rune) rune {
-				if textutil.IsEmojiRune(r) {
-					return -1
-				}
-				return r
-			}, tag)
-			cleanTag = strings.TrimSpace(cleanTag)
-
-			// Step 2: Auto-assign emoji based on node name
-			emoji := matchEmoji(cleanTag)
-			node["tag"] = emoji + " " + cleanTag
-		}
-	}
-	return nodes
-}
-
-// RemoveKeywords removes specified keywords from node tags.
-// Supports glob-style wildcards: * matches any characters, ? matches a single character.
-// For example:
-//   - "(112人)" exact match removes "(112人)"
-//   - "(*人)" removes any string matching the pattern like "(112人)", "(50人)"
-//   - "节点?" removes "节点1", "节点A", etc.
-func RemoveKeywords(nodes []Node, keywords []string) []Node {
-	if len(keywords) == 0 {
-		return nodes
-	}
-
-	// Pre-compile patterns: separate plain strings from glob patterns
-	type keywordMatcher struct {
-		plain string         // non-empty if this is a plain string match
-		re    *regexp.Regexp // non-nil if this is a glob pattern match
-	}
-
-	var matchers []keywordMatcher
-	for _, kw := range keywords {
-		if strings.ContainsAny(kw, "*?") {
-			// Convert glob pattern to regex
-			if re, err := globToRegex(kw); err == nil {
-				matchers = append(matchers, keywordMatcher{re: re})
-			} else {
-				logx.Warnf("无效的 remove_keywords 通配符模式 '%s': %v，将作为纯文本处理", kw, err)
-				matchers = append(matchers, keywordMatcher{plain: kw})
-			}
-		} else {
-			matchers = append(matchers, keywordMatcher{plain: kw})
-		}
-	}
-
-	for _, node := range nodes {
-		if tag, ok := node["tag"].(string); ok {
-			newTag := tag
-			for _, m := range matchers {
-				if m.re != nil {
-					newTag = m.re.ReplaceAllString(newTag, "")
-				} else {
-					newTag = strings.ReplaceAll(newTag, m.plain, "")
-				}
-			}
-			// Clean up multiple spaces and trim
-			for strings.Contains(newTag, "  ") {
-				newTag = strings.ReplaceAll(newTag, "  ", " ")
-			}
-			node["tag"] = strings.TrimSpace(newTag)
-		}
-	}
-	return nodes
-}
-
-// globToRegex converts a glob pattern with * and ? wildcards to a compiled regexp.
-// * matches zero or more characters, ? matches exactly one character.
-// All other regex special characters are escaped.
-func globToRegex(pattern string) (*regexp.Regexp, error) {
-	var regexStr strings.Builder
-	for _, ch := range pattern {
-		switch ch {
-		case '*':
-			regexStr.WriteString(".*")
-		case '?':
-			regexStr.WriteString(".")
-		default:
-			regexStr.WriteString(regexp.QuoteMeta(string(ch)))
-		}
-	}
-	return regexp.Compile(regexStr.String())
+// builtinEmojiRules covers the regions airports actually sell. It is a starting
+// point, not a policy: nodes.emoji_overrides extends and overrides it without a
+// rebuild, which is why this list does not try to be exhaustive.
+var builtinEmojiRules = emojiTable{
+	{"🇦🇷", []string{"阿根廷", "AR", "Argentina"}},
+	{"🇦🇺", []string{"澳大利亚", "澳洲", "AU", "Australia"}},
+	{"🇦🇹", []string{"奥地利", "AT", "Austria"}},
+	{"🇧🇩", []string{"孟加拉", "BD", "Bangladesh"}},
+	{"🇧🇪", []string{"比利时", "BE", "Belgium"}},
+	{"🇧🇷", []string{"巴西", "BR", "Brazil"}},
+	{"🇨🇦", []string{"加拿大", "CA", "Canada"}},
+	{"🇨🇱", []string{"智利", "CL", "Chile"}},
+	{"🇨🇴", []string{"哥伦比亚", "CO", "Colombia"}},
+	{"🇨🇿", []string{"捷克", "CZ", "Czech"}},
+	{"🇩🇰", []string{"丹麦", "DK", "Denmark"}},
+	{"🇪🇬", []string{"埃及", "EG", "Egypt"}},
+	{"🇫🇮", []string{"芬兰", "FI", "Finland"}},
+	{"🇫🇷", []string{"法国", "FR", "France"}},
+	{"🇩🇪", []string{"德国", "DE", "Germany"}},
+	{"🇭🇰", []string{"香港", "HK", "Hong Kong", "HongKong"}},
+	{"🇭🇺", []string{"匈牙利", "HU", "Hungary"}},
+	{"🇮🇸", []string{"冰岛", "IS", "Iceland"}},
+	{"🇮🇳", []string{"印度", "IN", "India"}},
+	{"🇮🇩", []string{"印尼", "印度尼西亚", "ID", "Indonesia"}},
+	{"🇮🇪", []string{"爱尔兰", "IE", "Ireland"}},
+	{"🇮🇱", []string{"以色列", "IL", "Israel"}},
+	{"🇮🇹", []string{"意大利", "IT", "Italy"}},
+	{"🇯🇵", []string{"日本", "JP", "Japan"}},
+	{"🇰🇿", []string{"哈萨克斯坦", "KZ", "Kazakhstan"}},
+	{"🇰🇪", []string{"肯尼亚", "KE", "Kenya"}},
+	{"🇰🇷", []string{"韩国", "KR", "Korea"}},
+	{"🇲🇾", []string{"马来西亚", "MY", "大马", "Malaysia"}},
+	{"🇲🇽", []string{"墨西哥", "MX", "Mexico"}},
+	{"🇳🇱", []string{"荷兰", "NL", "Netherlands"}},
+	{"🇳🇿", []string{"新西兰", "NZ", "New Zealand"}},
+	{"🇳🇬", []string{"尼日利亚", "NG", "Nigeria"}},
+	{"🇳🇴", []string{"挪威", "NO", "Norway"}},
+	{"🇵🇰", []string{"巴基斯坦", "PK", "Pakistan"}},
+	{"🇵🇭", []string{"菲律宾", "PH", "Philippines"}},
+	{"🇵🇱", []string{"波兰", "PL", "Poland"}},
+	{"🇵🇹", []string{"葡萄牙", "PT", "Portugal"}},
+	{"🇷🇴", []string{"罗马尼亚", "RO", "Romania"}},
+	{"🇷🇺", []string{"俄罗斯", "RU", "Russia"}},
+	{"🇸🇦", []string{"沙特", "SA", "Saudi"}},
+	{"🇸🇬", []string{"新加坡", "SG", "Singapore"}},
+	{"🇿🇦", []string{"南非", "ZA", "South Africa"}},
+	{"🇪🇸", []string{"西班牙", "ES", "Spain"}},
+	{"🇸🇪", []string{"瑞典", "SE", "Sweden"}},
+	{"🇨🇭", []string{"瑞士", "CH", "Switzerland"}},
+	{"🇹🇼", []string{"台湾", "TW", "Taiwan"}},
+	{"🇹🇭", []string{"泰国", "TH", "Thailand"}},
+	{"🇹🇷", []string{"土耳其", "TR", "Turkey", "Türkiye"}},
+	{"🇦🇪", []string{"阿联酋", "AE", "UAE", "Dubai", "迪拜"}},
+	{"🇺🇦", []string{"乌克兰", "UA", "Ukraine"}},
+	{"🇬🇧", []string{"英国", "UK", "GB", "United Kingdom", "Britain"}},
+	{"🇺🇸", []string{"美国", "US", "USA", "United States", "America"}},
+	{"🇻🇳", []string{"越南", "VN", "Vietnam"}},
 }

@@ -15,8 +15,8 @@ import (
 	"slices"
 	"strings"
 
+	"node-box/internal/fsx"
 	"node-box/internal/logx"
-	"node-box/internal/output"
 )
 
 // Pointer names kept alongside the snapshot directories.
@@ -57,6 +57,13 @@ func NewStore(dir string) (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
+// OpenStore addresses an existing snapshots directory without creating it.
+//
+// Reporting commands use this: creating directories is a side effect, and a
+// command that only answers questions should leave no trace. A missing directory
+// simply has no snapshots and no pointers, which every reader handles.
+func OpenStore(dir string) *Store { return &Store{dir: dir} }
+
 // Dir returns the directory a ref is stored in.
 func (s *Store) Dir(ref string) string { return filepath.Join(s.dir, ref) }
 
@@ -89,7 +96,7 @@ func (s *Store) SetPointer(name, ref string) error {
 		return fmt.Errorf("cannot point %s at unknown snapshot %q", name, ref)
 	}
 	path := filepath.Join(s.dir, name)
-	return output.WriteAtomic(path, []byte(ref+"\n"), 0o600)
+	return fsx.WriteAtomic(path, []byte(ref+"\n"), 0o600)
 }
 
 // Begin creates a scratch directory to build a snapshot in.

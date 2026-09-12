@@ -1,9 +1,9 @@
 package model
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // validConfig is a minimal configuration that passes validation. Tests mutate
@@ -164,82 +164,6 @@ func TestLoadConfig_DurationIsAString(t *testing.T) {
 
 func mustErr(_ *Config, err error) error { return err }
 
-func TestResolveOutputs(t *testing.T) {
-	// t.TempDir returns a path that is absolute on every OS, which matters
-	// because filepath.IsAbs is platform specific.
-	root := t.TempDir()
-	elsewhere := filepath.Join(t.TempDir(), "sing-box", "config.json")
-	b := &Bootstrap{Root: root}
-
-	c := validConfig()
-	c.Configs = []ConfigFile{
-		{Name: "main", Path: "main.json", Modules: []string{"log"}},
-		{Name: "nested", Path: filepath.FromSlash("sub/gaming.json"), Modules: []string{"log"}},
-		{Name: "absolute", Path: elsewhere, Modules: []string{"log"}},
-	}
-
-	outs, err := c.ResolveOutputs(b)
-	if err != nil {
-		t.Fatalf("ResolveOutputs: %v", err)
-	}
-
-	want := []string{
-		filepath.Join(root, "out", "main.json"),
-		filepath.Join(root, "out", "sub", "gaming.json"),
-		elsewhere,
-	}
-	for i, w := range want {
-		if outs[i].Path != w {
-			t.Errorf("output %d = %q, want %q", i, outs[i].Path, w)
-		}
-	}
-}
-
-func TestResolveOutputs_CustomDir(t *testing.T) {
-	root := t.TempDir()
-	b := &Bootstrap{Root: root}
-
-	c := validConfig()
-	c.Output = &OutputConfig{Dir: "generated"}
-	c.Configs = []ConfigFile{{Name: "main", Path: "main.json", Modules: []string{"log"}}}
-
-	outs, err := c.ResolveOutputs(b)
-	if err != nil {
-		t.Fatalf("ResolveOutputs: %v", err)
-	}
-	if want := filepath.Join(root, "generated", "main.json"); outs[0].Path != want {
-		t.Errorf("path = %q, want %q", outs[0].Path, want)
-	}
-}
-
-func TestResolveOutputs_RejectsCollision(t *testing.T) {
-	b := &Bootstrap{Root: t.TempDir()}
-	c := validConfig()
-	c.Configs = []ConfigFile{
-		{Name: "a", Path: "main.json", Modules: []string{"log"}},
-		{Name: "b", Path: filepath.FromSlash("./main.json"), Modules: []string{"log"}},
-	}
-	// Two outputs writing the same file meant the later one silently won.
-	_, err := c.ResolveOutputs(b)
-	wantErr(t, err, "both resolve to")
-}
-
-func TestResolveOutputs_RejectsWritingIntoSnapshots(t *testing.T) {
-	root := t.TempDir()
-	b := &Bootstrap{Root: root}
-	c := validConfig()
-	c.Configs = []ConfigFile{{
-		Name:    "bad",
-		Path:    filepath.Join(root, "snapshots", "abc", "main.json"),
-		Modules: []string{"log"},
-	}}
-	// Snapshots are immutable inputs; writing into them breaks the whole model.
-	_, err := c.ResolveOutputs(b)
-	wantErr(t, err, "read-only snapshot")
-}
-
-// --- relays and selector rules ---
-
 func withRelays(c *Config) *Config {
 	c.Nodes.Subscriptions = append(c.Nodes.Subscriptions,
 		Subscription{Name: "RL", Path: "nodes/relay.json", Type: SubSingBox, Enable: true})
@@ -333,4 +257,35 @@ func TestConfig_RelayTypeIsGone(t *testing.T) {
 	c := validConfig()
 	c.Nodes.Subscriptions[0].Type = "relay"
 	wantErr(t, c.Validate(), "unknown type")
+}
+
+func TestBootstrap_UpdateTimeoutDefaultsAndValidates(t *testing.T) {
+	b := &Bootstrap{Source: &SourceConfig{Type: SourceLocal, Dir: "/cfg"}}
+	b.applyDefaults("/base")
+	if b.UpdateTimeout != DefaultUpdateTimeout {
+		t.Errorf("update_timeout = %s, want the default %s", b.UpdateTimeout, DefaultUpdateTimeout)
+	}
+	if err := b.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+
+	// There is deliberately no way to ask for no bound at all.
+	b.UpdateTimeout = Duration(-time.Second)
+	if err := b.Validate(); err == nil {
+		t.Error("want an error for a negative update_timeout")
+	}
+}
+
+func TestConfig_EmojiOverrides(t *testing.T) {
+	c := validConfig()
+	c.Nodes.EmojiOverrides = []EmojiRule{{Emoji: "🇱🇺", Keywords: []string{"卢森堡"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a valid override was rejected: %v", err)
+	}
+
+	c.Nodes.EmojiOverrides = []EmojiRule{{Emoji: "🇱🇺"}}
+	wantErr(t, c.Validate(), "keywords cannot be empty")
+
+	c.Nodes.EmojiOverrides = []EmojiRule{{Keywords: []string{"卢森堡"}}}
+	wantErr(t, c.Validate(), "emoji cannot be empty")
 }

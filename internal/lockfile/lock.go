@@ -67,3 +67,20 @@ func (l *Lock) Path() string {
 	}
 	return l.path
 }
+
+// IsHeld reports whether another process currently holds the lock.
+//
+// It answers by trying to take the lock and immediately giving it back, which is
+// the only way to ask the kernel this question. The answer is therefore about
+// the instant it was asked: a caller learns that a writer existed just now, not
+// that one will still exist a moment later. For reporting status that is exactly
+// the right resolution, and it is strictly better than a flag in a file, which
+// would survive the process that wrote it.
+func IsHeld(path string) bool {
+	lock, err := Acquire(path)
+	if err != nil {
+		return errors.Is(err, ErrLocked)
+	}
+	lock.Release()
+	return false
+}

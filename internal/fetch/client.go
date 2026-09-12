@@ -10,13 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
-
-	"node-box/internal/model"
 )
 
 // DefaultMaxBytes caps a response body. Subscriptions and module files are
@@ -39,7 +35,8 @@ type Client struct {
 
 // Options configures a Client.
 type Options struct {
-	Proxy     *model.ProxyConfig
+	// ProxyURL routes every request through a proxy when set.
+	ProxyURL  *url.URL
 	UserAgent string
 	Timeout   time.Duration
 	MaxBytes  int64
@@ -58,12 +55,8 @@ func New(opts Options) (*Client, error) {
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if opts.Proxy != nil {
-		proxyURL, err := proxyURL(opts.Proxy)
-		if err != nil {
-			return nil, err
-		}
-		transport.Proxy = http.ProxyURL(proxyURL)
+	if opts.ProxyURL != nil {
+		transport.Proxy = http.ProxyURL(opts.ProxyURL)
 	}
 
 	return &Client{
@@ -71,17 +64,6 @@ func New(opts Options) (*Client, error) {
 		userAgent: opts.UserAgent,
 		maxBytes:  opts.MaxBytes,
 	}, nil
-}
-
-func proxyURL(p *model.ProxyConfig) (*url.URL, error) {
-	u := &url.URL{
-		Scheme: strings.ToLower(p.Type),
-		Host:   net.JoinHostPort(p.Host, fmt.Sprint(p.Port)),
-	}
-	if p.Username != "" {
-		u.User = url.UserPassword(p.Username, p.Password)
-	}
-	return u, nil
 }
 
 // Request describes a single GET.

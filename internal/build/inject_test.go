@@ -7,17 +7,17 @@ import (
 	"testing"
 
 	"node-box/internal/model"
-	"node-box/internal/subscription"
+	"node-box/internal/node"
 )
 
 // The fixture mirrors the shape of a real setup: some self-hosted nodes, two
 // airports, and a subscription whose nodes are only ever used as relay
 // templates.
-func fixtureNodes() map[string][]subscription.Node {
-	n := func(tag, typ string) subscription.Node {
-		return subscription.Node{"tag": tag, "type": typ, "server": "example.com"}
+func fixtureNodes() map[string][]node.Node {
+	n := func(tag, typ string) node.Node {
+		return node.Node{"tag": tag, "type": typ, "server": "example.com"}
 	}
-	return map[string][]subscription.Node{
+	return map[string][]node.Node{
 		"A": {
 			n("[A] node-1", "vmess"),
 			n("[A] node-2", "vmess"),
@@ -451,7 +451,7 @@ func TestInject_OpenVPNGoesToEndpoints(t *testing.T) {
 	// node-box must route it like wireguard. Both the old implementation and
 	// the first version of this one only knew about wireguard/tailscale.
 	nodes := fixtureNodes()
-	nodes["RL"] = append(nodes["RL"], subscription.Node{
+	nodes["RL"] = append(nodes["RL"], node.Node{
 		"tag": "[RL] OVPN", "type": "openvpn-client", "server": "vpn.example.com",
 	})
 
@@ -511,5 +511,42 @@ func TestValidate_RejectsEndpointTypeInOutbounds(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q should mention %q", err, want)
 		}
+	}
+}
+
+func TestInject_DuplicateTagsCollapseConsistently(t *testing.T) {
+	// A provider shipping the same name twice used to be resolved two different
+	// ways: insertion kept the first node, detour lookup found the last.
+	cfg := &model.Config{
+		Nodes: &model.NodesConfig{
+			Subscriptions: []model.Subscription{
+				{Name: "own", URL: "u", Type: model.SubSingBox, Enable: true},
+			},
+		},
+		Modules: []model.Module{{
+			Name: "m", File: "m.json",
+			Selectors: []model.SelectorRule{{Tag: "Proxy", NodeSelector: model.NodeSelector{From: []string{"own"}}}},
+		}},
+		Configs:        []model.ConfigFile{{Name: "main", Path: "main.json", Modules: []string{"m"}}},
+		UpdateSchedule: &model.Schedule{Type: model.ScheduleHourly},
+	}
+	nodes := map[string][]node.Node{"own": {
+		{"type": "vmess", "tag": "[own] dup", "server": "first"},
+		{"type": "vmess", "tag": "[own] dup", "server": "second"},
+	}}
+
+	inj, err := newInjector(cfg, nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inj.pool) != 1 {
+		t.Fatalf("pool has %d nodes, want the duplicate dropped", len(inj.pool))
+	}
+	// The surviving node and the one detour resolution finds must be the same.
+	if got := inj.pool[0]["server"]; got != "first" {
+		t.Errorf("pool kept server %v, want the first", got)
+	}
+	if got := inj.byTag["[own] dup"]["server"]; got != "first" {
+		t.Errorf("byTag resolves to server %v, want the same node the pool kept", got)
 	}
 }

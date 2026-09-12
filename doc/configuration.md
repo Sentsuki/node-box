@@ -46,6 +46,7 @@ node-box 有两个配置文件：
 |---|---|:---:|---|---|
 | `root` | string | ❌ | `node-box.json` 所在目录 | 状态根目录，`snapshots/`、`state/`、`out/` 都在其下 |
 | `log_level` | string | ❌ | `info` | `silent` / `error` / `warn` / `info` / `debug` |
+| `update_timeout` | duration | ❌ | `15m` | 单次更新的上限，超时则中止本次更新并记入 `state.json` |
 | `source` | object | ✅ | — | 配置来源 |
 | `server` | object | ❌ | 不启用 | 内置 HTTP server |
 | `proxy` | object | ❌ | 直连 | 出站代理，**对拉取配置仓库和拉取订阅都生效** |
@@ -63,7 +64,9 @@ node-box 有两个配置文件：
 
 GitHub token 用 fine-grained PAT，权限只需要目标仓库的 **Contents: Read-only**。
 
-`type: "local"` 直接读一个目录、不走网络，用于开发调试。它照样做快照和回滚，行为和
+`type: "local"` 直接读一个目录、不走网络，用于开发调试。本地源只能快照「目录当前的
+内容」，所以 `--ref` 指定一个和当前内容哈希不符的 ref 会直接报错，而不是把当前内容存成
+那个 ref。它照样做快照和回滚，行为和
 `github` 完全一致，只是「版本」是目录内容的哈希而不是 commit sha。
 
 **为什么用仓库 tarball 而不是 raw 文件 URL**：`raw.githubusercontent.com` 有最长约
@@ -83,7 +86,7 @@ TLS 交给前置的 Caddy / nginx，node-box 不管证书。三个端点：
 ```
 POST /hooks/github     唯一写入口，需要 X-NodeBox-Signature-256
 GET  /healthz          存活探测
-GET  /status           当前 ref / 上次产出 / 上次错误
+GET  /status           当前 ref / 上次产出 / 上次错误 / 是否正在更新
 ```
 
 ## `proxy`
@@ -176,6 +179,33 @@ NODE_BOX_WEBHOOK_SECRET=<openssl rand -hex 32>
 
 这是**源头清洗**，不是选择：机场常把 `剩余流量：128GB`、`套餐到期：...` 这类东西当成
 真节点塞在订阅里，它们根本不该成为节点。而「这个组不要某些节点」是 selector 规则的事。
+
+---
+
+## `nodes.emoji_overrides`
+
+订阅设了 `emoji: true` 时，node-box 会按节点名里的地区关键词重新贴国旗。内置表覆盖了机场
+常卖的地区，这里可以**增加**没覆盖到的，或**覆盖**内置的判断：
+
+```json
+"nodes": {
+  "emoji_overrides": [
+    { "emoji": "🇱🇺", "keywords": ["卢森堡", "LU", "Luxembourg"] },
+    { "emoji": "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "keywords": ["苏格兰", "Scotland"] }
+  ]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|:---:|---|
+| `emoji` | string | ✅ | 命中后贴的 emoji |
+| `keywords` | string[] | ✅ | 地区关键词，至少一个，不区分大小写 |
+
+规则**按顺序匹配，第一个命中的生效**，而这里的条目排在内置表前面——所以写一条
+`{"emoji": "🏴", "keywords": ["英国","UK"]}` 就能把内置的 🇬🇧 换掉。都没命中则贴 🇺🇳。
+
+关键词按**整词**匹配，不是子串：中文关键词以非汉字为边界，ASCII 关键词以非字母为边界。
+所以 `UK` 能命中 `UK3` 但不会命中 `UKRAINE`，`IN`（印度）也不会把 `China` 误判成印度。
 
 ---
 
@@ -393,6 +423,7 @@ for f in $(find modules -name '*.json'); do echo "$f: $(jq -r 'keys|join(", ")' 
 | 部分订阅抓取失败 | WARN 记录，用成功的那些继续 |
 | **全部**订阅抓取失败 | 结束，不写任何文件（否则会产出没有节点的配置） |
 | 组装或产出校验失败 | 结束，不写任何文件，错误记入 `state.json` |
+| 单次更新超过 `update_timeout` | 中止本次更新，不写任何文件，错误记入 `state.json` |
 | 写盘中途失败 | 已成功的保留，失败的保持旧内容（每个文件独立原子） |
 | 产出后发现不对 | `node-box rollback` 回到上一个被应用的快照重新产出 |
 
@@ -410,6 +441,18 @@ SIGHUP 让在跑的守护进程立刻更新一次。锁由内核在进程退出�
 `status`、`build`、`validate`、`pull` 完全不碰这把锁，随时可以和守护进程并行执行——它们不写
 任何文件、不建任何目录、也不移动任何快照指针（`pull` 会把快照下载到 `snapshots/` 下，这一步
 从任意多个进程同时做都是安全的）。
+
+`status` 更进一步：它只读 `state.json`、快照指针和这把锁，既不建 HTTP 客户端也不构造 source，
+所以**不需要 GitHub token** 也能跑。它报告的守护进程状态有三种：
+
+| 输出 | 含义 |
+|---|---|
+| `running, idle` | 锁被持有，没有更新在进行 |
+| `running, update in progress` | 锁被持有，且 `state.json` 记着一次未完成的更新 |
+| `not running; the last update was interrupted before it finished` | `state.json` 记着未完成的更新，但锁没人持有——上次更新是被杀掉的 |
+
+「是否存活」读自锁而不是文件：内核在进程退出时释放锁，所以这个判断不会像写在文件里的标志
+那样在进程被 `kill -9` 后继续骗人。
 
 `snapshots/` 下的两个指针文件含义是：
 

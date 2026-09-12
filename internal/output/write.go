@@ -6,52 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"node-box/internal/fsx"
 	"node-box/internal/logx"
-	"node-box/internal/model"
 )
-
-// WriteAtomic replaces path with data in a single rename.
-//
-// The temporary file is created in the destination's own directory: rename(2)
-// only works within one filesystem, and keeping the temp file next to the target
-// means that always holds. The leading dot and the .tmp suffix keep the
-// half-written file from being picked up by anything scanning for *.json.
-func WriteAtomic(path string, data []byte, perm os.FileMode) (err error) {
-	dir := filepath.Dir(path)
-
-	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp file in %s: %w", dir, err)
-	}
-	tmp := f.Name()
-
-	// Any failure past this point leaves the destination untouched; clean up
-	// the temp file. After a successful rename the name is gone and Remove is
-	// a harmless no-op.
-	defer func() {
-		if err != nil {
-			f.Close()
-			os.Remove(tmp)
-		}
-	}()
-
-	if _, err = f.Write(data); err != nil {
-		return fmt.Errorf("write %s: %w", tmp, err)
-	}
-	if err = f.Chmod(perm); err != nil {
-		return fmt.Errorf("chmod %s: %w", tmp, err)
-	}
-	if err = f.Sync(); err != nil {
-		return fmt.Errorf("sync %s: %w", tmp, err)
-	}
-	if err = f.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", tmp, err)
-	}
-	if err = os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("rename %s to %s: %w", tmp, path, err)
-	}
-	return nil
-}
 
 // Result reports what a Write call did.
 type Result struct {
@@ -81,7 +38,7 @@ func Write(files []File, force bool) (Result, map[string]string, error) {
 			logx.Debugf("output %s unchanged, skipping write", f.Path)
 			continue
 		}
-		if err := WriteAtomic(f.Path, f.Content, Perm); err != nil {
+		if err := fsx.WriteAtomic(f.Path, f.Content, Perm); err != nil {
 			return res, hashes, fmt.Errorf("write output %q: %w", f.Name, err)
 		}
 		res.Written = append(res.Written, f.Path)
@@ -106,10 +63,10 @@ func matchesDisk(f File) bool {
 // already: silently creating directories from a mistyped absolute path is far
 // harder to diagnose than an error. One inside it is accepted whether or not it
 // exists yet, because EnsureDirs will create it.
-func CheckDirs(outs []model.ResolvedOutput, outputDir string) error {
+func CheckDirs(outs []Target, outputDir string) error {
 	for _, o := range outs {
 		dir := filepath.Dir(o.Path)
-		if within(dir, outputDir) {
+		if fsx.Within(dir, outputDir) {
 			continue
 		}
 		info, err := os.Stat(dir)
@@ -128,14 +85,14 @@ func CheckDirs(outs []model.ResolvedOutput, outputDir string) error {
 //
 // Unlike CheckDirs this changes the filesystem, so it belongs to the writing
 // step rather than to planning.
-func EnsureDirs(outs []model.ResolvedOutput, outputDir string) error {
+func EnsureDirs(outs []Target, outputDir string) error {
 	if err := CheckDirs(outs, outputDir); err != nil {
 		return err
 	}
 	for _, o := range outs {
 		dir := filepath.Dir(o.Path)
 
-		if within(dir, outputDir) {
+		if fsx.Within(dir, outputDir) {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return fmt.Errorf("config %q: create output directory %s: %w", o.Config.Name, dir, err)
 			}
@@ -158,18 +115,4 @@ func checkWritable(dir string) error {
 	name := f.Name()
 	f.Close()
 	return os.Remove(name)
-}
-
-// within reports whether p is dir itself or lies inside it.
-func within(p, dir string) bool {
-	rel, err := filepath.Rel(dir, p)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !hasDotDotPrefix(rel)
-}
-
-func hasDotDotPrefix(rel string) bool {
-	const dotdot = ".." + string(filepath.Separator)
-	return len(rel) >= len(dotdot) && rel[:len(dotdot)] == dotdot
 }
